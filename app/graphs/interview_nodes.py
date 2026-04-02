@@ -1,0 +1,187 @@
+## Node 1
+from sqlalchemy.orm import Session
+
+from app.models.project import ProjectSession
+from app.models.turn import InterviewTurn
+from app.services.interview_lifecycle import (
+    can_continue_interview,
+    is_minimum_goal_reached,
+)
+from app.services.question_generator import format_turn_history
+from app.services.stage_manager import determine_stage_by_turn
+
+
+def load_project_context(state, db: Session):
+    project = (
+        db.query(ProjectSession)
+        .filter(ProjectSession.id == state["project_id"])
+        .first()
+    )
+    if not project:
+        raise ValueError("Project not found")
+
+    latest_turn = (
+        db.query(InterviewTurn)
+        .filter(InterviewTurn.project_id == state["project_id"])
+        .order_by(InterviewTurn.turn_no.desc())
+        .first()
+    )
+    if not latest_turn:
+        raise ValueError("Project interview has not started")
+
+    if project.status == "finished":
+        raise ValueError("Project interview is already finished")
+
+    if latest_turn.answer_text is not None:
+        raise ValueError("Latest turn already has an answer")
+
+    turns = (
+        db.query(InterviewTurn)
+        .filter(InterviewTurn.project_id == state["project_id"])
+        .order_by(InterviewTurn.turn_no.asc())
+        .all()
+    )
+
+    return {
+        "project_status": project.status,
+        "current_turn_no": latest_turn.turn_no,
+        "current_stage": latest_turn.stage,
+        "history_text": format_turn_history(turns),
+        "minimum_goal_reached": is_minimum_goal_reached(project.turn_count),
+    }
+
+
+## Node 2
+from app.core.config import settings
+from app.services.interview_lifecycle import (
+    can_continue_interview,
+    is_minimum_goal_reached,
+)
+
+
+def decide_progress(state):
+    current_turn_no = state["current_turn_no"]
+
+    if not can_continue_interview(current_turn_no):
+        return {
+            "interview_finished": True,
+            "minimum_goal_reached": is_minimum_goal_reached(current_turn_no),
+            "message": "Interview finished. Maximum turn limit reached.",
+        }
+
+    next_turn_no = current_turn_no + 1
+    next_stage = determine_stage_by_turn(next_turn_no)
+
+    return {
+        "interview_finished": False,
+        "next_turn_no": next_turn_no,
+        "next_stage": next_stage,
+    }
+
+
+## Node 3
+from app.core.database import SessionLocal
+from app.models.project import ProjectSession
+from app.models.turn import InterviewTurn
+from app.services.question_generator import generate_next_question
+from app.services.question_validator import looks_like_valid_question
+from app.services.repetition_guard import is_question_too_similar
+
+
+def draft_next_question(state, db: Session):
+    project = (
+        db.query(ProjectSession)
+        .filter(ProjectSession.id == state["project_id"])
+        .first()
+    )
+    turns = (
+        db.query(InterviewTurn)
+        .filter(InterviewTurn.project_id == state["project_id"])
+        .order_by(InterviewTurn.turn_no.asc())
+        .all()
+    )
+
+    next_question = generate_next_question(
+        system_prompt=project.system_prompt,
+        turns=turns,
+        next_turn_no=state["next_turn_no"],
+        current_stage=state["next_stage"],
+    )
+
+    old_questions = [turn.question_text for turn in turns]
+
+    if is_question_too_similar(next_question, old_questions):
+        retry_prompt = (
+            project.system_prompt
+            + "\n\nThe next question draft was too similar to an earlier question. "
+            "Generate a more specific and substantially different follow-up question."
+        )
+
+        next_question = generate_next_question(
+            system_prompt=retry_prompt,
+            turns=turns,
+            next_turn_no=state["next_turn_no"],
+            current_stage=state["next_stage"],
+        )
+
+    if not looks_like_valid_question(next_question, state["next_turn_no"]):
+        raise ValueError("Generated question format is invalid")
+
+    return {
+        "generated_question": next_question,
+    }
+
+
+## Node 4
+from app.models.project import ProjectSession
+from app.models.turn import InterviewTurn
+from app.services.interview_lifecycle import is_minimum_goal_reached
+
+
+def persist_next_step(state, db: Session):
+    project = (
+        db.query(ProjectSession)
+        .filter(ProjectSession.id == state["project_id"])
+        .first()
+    )
+
+    latest_turn = (
+        db.query(InterviewTurn)
+        .filter(InterviewTurn.project_id == state["project_id"])
+        .order_by(InterviewTurn.turn_no.desc())
+        .first()
+    )
+
+    latest_turn.answer_text = state["answer_text"]
+
+    if state.get("interview_finished"):
+        project.status = "finished"
+        db.commit()
+        db.refresh(project)
+        db.refresh(latest_turn)
+        return {
+            "message": "Interview finished. Maximum turn limit reached.",
+            "minimum_goal_reached": is_minimum_goal_reached(latest_turn.turn_no),
+        }
+
+    next_turn = InterviewTurn(
+        project_id=project.id,
+        turn_no=state["next_turn_no"],
+        stage=state["next_stage"],
+        question_text=state["generated_question"],
+        answer_text=None,
+    )
+    db.add(next_turn)
+
+    project.turn_count = state["next_turn_no"]
+    project.current_stage = state["next_stage"]
+
+    db.commit()
+    db.refresh(project)
+    db.refresh(latest_turn)
+    db.refresh(next_turn)
+
+    return {
+        "message": "Answer submitted and next question generated successfully.",
+        "minimum_goal_reached": is_minimum_goal_reached(project.turn_count),
+    }
