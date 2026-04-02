@@ -31,7 +31,7 @@ class ProjectStartResponse(BaseModel):
 class ProjectNextResponse(BaseModel):
     project: ProjectRead
     previous_turn: TurnRead
-    next_turn: TurnRead
+    next_turn: TurnRead | None
     interview_finished: bool
     minimum_goal_reached: bool
     message: str

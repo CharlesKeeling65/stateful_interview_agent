@@ -1,6 +1,7 @@
 from app.core.config import settings
 from app.core.llm_client import get_openai_client
 from app.models.turn import InterviewTurn
+from app.services.question_postprocessor import clean_generated_question
 from app.services.stage_manager import get_stage_instruction
 
 
@@ -37,7 +38,11 @@ Requirements:
     if not content:
         raise ValueError("Model returned empty content.")
 
-    return content.strip()
+    print(f"[DEBUG] Generated first question raw output: {content!r}")
+    cleaned = clean_generated_question(content, 1)
+    print(f"[DEBUG] Cleaned first question: {cleaned!r}")
+
+    return cleaned
 
 
 def format_turn_history(turns: list[InterviewTurn]) -> str:
@@ -103,5 +108,8 @@ Requirements:
     content = response.choices[0].message.content
     if not content:
         raise ValueError("Model returned empty content.")
+    print(f"[DEBUG] Generated next question raw output: {content!r}")
+    cleaned = clean_generated_question(content, next_turn_no)
+    print(f"[DEBUG] Cleaned next question: {cleaned!r}")
 
-    return content.strip()
+    return cleaned

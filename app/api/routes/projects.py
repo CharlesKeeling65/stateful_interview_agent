@@ -41,6 +41,15 @@ def create_project(payload: ProjectCreate, db: Session = Depends(get_db)):
     return project
 
 
+@router.get("", response_model=list[ProjectRead])
+def list_projects(db: Session = Depends(get_db)):
+    return (
+        db.query(ProjectSession)
+        .order_by(ProjectSession.updated_at.desc(), ProjectSession.id.desc())
+        .all()
+    )
+
+
 @router.get("/{project_id}", response_model=ProjectRead)
 def get_project(project_id: int, db: Session = Depends(get_db)):
     project = db.query(ProjectSession).filter(ProjectSession.id == project_id).first()
@@ -126,10 +135,28 @@ def submit_answer_and_generate_next(
     if not project:
         raise HTTPException(status_code=404, detail="Project not found")
 
-    if project.status == "finished":
-        raise HTTPException(
-            status_code=400, detail="Project interview is already finished"
+    try:
+        result = interview_graph.invoke(
+            {
+                "project_id": project_id,
+                "answer_text": payload.answer_text,
+            },
+            config={"configurable": {"thread_id": f"project-{project_id}"}},
         )
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+
+    updated_project = (
+        db.query(ProjectSession).filter(ProjectSession.id == project_id).first()
+    )
+
+    previous_turn = (
+        db.query(InterviewTurn)
+        .filter(InterviewTurn.project_id == project_id)
+        .order_by(InterviewTurn.turn_no.desc())
+        .offset(1 if not result.get("interview_finished") else 0)
+        .first()
+    )
 
     latest_turn = (
         db.query(InterviewTurn)
@@ -137,98 +164,28 @@ def submit_answer_and_generate_next(
         .order_by(InterviewTurn.turn_no.desc())
         .first()
     )
-    if not latest_turn:
-        raise HTTPException(status_code=400, detail="Project interview has not started")
 
-    if latest_turn.answer_text is not None:
-        raise HTTPException(status_code=400, detail="Latest turn already has an answer")
-
-    latest_turn.answer_text = payload.answer_text
-
-    current_turn_count = latest_turn.turn_no
-
-    if not can_continue_interview(current_turn_count):
-        project.status = "finished"
-        db.commit()
-        db.refresh(project)
-        db.refresh(latest_turn)
-
-        return {
-            "project": project,
-            "previous_turn": latest_turn,
-            "next_turn": None,
-            "interview_finished": True,
-            "minimum_goal_reached": is_minimum_goal_reached(current_turn_count),
-            "message": "Interview finished. Maximum turn limit reached.",
-        }
-
-    all_turns = (
-        db.query(InterviewTurn)
-        .filter(InterviewTurn.project_id == project_id)
-        .order_by(InterviewTurn.turn_no.asc())
-        .all()
-    )
-
-    next_turn_no = latest_turn.turn_no + 1
-    next_stage = determine_stage_by_turn(next_turn_no)
-
-    next_question = generate_next_question(
-        system_prompt=project.system_prompt,
-        turns=all_turns,
-        next_turn_no=next_turn_no,
-        current_stage=next_stage,
-    )
-
-    if not looks_like_valid_question(next_question, next_turn_no):
-        raise HTTPException(
-            status_code=500, detail="Generated question format is invalid"
-        )
-
-    old_questions = [turn.question_text for turn in all_turns]
-
-    if is_question_too_similar(next_question, old_questions):
-        retry_prompt = (
-            project.system_prompt
-            + "\n\nThe next question draft was too similar to an earlier question. "
-            "Generate a more specific and substantially different follow-up question."
-        )
-
-        next_question = generate_next_question(
-            system_prompt=retry_prompt,
-            turns=all_turns,
-            next_turn_no=next_turn_no,
-            current_stage=next_stage,
-        )
-
-        if not looks_like_valid_question(next_question, next_turn_no):
-            raise HTTPException(
-                status_code=500, detail="Regenerated question format is invalid"
+    if result.get("interview_finished"):
+        previous_turn = latest_turn
+        next_turn = None
+    else:
+        next_turn = latest_turn
+        previous_turn = (
+            db.query(InterviewTurn)
+            .filter(
+                InterviewTurn.project_id == project_id,
+                InterviewTurn.turn_no == next_turn.turn_no - 1,
             )
-
-    next_turn = InterviewTurn(
-        project_id=project.id,
-        turn_no=next_turn_no,
-        stage=next_stage,
-        question_text=next_question,
-        answer_text=None,
-    )
-    db.add(next_turn)
-
-    project.turn_count = next_turn_no
-    project.current_stage = next_stage
-
-    db.commit()
-    db.refresh(project)
-    db.refresh(latest_turn)
-    db.refresh(next_turn)
+            .first()
+        )
 
     return {
-        "project": project,
-        "previous_turn": latest_turn,
+        "project": updated_project,
+        "previous_turn": previous_turn,
         "next_turn": next_turn,
-        "interview_finished": project.status == "finished",
-        "minimum_goal_reached": is_minimum_goal_reached(project.turn_count),
-        "message": "Answer submitted and next question generated successfully.",
+        "interview_finished": result.get("interview_finished", False),
+        "minimum_goal_reached": result.get("minimum_goal_reached", False),
+        "message": result.get("message", ""),
     }
 
 
