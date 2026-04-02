@@ -23,3 +23,22 @@ class ProjectSession(Base):
     turns = relationship(
         "InterviewTurn", back_populates="project", cascade="all, delete-orphan"
     )
+    llm_usages = relationship(
+        "LLMUsage", back_populates="project", cascade="all, delete-orphan"
+    )
+
+    @property
+    def total_prompt_tokens(self) -> int:
+        return sum(usage.prompt_tokens for usage in self.llm_usages)
+
+    @property
+    def total_completion_tokens(self) -> int:
+        return sum(usage.completion_tokens for usage in self.llm_usages)
+
+    @property
+    def total_tokens(self) -> int:
+        return sum(usage.total_tokens for usage in self.llm_usages)
+
+    @property
+    def estimated_total_tokens(self) -> int:
+        return sum(usage.total_tokens for usage in self.llm_usages if usage.is_estimated)

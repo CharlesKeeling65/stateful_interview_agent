@@ -15,6 +15,8 @@ class InterviewGraphState(TypedDict, total=False):
     history_text: str
     latest_question: str
     generated_question: str
+    question_usage_metrics: list[dict]
+    pending_turn_id: int
 
     interview_finished: bool
     minimum_goal_reached: bool

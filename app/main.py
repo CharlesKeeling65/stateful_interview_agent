@@ -4,10 +4,10 @@ from fastapi.middleware.cors import CORSMiddleware
 from app.api.routes.debug import router as debug_router
 from app.api.routes.projects import router as project_router
 from app.core.config import settings
-from app.core.database import Base, engine
-from app.models import InterviewTurn, ProjectSession
+from app.core.database import ensure_database_schema
+from app.models import InterviewTurn, LLMUsage, ProjectSession
 
-Base.metadata.create_all(bind=engine)
+ensure_database_schema()
 
 app = FastAPI(title=settings.app_name)
 

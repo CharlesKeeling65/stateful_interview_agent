@@ -11,20 +11,15 @@ from app.schemas.project import (
     ProjectNextResponse,
     ProjectRead,
     ProjectStartResponse,
+    ProjectStatusResponse,
+    ProjectUpdate,
+    TranscriptResponse,
 )
 from app.schemas.turn import AnswerSubmitRequest, AnswerSubmitResponse, TurnRead
-from app.services.interview_lifecycle import (
-    can_continue_interview,
-    is_minimum_goal_reached,
-)
-from app.services.question_generator import (
-    generate_first_question,
-    generate_next_question,
-)
-from app.services.question_validator import looks_like_valid_question
-from app.services.repetition_guard import is_question_too_similar
-from app.services.stage_manager import determine_stage_by_turn
+from app.services.interview_lifecycle import is_minimum_goal_reached
+from app.services.question_generator import generate_first_question_result
 from app.services.transcript_service import build_project_transcript
+from app.services.usage_service import aggregate_project_usage, create_usage_record
 
 router = APIRouter(prefix="/projects", tags=["projects"])
 
@@ -60,6 +55,25 @@ def get_project(project_id: int, db: Session = Depends(get_db)):
     return project
 
 
+@router.patch("/{project_id}", response_model=ProjectRead)
+def update_project(
+    project_id: int,
+    payload: ProjectUpdate,
+    db: Session = Depends(get_db),
+):
+    project = db.query(ProjectSession).filter(ProjectSession.id == project_id).first()
+    if not project:
+        raise HTTPException(status_code=404, detail="Project not found")
+
+    updates = payload.model_dump(exclude_unset=True)
+    for field_name, value in updates.items():
+        setattr(project, field_name, value)
+
+    db.commit()
+    db.refresh(project)
+    return project
+
+
 @router.post("/{project_id}/start", response_model=ProjectStartResponse)
 def start_project_interview(project_id: int, db: Session = Depends(get_db)):
     project = db.query(ProjectSession).filter(ProjectSession.id == project_id).first()
@@ -71,16 +85,25 @@ def start_project_interview(project_id: int, db: Session = Depends(get_db)):
             status_code=400, detail="Project interview has already started"
         )
 
-    first_question = generate_first_question(project.system_prompt)
+    first_question_result = generate_first_question_result(project.system_prompt)
 
     first_turn = InterviewTurn(
         project_id=project.id,
         turn_no=1,
         stage="Panorama Mapping",
-        question_text=first_question,
+        question_text=first_question_result["question_text"],
         answer_text=None,
     )
     db.add(first_turn)
+    db.flush()
+    db.add(
+        create_usage_record(
+            project_id=project.id,
+            turn_id=first_turn.id,
+            operation_type="question_generation",
+            usage_metrics=first_question_result["usage_metrics"],
+        )
+    )
 
     project.current_stage = "Panorama Mapping"
     project.turn_count = 1
@@ -185,6 +208,7 @@ def submit_answer_and_generate_next(
         "next_turn": next_turn,
         "interview_finished": result.get("interview_finished", False),
         "minimum_goal_reached": result.get("minimum_goal_reached", False),
+        "usage_summary": aggregate_project_usage(updated_project.llm_usages),
         "message": result.get("message", ""),
     }
 
@@ -204,7 +228,7 @@ def get_project_turns(project_id: int, db: Session = Depends(get_db)):
     return turns
 
 
-@router.get("/{project_id}/transcript")
+@router.get("/{project_id}/transcript", response_model=TranscriptResponse)
 def get_project_transcript(project_id: int, db: Session = Depends(get_db)):
     project = db.query(ProjectSession).filter(ProjectSession.id == project_id).first()
     if not project:
@@ -221,11 +245,12 @@ def get_project_transcript(project_id: int, db: Session = Depends(get_db)):
         "project_id": project_id,
         "project_name": project.project_name,
         "turn_count": len(turns),
+        "usage_summary": aggregate_project_usage(project.llm_usages),
         "transcript": build_project_transcript(turns),
     }
 
 
-@router.get("/{project_id}/status")
+@router.get("/{project_id}/status", response_model=ProjectStatusResponse)
 def get_project_status(project_id: int, db: Session = Depends(get_db)):
     project = db.query(ProjectSession).filter(ProjectSession.id == project_id).first()
     if not project:
@@ -250,4 +275,9 @@ def get_project_status(project_id: int, db: Session = Depends(get_db)):
         "latest_turn_answered": (
             (latest_turn.answer_text is not None) if latest_turn else None
         ),
+        "latest_question_text": latest_turn.question_text if latest_turn else None,
+        "latest_question_text_for_copy": (
+            latest_turn.question_text_for_copy if latest_turn else None
+        ),
+        "usage_summary": aggregate_project_usage(project.llm_usages),
     }

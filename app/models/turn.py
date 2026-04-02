@@ -4,6 +4,7 @@ from sqlalchemy import DateTime, ForeignKey, Integer, String, Text
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.core.database import Base
+from app.services.question_postprocessor import strip_question_prefix
 
 
 class InterviewTurn(Base):
@@ -19,7 +20,27 @@ class InterviewTurn(Base):
 
     question_text: Mapped[str] = mapped_column(Text, nullable=False)
     answer_text: Mapped[str | None] = mapped_column(Text, nullable=True)
+    answer_summary: Mapped[str | None] = mapped_column(Text, nullable=True)
 
     created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
 
     project = relationship("ProjectSession", back_populates="turns")
+    llm_usages = relationship(
+        "LLMUsage", back_populates="turn", cascade="all, delete-orphan"
+    )
+
+    @property
+    def prompt_tokens(self) -> int:
+        return sum(usage.prompt_tokens for usage in self.llm_usages)
+
+    @property
+    def completion_tokens(self) -> int:
+        return sum(usage.completion_tokens for usage in self.llm_usages)
+
+    @property
+    def total_tokens(self) -> int:
+        return sum(usage.total_tokens for usage in self.llm_usages)
+
+    @property
+    def question_text_for_copy(self) -> str:
+        return strip_question_prefix(self.question_text)

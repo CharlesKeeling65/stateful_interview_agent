@@ -1,6 +1,10 @@
 import re
 
 
+def strip_question_prefix(text: str) -> str:
+    return re.sub(r"^\s*Q\d+\s*:\s*", "", text).strip()
+
+
 def clean_generated_question(text: str, expected_turn_no: int) -> str:
     text = text.strip()
 

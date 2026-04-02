@@ -2,6 +2,8 @@ from datetime import datetime
 
 from pydantic import BaseModel, Field
 
+from app.schemas.usage import LLMUsageRead
+
 
 class TurnRead(BaseModel):
     id: int
@@ -9,7 +11,13 @@ class TurnRead(BaseModel):
     turn_no: int
     stage: str
     question_text: str
+    question_text_for_copy: str
     answer_text: str | None
+    answer_summary: str | None
+    prompt_tokens: int
+    completion_tokens: int
+    total_tokens: int
+    llm_usages: list[LLMUsageRead] = Field(default_factory=list)
     created_at: datetime
 
     model_config = {"from_attributes": True}

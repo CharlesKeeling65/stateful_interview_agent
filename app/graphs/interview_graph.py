@@ -2,13 +2,13 @@ from langgraph.graph import StateGraph, END
 from langgraph.checkpoint.memory import MemorySaver
 
 from app.graphs.interview_state import InterviewGraphState
+from app.core.database import SessionLocal
 from app.graphs.interview_nodes import (
-    load_project_context,
     decide_progress,
     draft_next_question,
+    load_project_context,
     persist_next_step,
 )
-from app.core.database import SessionLocal
 
 
 def load_context_node(state: InterviewGraphState):
