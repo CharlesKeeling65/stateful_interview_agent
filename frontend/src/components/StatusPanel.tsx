@@ -5,6 +5,7 @@ import {
   hasInterviewStarted,
   isProjectFinished,
 } from '../utils/status'
+import { TokenUsagePanel } from './TokenUsagePanel'
 
 type StatusPanelProps = {
   errorMessage: string
@@ -104,6 +105,12 @@ export function StatusPanel({
         {infoMessage ? (
           <div className="mt-5 rounded-[1.5rem] border border-amber-200 bg-amber-50 px-4 py-3 text-sm leading-6 text-amber-900">
             {infoMessage}
+          </div>
+        ) : null}
+
+        {status?.usage_summary ? (
+          <div className="mt-5">
+            <TokenUsagePanel label="Session Token Usage" summary={status.usage_summary} />
           </div>
         ) : null}
       </section>

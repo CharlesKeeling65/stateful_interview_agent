@@ -9,6 +9,7 @@ import {
   listProjects,
   startProject,
   submitNext,
+  updateProject,
 } from '../api/client'
 import type {
   CreateProjectPayload,
@@ -17,6 +18,7 @@ import type {
   TranscriptResponse,
   TurnRead,
 } from '../types/api'
+import { estimateNextOutputTokens, estimateNextPromptTokens, estimateTokenCount } from '../utils/tokens'
 
 const SELECTED_PROJECT_STORAGE_KEY = 'stateful-interview-agent:selected-project-id'
 
@@ -49,7 +51,7 @@ export function useProject() {
   const [transcript, setTranscript] = useState<TranscriptResponse | null>(null)
   const [loading, setLoading] = useState(false)
   const [busyAction, setBusyAction] = useState<
-    'initializing' | 'selecting' | 'creating' | 'starting' | 'submitting' | null
+    'initializing' | 'selecting' | 'creating' | 'starting' | 'submitting' | 'updating' | null
   >(null)
   const [error, setError] = useState('')
   const [lastMessage, setLastMessage] = useState('')
@@ -200,6 +202,26 @@ export function useProject() {
     }
   }
 
+  async function handleUpdateProject(projectId: number, payload: { project_name?: string }) {
+    setBusyAction('updating')
+    setLoading(true)
+    setError('')
+
+    try {
+      const updatedProject = await updateProject(projectId, payload)
+      startTransition(() => {
+        setProject(updatedProject)
+        setLastMessage('Project metadata updated.')
+      })
+      await refreshSelected(projectId)
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Unable to update the project.')
+    } finally {
+      setBusyAction(null)
+      setLoading(false)
+    }
+  }
+
   const initializeProjects = useEffectEvent(() => {
     setBusyAction('initializing')
     void refreshProjects()
@@ -227,10 +249,20 @@ export function useProject() {
     status,
     transcript,
     turns,
+    estimateDraftUsage: (answerDraft: string) => ({
+      estimatedAnswerInputTokens: estimateTokenCount(answerDraft),
+      estimatedNextPromptTokens: estimateNextPromptTokens({
+        answerDraft,
+        project,
+        turns,
+      }),
+      estimatedNextOutputTokens: estimateNextOutputTokens(answerDraft),
+    }),
     createDemoProject: handleCreateDemoProject,
     createProject: handleCreateProject,
     selectProject,
     startProject: handleStart,
     submitNext: handleNext,
+    updateProject: handleUpdateProject,
   }
 }

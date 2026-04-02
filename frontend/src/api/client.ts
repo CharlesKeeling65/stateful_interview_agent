@@ -6,6 +6,7 @@ import type {
   ProjectStatusResponse,
   TranscriptResponse,
   TurnRead,
+  UpdateProjectPayload,
 } from '../types/api'
 
 const API_BASE = import.meta.env.VITE_API_BASE_URL ?? 'http://127.0.0.1:8000'
@@ -64,4 +65,12 @@ export async function getProjectStatus(projectId: number) {
 
 export async function getProjectTranscript(projectId: number) {
   return request<TranscriptResponse>(`/projects/${projectId}/transcript`)
+}
+
+export async function updateProject(projectId: number, payload: UpdateProjectPayload) {
+  return request<ProjectRead>(`/projects/${projectId}`, {
+    method: 'PATCH',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(payload),
+  })
 }

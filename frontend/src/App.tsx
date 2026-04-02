@@ -24,8 +24,11 @@ function App() {
     submitNext,
     transcript,
     turns,
+    updateProject,
+    estimateDraftUsage,
   } = useProject()
   const [exportLabel, setExportLabel] = useState<string | null>(null)
+  const [latestQuestionCopyLabel, setLatestQuestionCopyLabel] = useState<string | null>(null)
 
   async function handleCopyTranscript() {
     if (!transcript?.transcript) {
@@ -38,6 +41,15 @@ function App() {
       setExportLabel('Copied')
     } finally {
       window.setTimeout(() => setExportLabel(null), 1200)
+    }
+  }
+
+  async function handleCopyLatestQuestion(text: string) {
+    setLatestQuestionCopyLabel('Copied')
+    try {
+      await copyTextToClipboard(text)
+    } finally {
+      window.setTimeout(() => setLatestQuestionCopyLabel(null), 1200)
     }
   }
 
@@ -90,6 +102,8 @@ function App() {
         ? 'Starting interview...'
         : busyAction === 'submitting'
           ? 'Generating next question...'
+          : busyAction === 'updating'
+            ? 'Saving project...'
           : busyAction === 'selecting'
             ? 'Loading project...'
             : busyAction === 'initializing'
@@ -114,10 +128,20 @@ function App() {
 
           <div className="flex min-h-[70vh] flex-col gap-4">
             <div className="min-h-0 flex-1">
-              <TranscriptPanel project={project} turns={turns} />
+              <TranscriptPanel
+                copyLabel={latestQuestionCopyLabel}
+                onCopyLatestQuestion={handleCopyLatestQuestion}
+                onRenameProject={
+                  project ? async (nextTitle: string) => updateProject(project.id, { project_name: nextTitle }) : undefined
+                }
+                project={project}
+                renameDisabled={loading}
+                turns={turns}
+              />
             </div>
 
             <AnswerComposer
+              estimateDraftUsage={estimateDraftUsage}
               onSubmit={submitNext}
               disabled={loading || !project || !projectStarted || projectFinished}
               projectFinished={projectFinished}

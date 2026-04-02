@@ -1,11 +1,15 @@
 import { useDeferredValue } from 'react'
 
 import type { ProjectRead, TurnRead } from '../types/api'
-import { formatTimestamp } from '../utils/format'
-import { normalizeAnswerText, normalizeQuestionText } from '../utils/text'
+import { ProjectMetadataEditor } from './ProjectMetadataEditor'
+import { TurnCard } from './TurnCard'
 
 type TranscriptPanelProps = {
+  copyLabel?: string | null
+  onCopyLatestQuestion?: (text: string) => Promise<void> | void
+  onRenameProject?: (nextTitle: string) => Promise<void> | void
   project: ProjectRead | null
+  renameDisabled?: boolean
   turns: TurnRead[]
 }
 
@@ -25,7 +29,14 @@ function EmptyState() {
   )
 }
 
-export function TranscriptPanel({ project, turns }: TranscriptPanelProps) {
+export function TranscriptPanel({
+  copyLabel = null,
+  onCopyLatestQuestion,
+  onRenameProject,
+  project,
+  renameDisabled = false,
+  turns,
+}: TranscriptPanelProps) {
   const deferredTurns = useDeferredValue(turns)
 
   if (!project) {
@@ -43,89 +54,37 @@ export function TranscriptPanel({ project, turns }: TranscriptPanelProps) {
             <h2 className="mt-3 font-serif text-3xl leading-tight text-slate-950">
               {project.project_name}
             </h2>
+            <p className="mt-3 text-sm leading-7 text-slate-600">
+              Full original answers stay visible here even when older turns are compacted for backend prompting.
+            </p>
           </div>
-          <div className="rounded-[1.5rem] border border-slate-200 bg-slate-50 px-4 py-3 text-right">
-            <p className="text-xs uppercase tracking-[0.18em] text-slate-500">Current Stage</p>
-            <p className="mt-1 text-sm font-semibold text-slate-950">{project.current_stage}</p>
+          <div className="flex flex-col items-end gap-3">
+            <div className="rounded-[1.5rem] border border-slate-200 bg-slate-50 px-4 py-3 text-right">
+              <p className="text-xs uppercase tracking-[0.18em] text-slate-500">Current Stage</p>
+              <p className="mt-1 text-sm font-semibold text-slate-950">{project.current_stage}</p>
+            </div>
+            {onRenameProject ? (
+              <ProjectMetadataEditor
+                disabled={renameDisabled}
+                initialTitle={project.project_name}
+                onSave={onRenameProject}
+              />
+            ) : null}
           </div>
         </div>
       </header>
 
       <div className="mt-4 min-h-0 flex-1 overflow-auto rounded-[2rem] border border-white/60 bg-[linear-gradient(180deg,rgba(255,255,255,0.88),rgba(248,250,252,0.92))] p-5 shadow-[0_20px_50px_rgba(148,163,184,0.16)] backdrop-blur">
         <div className="space-y-4">
-          {deferredTurns.map((turn) => {
-            const normalizedQuestion = normalizeQuestionText(turn.question_text)
-            const normalizedAnswer = normalizeAnswerText(turn.answer_text)
-            const waitingForAnswer = !turn.answer_text
-
-            return (
-              <article
-                key={turn.id}
-                className={`overflow-hidden rounded-[1.75rem] border shadow-[0_14px_30px_rgba(148,163,184,0.12)] ${
-                  waitingForAnswer
-                    ? 'border-amber-200 bg-[linear-gradient(180deg,rgba(255,251,235,0.96),rgba(255,255,255,0.98))]'
-                    : 'border-slate-200 bg-white'
-                }`}
-              >
-                <div
-                  className={`border-b px-5 py-4 ${
-                    waitingForAnswer
-                      ? 'border-amber-100 bg-amber-50/70'
-                      : 'border-slate-100 bg-slate-50/80'
-                  }`}
-                >
-                  <div className="flex flex-wrap items-center justify-between gap-3">
-                    <div>
-                      <p className="text-xs font-semibold uppercase tracking-[0.24em] text-slate-500">
-                        Turn {turn.turn_no}
-                      </p>
-                      <p className="mt-2 text-sm font-medium text-slate-700">{turn.stage}</p>
-                      <p className="mt-2 text-xs text-slate-500">{formatTimestamp(turn.created_at)}</p>
-                    </div>
-                    <span
-                      className={`rounded-full px-3 py-1 text-xs font-semibold uppercase tracking-[0.16em] ${
-                        waitingForAnswer
-                          ? 'bg-amber-100 text-amber-800'
-                          : 'bg-emerald-100 text-emerald-800'
-                      }`}
-                    >
-                      {waitingForAnswer ? 'Waiting for answer' : 'Answered'}
-                    </span>
-                  </div>
-                </div>
-
-                <div className="space-y-5 px-5 py-5">
-                  <div>
-                    <p className="text-[0.68rem] font-semibold uppercase tracking-[0.28em] text-slate-500">
-                      Question
-                    </p>
-                    <p className="mt-3 whitespace-pre-wrap break-words text-base leading-7 text-slate-950">
-                      {normalizedQuestion}
-                    </p>
-                  </div>
-
-                  <div>
-                    <p className="text-[0.68rem] font-semibold uppercase tracking-[0.28em] text-slate-500">
-                      Answer
-                    </p>
-                    <div
-                      className={`mt-3 rounded-2xl border px-4 py-4 ${
-                        waitingForAnswer
-                          ? 'border-dashed border-amber-200 bg-amber-50/60'
-                          : 'border-slate-200 bg-slate-50/70'
-                      }`}
-                    >
-                      <p className="whitespace-pre-wrap break-words text-sm leading-7 text-slate-700">
-                        {waitingForAnswer
-                          ? 'Waiting for the latest pasted answer.'
-                          : normalizedAnswer}
-                      </p>
-                    </div>
-                  </div>
-                </div>
-              </article>
-            )
-          })}
+          {deferredTurns.map((turn) => (
+            <TurnCard
+              key={turn.id}
+              copyLabel={copyLabel}
+              isLatestActiveTurn={!turn.answer_text && turn.id === deferredTurns[deferredTurns.length - 1]?.id}
+              onCopyLatestQuestion={onCopyLatestQuestion}
+              turn={turn}
+            />
+          ))}
 
           {deferredTurns.length === 0 ? (
             <div className="rounded-[1.75rem] border border-dashed border-slate-300 px-6 py-10 text-center text-sm text-slate-500">

@@ -1,7 +1,14 @@
 import { useState } from 'react'
 
+import { formatTokenCount } from '../utils/tokens'
+
 type AnswerComposerProps = {
   disabled?: boolean
+  estimateDraftUsage: (answerText: string) => {
+    estimatedAnswerInputTokens: number
+    estimatedNextPromptTokens: number
+    estimatedNextOutputTokens: number
+  }
   projectFinished?: boolean
   projectStarted?: boolean
   workingLabel?: string | null
@@ -10,6 +17,7 @@ type AnswerComposerProps = {
 
 export function AnswerComposer({
   disabled = false,
+  estimateDraftUsage,
   projectFinished = false,
   projectStarted = false,
   workingLabel = null,
@@ -25,6 +33,8 @@ export function AnswerComposer({
     await onSubmit(answer)
     setAnswer('')
   }
+
+  const estimate = estimateDraftUsage(answer)
 
   return (
     <section className="rounded-[2rem] border border-white/60 bg-white/85 p-5 shadow-[0_20px_50px_rgba(148,163,184,0.16)] backdrop-blur">
@@ -60,6 +70,34 @@ export function AnswerComposer({
         onChange={(event) => setAnswer(event.target.value)}
         disabled={disabled}
       />
+      <div className="mt-4 rounded-[1.5rem] border border-slate-200 bg-slate-50/80 px-4 py-4">
+        <p className="text-[0.64rem] font-semibold uppercase tracking-[0.22em] text-slate-500">
+          Estimated Next Call
+        </p>
+        <div className="mt-3 grid gap-3 sm:grid-cols-3">
+          <div>
+            <p className="text-[0.64rem] uppercase tracking-[0.18em] text-slate-500">Answer input</p>
+            <p className="mt-1 text-sm font-semibold text-slate-950">
+              {formatTokenCount(estimate.estimatedAnswerInputTokens)}
+            </p>
+          </div>
+          <div>
+            <p className="text-[0.64rem] uppercase tracking-[0.18em] text-slate-500">Next prompt</p>
+            <p className="mt-1 text-sm font-semibold text-slate-950">
+              {formatTokenCount(estimate.estimatedNextPromptTokens)}
+            </p>
+          </div>
+          <div>
+            <p className="text-[0.64rem] uppercase tracking-[0.18em] text-slate-500">Next output</p>
+            <p className="mt-1 text-sm font-semibold text-slate-950">
+              {formatTokenCount(estimate.estimatedNextOutputTokens)}
+            </p>
+          </div>
+        </div>
+        <p className="mt-3 text-xs leading-6 text-slate-500">
+          Estimates only. Actual usage comes from the backend after generation.
+        </p>
+      </div>
       <p className="mt-3 text-sm text-slate-500">
         {projectFinished
           ? 'No more turns can be submitted after the session finishes.'

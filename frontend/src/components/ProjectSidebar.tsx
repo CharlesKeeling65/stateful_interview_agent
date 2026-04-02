@@ -1,10 +1,11 @@
 import type { ProjectRead } from '../types/api'
 import { CreateProjectForm } from './CreateProjectForm'
 import { formatTimestamp } from '../utils/format'
+import { formatTokenCount } from '../utils/tokens'
 
 type ProjectSidebarProps = {
   activeProjectId: number | null
-  busyAction?: 'initializing' | 'selecting' | 'creating' | 'starting' | 'submitting' | null
+  busyAction?: 'initializing' | 'selecting' | 'creating' | 'starting' | 'submitting' | 'updating' | null
   disabled?: boolean
   onCreate: Parameters<typeof CreateProjectForm>[0]['onCreate']
   onCreateDemo: Parameters<typeof CreateProjectForm>[0]['onCreateDemo']
@@ -51,7 +52,7 @@ export function ProjectSidebar({
               Project List
             </p>
             <h2 className="mt-2 font-serif text-xl text-slate-950">Recent sessions</h2>
-        </div>
+          </div>
           <span className="rounded-full bg-slate-100 px-3 py-1 text-xs font-medium text-slate-500">
             {busyAction === 'initializing' ? '...' : projects.length}
           </span>
@@ -92,8 +93,15 @@ export function ProjectSidebar({
                   </span>
                 </div>
                 <div className="mt-3 flex items-center justify-between text-xs text-slate-500">
+                  <span>{item.status.replace(/^./, (char) => char.toUpperCase())}</span>
                   <span>{item.turn_count} turns</span>
-                  <span>{formatTimestamp(item.updated_at)}</span>
+                </div>
+                <div className="mt-2 flex items-center justify-between text-[11px] text-slate-400">
+                  <span>Created {formatTimestamp(item.created_at)}</span>
+                  <span>Updated {formatTimestamp(item.updated_at)}</span>
+                </div>
+                <div className="mt-2 text-[11px] text-slate-400">
+                  Total tokens {formatTokenCount(item.total_tokens)}
                 </div>
               </button>
             )
