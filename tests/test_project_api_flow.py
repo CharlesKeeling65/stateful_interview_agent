@@ -147,6 +147,27 @@ class ProjectApiFlowTests(unittest.TestCase):
         )
         self.assertGreater(status.json()["usage_summary"]["total_tokens"], 0)
 
+    def test_delete_project_removes_session_from_listing(self):
+        created = self.client.post(
+            "/projects",
+            json={
+                "project_name": "Disposable Session",
+                "system_prompt": "You are a stateful interview agent.",
+            },
+        )
+        self.assertEqual(created.status_code, 200)
+        project_id = created.json()["id"]
+
+        deleted = self.client.delete(f"/projects/{project_id}")
+        self.assertEqual(deleted.status_code, 204)
+
+        fetched = self.client.get(f"/projects/{project_id}")
+        self.assertEqual(fetched.status_code, 404)
+
+        listed = self.client.get("/projects")
+        self.assertEqual(listed.status_code, 200)
+        self.assertEqual(listed.json(), [])
+
 
 if __name__ == "__main__":
     unittest.main()
