@@ -2,6 +2,7 @@ import { startTransition, useEffect, useEffectEvent, useState } from 'react'
 
 import {
   createProject,
+  deleteProject,
   getProject,
   getProjectStatus,
   getProjectTranscript,
@@ -29,6 +30,16 @@ type ProjectDetails = {
   transcript: TranscriptResponse
 }
 
+export type BusyAction =
+  | 'initializing'
+  | 'selecting'
+  | 'creating'
+  | 'starting'
+  | 'submitting'
+  | 'updating'
+  | 'deleting'
+  | null
+
 async function loadProjectDetails(projectId: number): Promise<ProjectDetails> {
   const [project, turns, status, transcript] = await Promise.all([
     getProject(projectId),
@@ -50,9 +61,7 @@ export function useProject() {
   const [status, setStatus] = useState<ProjectStatusResponse | null>(null)
   const [transcript, setTranscript] = useState<TranscriptResponse | null>(null)
   const [loading, setLoading] = useState(false)
-  const [busyAction, setBusyAction] = useState<
-    'initializing' | 'selecting' | 'creating' | 'starting' | 'submitting' | 'updating' | null
-  >(null)
+  const [busyAction, setBusyAction] = useState<BusyAction>(null)
   const [error, setError] = useState('')
   const [lastMessage, setLastMessage] = useState('')
 
@@ -222,6 +231,50 @@ export function useProject() {
     }
   }
 
+  async function handleDeleteProject(projectId: number) {
+    const deletingSelectedProject = project?.id === projectId
+
+    setBusyAction('deleting')
+    setLoading(true)
+    setError('')
+
+    try {
+      await deleteProject(projectId)
+
+      if (deletingSelectedProject) {
+        localStorage.removeItem(SELECTED_PROJECT_STORAGE_KEY)
+      }
+
+      const remainingProjects = await listProjects()
+      startTransition(() => {
+        setProjects(remainingProjects)
+        setLastMessage('Project deleted.')
+      })
+
+      if (!deletingSelectedProject) {
+        return
+      }
+
+      const nextProjectId = remainingProjects[0]?.id
+      if (nextProjectId) {
+        await selectProject(nextProjectId)
+        return
+      }
+
+      startTransition(() => {
+        setProject(null)
+        setTurns([])
+        setStatus(null)
+        setTranscript(null)
+      })
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Unable to delete the project.')
+    } finally {
+      setBusyAction(null)
+      setLoading(false)
+    }
+  }
+
   const initializeProjects = useEffectEvent(() => {
     setBusyAction('initializing')
     void refreshProjects()
@@ -263,6 +316,7 @@ export function useProject() {
     selectProject,
     startProject: handleStart,
     submitNext: handleNext,
+    deleteProject: handleDeleteProject,
     updateProject: handleUpdateProject,
   }
 }

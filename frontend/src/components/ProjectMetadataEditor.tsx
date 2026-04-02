@@ -1,5 +1,8 @@
 import { useEffect, useState } from 'react'
 
+import { ActionButton } from './ActionButton'
+import { CheckIcon, PencilIcon } from './Icons'
+
 type ProjectMetadataEditorProps = {
   disabled?: boolean
   initialTitle: string
@@ -31,14 +34,15 @@ export function ProjectMetadataEditor({
 
   if (!editing) {
     return (
-      <button
-        type="button"
-        className="rounded-full border border-slate-300 px-3 py-2 text-xs font-medium text-slate-700 transition hover:border-slate-400 hover:bg-slate-50 disabled:cursor-not-allowed disabled:text-slate-400"
-        onClick={() => setEditing(true)}
+      <ActionButton
+        aria-label="Edit project title"
         disabled={disabled}
-      >
-        Edit Title
-      </button>
+        icon={<PencilIcon />}
+        label="Rename"
+        onClick={() => setEditing(true)}
+        title="Edit project title"
+        type="button"
+      />
     )
   }
 
@@ -50,25 +54,23 @@ export function ProjectMetadataEditor({
         onChange={(event) => setDraftTitle(event.target.value)}
         disabled={disabled}
       />
-      <button
-        type="button"
-        className="rounded-full bg-slate-950 px-3 py-2 text-xs font-medium text-white transition hover:bg-slate-800 disabled:cursor-not-allowed disabled:bg-slate-400"
-        onClick={() => void handleSave()}
+      <ActionButton
         disabled={disabled || !draftTitle.trim()}
-      >
-        Save
-      </button>
-      <button
+        icon={<CheckIcon />}
+        label="Save"
+        onClick={() => void handleSave()}
         type="button"
-        className="rounded-full border border-slate-300 px-3 py-2 text-xs font-medium text-slate-700 transition hover:border-slate-400 hover:bg-slate-50 disabled:cursor-not-allowed disabled:text-slate-400"
+        variant="primary"
+      />
+      <ActionButton
         onClick={() => {
           setEditing(false)
           setDraftTitle(initialTitle)
         }}
         disabled={disabled}
-      >
-        Cancel
-      </button>
+        label="Cancel"
+        type="button"
+      />
     </div>
   )
 }

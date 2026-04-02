@@ -1,8 +1,14 @@
+import { useState } from 'react'
+
 import type { TurnRead } from '../types/api'
 import { formatTimestamp } from '../utils/format'
 import { normalizeAnswerText, normalizeQuestionText } from '../utils/text'
 import { summarizeOperationUsage } from '../utils/tokens'
+import { ActionButton } from './ActionButton'
+import { CheckIcon, ChevronDownIcon, ClockIcon, CopyIcon } from './Icons'
 import { TokenUsagePanel } from './TokenUsagePanel'
+
+const ANSWER_COLLAPSE_THRESHOLD = 680
 
 type TurnCardProps = {
   copyLabel?: string | null
@@ -21,6 +27,10 @@ export function TurnCard({
   const normalizedAnswer = normalizeAnswerText(turn.answer_text)
   const waitingForAnswer = !turn.answer_text
   const usageByOperation = summarizeOperationUsage(turn)
+  const shouldCollapseAnswer =
+    !waitingForAnswer && normalizedAnswer.length > ANSWER_COLLAPSE_THRESHOLD
+  const [answerExpanded, setAnswerExpanded] = useState(false)
+  const showingCollapsedAnswer = shouldCollapseAnswer && !answerExpanded
 
   return (
     <article
@@ -47,22 +57,24 @@ export function TurnCard({
           </div>
           <div className="flex flex-wrap items-center gap-2">
             {isLatestActiveTurn ? (
-              <button
-                type="button"
-                className="rounded-full border border-slate-300 px-3 py-1.5 text-xs font-medium text-slate-700 transition hover:border-slate-400 hover:bg-white disabled:cursor-not-allowed disabled:text-slate-400"
+              <ActionButton
+                aria-label="Copy latest question"
+                icon={<CopyIcon />}
+                label={copyLabel === 'Copied' ? 'Copied' : 'Copy question'}
                 onClick={() => void onCopyLatestQuestion?.(turn.question_text_for_copy)}
-              >
-                {copyLabel === 'Copied' ? copyLabel : 'Copy latest question'}
-              </button>
+                title="Copy latest question"
+                type="button"
+              />
             ) : null}
             <span
-              className={`rounded-full px-3 py-1 text-xs font-semibold uppercase tracking-[0.16em] ${
+              className={`inline-flex items-center gap-1.5 rounded-full px-3 py-1 text-xs font-semibold uppercase tracking-[0.16em] ${
                 waitingForAnswer
                   ? 'bg-amber-100 text-amber-800'
                   : 'bg-emerald-100 text-emerald-800'
               }`}
             >
-              {waitingForAnswer ? 'Waiting for answer' : 'Answered'}
+              {waitingForAnswer ? <ClockIcon className="size-3.5" /> : <CheckIcon className="size-3.5" />}
+              {waitingForAnswer ? 'Waiting' : 'Answered'}
             </span>
           </div>
         </div>
@@ -83,21 +95,46 @@ export function TurnCard({
             Answer
           </p>
           <div
-            className={`mt-3 rounded-2xl border px-4 py-4 ${
+            className={`relative mt-3 rounded-2xl border px-4 py-4 ${
               waitingForAnswer
                 ? 'border-dashed border-amber-200 bg-amber-50/60'
                 : 'border-slate-200 bg-slate-50/70'
             }`}
           >
-            <p className="whitespace-pre-wrap break-words text-sm leading-7 text-slate-700">
-              {waitingForAnswer
-                ? 'Waiting for the latest pasted answer.'
-                : normalizedAnswer}
-            </p>
+            <div className="relative">
+              <p
+                className={`whitespace-pre-wrap break-words text-sm leading-7 text-slate-700 ${
+                  showingCollapsedAnswer ? 'max-h-44 overflow-hidden' : ''
+                }`}
+              >
+                {waitingForAnswer
+                  ? 'Waiting for the latest pasted answer.'
+                  : normalizedAnswer}
+              </p>
+              {showingCollapsedAnswer ? (
+                <div className="pointer-events-none absolute inset-x-0 bottom-0 h-16 bg-gradient-to-t from-slate-50/95 to-transparent" />
+              ) : null}
+            </div>
             {turn.answer_summary && !waitingForAnswer ? (
               <p className="mt-3 text-xs leading-6 text-slate-500">
                 Stored compact summary available for future question generation.
               </p>
+            ) : null}
+            {shouldCollapseAnswer ? (
+              <div className="mt-4">
+                <ActionButton
+                  aria-label={answerExpanded ? 'Collapse answer text' : 'Expand answer text'}
+                  icon={
+                    <ChevronDownIcon
+                      className={`size-4 transition ${answerExpanded ? 'rotate-180' : ''}`}
+                    />
+                  }
+                  label={answerExpanded ? 'Show less' : 'Show more'}
+                  onClick={() => setAnswerExpanded((current) => !current)}
+                  title={answerExpanded ? 'Collapse answer' : 'Expand answer'}
+                  type="button"
+                />
+              </div>
             ) : null}
           </div>
         </div>

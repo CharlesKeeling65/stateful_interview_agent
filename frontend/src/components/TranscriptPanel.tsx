@@ -1,12 +1,16 @@
-import { useDeferredValue } from 'react'
+import { useDeferredValue, useMemo, useState } from 'react'
 
 import type { ProjectRead, TurnRead } from '../types/api'
+import { ActionButton } from './ActionButton'
+import { CopyIcon, TrashIcon } from './Icons'
 import { ProjectMetadataEditor } from './ProjectMetadataEditor'
+import { TranscriptPagination } from './TranscriptPagination'
 import { TurnCard } from './TurnCard'
 
 type TranscriptPanelProps = {
   copyLabel?: string | null
   onCopyLatestQuestion?: (text: string) => Promise<void> | void
+  onRequestDelete?: (project: ProjectRead) => void
   onRenameProject?: (nextTitle: string) => Promise<void> | void
   project: ProjectRead | null
   renameDisabled?: boolean
@@ -32,12 +36,24 @@ function EmptyState() {
 export function TranscriptPanel({
   copyLabel = null,
   onCopyLatestQuestion,
+  onRequestDelete,
   onRenameProject,
   project,
   renameDisabled = false,
   turns,
 }: TranscriptPanelProps) {
   const deferredTurns = useDeferredValue(turns)
+  const [pageSize, setPageSize] = useState(5)
+  const [manualPage, setManualPage] = useState(1)
+  const [followLatestPage, setFollowLatestPage] = useState(true)
+
+  const totalPages = Math.max(1, Math.ceil(deferredTurns.length / pageSize))
+  const safeCurrentPage = followLatestPage ? totalPages : Math.min(manualPage, totalPages)
+  const pagedTurns = useMemo(() => {
+    const startIndex = (safeCurrentPage - 1) * pageSize
+    return deferredTurns.slice(startIndex, startIndex + pageSize)
+  }, [deferredTurns, pageSize, safeCurrentPage])
+  const latestTurnId = deferredTurns[deferredTurns.length - 1]?.id
 
   if (!project) {
     return <EmptyState />
@@ -63,30 +79,69 @@ export function TranscriptPanel({
               <p className="text-xs uppercase tracking-[0.18em] text-slate-500">Current Stage</p>
               <p className="mt-1 text-sm font-semibold text-slate-950">{project.current_stage}</p>
             </div>
-            {onRenameProject ? (
-              <ProjectMetadataEditor
-                disabled={renameDisabled}
-                initialTitle={project.project_name}
-                onSave={onRenameProject}
-              />
-            ) : null}
+            <div className="flex flex-wrap justify-end gap-2">
+              {onCopyLatestQuestion && deferredTurns.length > 0 ? (
+                <ActionButton
+                  aria-label="Copy latest question"
+                  icon={<CopyIcon />}
+                  label={copyLabel === 'Copied' ? 'Copied' : 'Copy latest'}
+                  onClick={() => void onCopyLatestQuestion(deferredTurns[deferredTurns.length - 1].question_text_for_copy)}
+                  title="Copy latest question"
+                  type="button"
+                />
+              ) : null}
+              {onRenameProject ? (
+                <ProjectMetadataEditor
+                  disabled={renameDisabled}
+                  initialTitle={project.project_name}
+                  onSave={onRenameProject}
+                />
+              ) : null}
+              {onRequestDelete ? (
+                <ActionButton
+                  aria-label={`Delete ${project.project_name}`}
+                  disabled={renameDisabled}
+                  icon={<TrashIcon />}
+                  label="Delete"
+                  onClick={() => onRequestDelete(project)}
+                  title={`Delete ${project.project_name}`}
+                  type="button"
+                  variant="danger"
+                />
+              ) : null}
+            </div>
           </div>
         </div>
       </header>
 
       <div className="mt-4 min-h-0 flex-1 overflow-auto rounded-[2rem] border border-white/60 bg-[linear-gradient(180deg,rgba(255,255,255,0.88),rgba(248,250,252,0.92))] p-5 shadow-[0_20px_50px_rgba(148,163,184,0.16)] backdrop-blur">
         <div className="space-y-4">
-          {deferredTurns.map((turn) => (
+          <TranscriptPagination
+            currentPage={safeCurrentPage}
+            onPageChange={(nextPage) => {
+              setManualPage(nextPage)
+              setFollowLatestPage(nextPage >= totalPages)
+            }}
+            onPageSizeChange={(nextPageSize) => {
+              setPageSize(nextPageSize)
+              setFollowLatestPage(true)
+            }}
+            pageSize={pageSize}
+            totalItems={deferredTurns.length}
+            totalPages={totalPages}
+          />
+
+          {pagedTurns.map((turn) => (
             <TurnCard
               key={turn.id}
               copyLabel={copyLabel}
-              isLatestActiveTurn={!turn.answer_text && turn.id === deferredTurns[deferredTurns.length - 1]?.id}
+              isLatestActiveTurn={!turn.answer_text && turn.id === latestTurnId}
               onCopyLatestQuestion={onCopyLatestQuestion}
               turn={turn}
             />
           ))}
 
-          {deferredTurns.length === 0 ? (
+          {pagedTurns.length === 0 ? (
             <div className="rounded-[1.75rem] border border-dashed border-slate-300 px-6 py-10 text-center text-sm text-slate-500">
               Interview not started yet. Use the left panel to start the first turn.
             </div>

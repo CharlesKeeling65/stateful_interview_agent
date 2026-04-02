@@ -1,14 +1,19 @@
 import type { ProjectRead } from '../types/api'
 import { CreateProjectForm } from './CreateProjectForm'
+import { ActionButton } from './ActionButton'
+import { TrashIcon } from './Icons'
+import { ProjectStatusBadge } from './ProjectStatusBadge'
 import { formatTimestamp } from '../utils/format'
 import { formatTokenCount } from '../utils/tokens'
+import type { BusyAction } from '../hooks/useProject'
 
 type ProjectSidebarProps = {
   activeProjectId: number | null
-  busyAction?: 'initializing' | 'selecting' | 'creating' | 'starting' | 'submitting' | 'updating' | null
+  busyAction?: BusyAction
   disabled?: boolean
   onCreate: Parameters<typeof CreateProjectForm>[0]['onCreate']
   onCreateDemo: Parameters<typeof CreateProjectForm>[0]['onCreateDemo']
+  onRequestDelete: (project: ProjectRead) => void
   onSelectProject: (projectId: number) => void
   projects: ProjectRead[]
 }
@@ -19,6 +24,7 @@ export function ProjectSidebar({
   disabled = false,
   onCreate,
   onCreateDemo,
+  onRequestDelete,
   onSelectProject,
   projects,
 }: ProjectSidebarProps) {
@@ -69,41 +75,60 @@ export function ProjectSidebar({
             const isActive = item.id === activeProjectId
 
             return (
-              <button
+              <div
                 key={item.id}
-                type="button"
                 className={`w-full rounded-2xl border px-4 py-3 text-left transition ${
                   isActive
                     ? 'border-amber-400 bg-amber-50 shadow-[0_12px_30px_rgba(251,191,36,0.18)]'
                     : 'border-slate-200 bg-white hover:border-slate-300 hover:bg-slate-50'
                 }`}
-                onClick={() => onSelectProject(item.id)}
-                disabled={disabled}
-                aria-pressed={isActive}
               >
                 <div className="flex items-start justify-between gap-3">
-                  <div className="min-w-0">
-                    <p className="truncate text-sm font-semibold text-slate-950">{item.project_name}</p>
-                    <p className="mt-1 text-xs uppercase tracking-[0.18em] text-slate-500">
-                      {item.current_stage}
-                    </p>
-                  </div>
-                  <span className="shrink-0 rounded-full bg-slate-100 px-2 py-1 text-[0.68rem] font-medium text-slate-600">
-                    #{item.id}
-                  </span>
+                  <button
+                    type="button"
+                    className="min-w-0 flex-1 text-left"
+                    onClick={() => onSelectProject(item.id)}
+                    disabled={disabled}
+                    aria-pressed={isActive}
+                  >
+                    <div className="flex items-start justify-between gap-3">
+                      <div className="min-w-0">
+                        <p className="truncate text-sm font-semibold text-slate-950">{item.project_name}</p>
+                        <p className="mt-1 text-xs uppercase tracking-[0.18em] text-slate-500">
+                          {item.current_stage}
+                        </p>
+                      </div>
+                      <span className="shrink-0 rounded-full bg-slate-100 px-2 py-1 text-[0.68rem] font-medium text-slate-600">
+                        #{item.id}
+                      </span>
+                    </div>
+
+                    <div className="mt-3 flex flex-wrap items-center justify-between gap-2">
+                      <ProjectStatusBadge project={item} />
+                      <span className="text-xs text-slate-500">{item.turn_count} turns</span>
+                    </div>
+
+                    <div className="mt-2 flex items-center justify-between text-[11px] text-slate-400">
+                      <span>Created {formatTimestamp(item.created_at)}</span>
+                      <span>Updated {formatTimestamp(item.updated_at)}</span>
+                    </div>
+                    <div className="mt-2 text-[11px] text-slate-400">
+                      Total tokens {formatTokenCount(item.total_tokens)}
+                    </div>
+                  </button>
+
+                  <ActionButton
+                    aria-label={`Delete ${item.project_name}`}
+                    className="shrink-0"
+                    disabled={disabled}
+                    icon={<TrashIcon />}
+                    onClick={() => onRequestDelete(item)}
+                    title={`Delete ${item.project_name}`}
+                    type="button"
+                    variant="ghost"
+                  />
                 </div>
-                <div className="mt-3 flex items-center justify-between text-xs text-slate-500">
-                  <span>{item.status.replace(/^./, (char) => char.toUpperCase())}</span>
-                  <span>{item.turn_count} turns</span>
-                </div>
-                <div className="mt-2 flex items-center justify-between text-[11px] text-slate-400">
-                  <span>Created {formatTimestamp(item.created_at)}</span>
-                  <span>Updated {formatTimestamp(item.updated_at)}</span>
-                </div>
-                <div className="mt-2 text-[11px] text-slate-400">
-                  Total tokens {formatTokenCount(item.total_tokens)}
-                </div>
-              </button>
+              </div>
             )
           })}
         </div>

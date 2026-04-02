@@ -17,6 +17,10 @@ async function handle<T>(res: Response): Promise<T> {
     throw new Error(data?.detail ?? `Request failed with status ${res.status}`)
   }
 
+  if (res.status === 204 || res.status === 205) {
+    return undefined as T
+  }
+
   return (await res.json()) as T
 }
 
@@ -72,5 +76,11 @@ export async function updateProject(projectId: number, payload: UpdateProjectPay
     method: 'PATCH',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify(payload),
+  })
+}
+
+export async function deleteProject(projectId: number) {
+  await request<void>(`/projects/${projectId}`, {
+    method: 'DELETE',
   })
 }

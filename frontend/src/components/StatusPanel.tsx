@@ -1,10 +1,12 @@
 import type { ProjectRead, ProjectStatusResponse, TranscriptResponse } from '../types/api'
 import {
   formatBooleanLabel,
-  getRuntimeStatusLabel,
   hasInterviewStarted,
   isProjectFinished,
 } from '../utils/status'
+import { ActionButton } from './ActionButton'
+import { CopyIcon, DownloadIcon, PlayIcon } from './Icons'
+import { ProjectStatusBadge } from './ProjectStatusBadge'
 import { TokenUsagePanel } from './TokenUsagePanel'
 
 type StatusPanelProps = {
@@ -58,20 +60,27 @@ export function StatusPanel({
             </p>
             <h2 className="mt-3 font-serif text-2xl text-slate-950">Runtime snapshot</h2>
           </div>
-          <button
-            type="button"
-            className="rounded-full bg-slate-950 px-4 py-2 text-sm font-medium text-white transition hover:bg-slate-800 disabled:cursor-not-allowed disabled:bg-slate-400"
-            onClick={() => void onStart()}
+          <ActionButton
             disabled={!project || started || projectFinished || working}
-          >
-            {workingLabel === 'Starting interview...' ? workingLabel : 'Start Interview'}
-          </button>
+            icon={<PlayIcon />}
+            label={workingLabel === 'Starting...' ? 'Starting...' : 'Start'}
+            onClick={() => void onStart()}
+            type="button"
+            variant="primary"
+          />
         </div>
 
         {project ? (
           <div className="mt-5 grid gap-3 sm:grid-cols-2 xl:grid-cols-1">
             <StatusItem label="Project ID" value={`#${project.id}`} />
-            <StatusItem label="Status" value={getRuntimeStatusLabel(project, status)} />
+            <div className="rounded-2xl border border-slate-200 bg-white px-4 py-3">
+              <p className="text-[0.64rem] font-semibold uppercase tracking-[0.22em] text-slate-500">
+                Status
+              </p>
+              <div className="mt-2">
+                <ProjectStatusBadge project={project} status={status} />
+              </div>
+            </div>
             <StatusItem label="Current Stage" value={status?.current_stage ?? project.current_stage} />
             <StatusItem label="Turns" value={String(status?.turn_count ?? project.turn_count)} />
             <StatusItem
@@ -121,42 +130,43 @@ export function StatusPanel({
             <p className="text-[0.68rem] font-semibold uppercase tracking-[0.28em] text-slate-500">
               Transcript Export
             </p>
-            <h2 className="mt-3 font-serif text-2xl text-slate-950">Raw transcript</h2>
+            <h2 className="mt-3 font-serif text-2xl text-slate-950">Export actions</h2>
           </div>
-          <button
-            type="button"
-            className="rounded-full border border-slate-300 px-4 py-2 text-sm font-medium text-slate-700 transition hover:border-slate-400 hover:bg-slate-50 disabled:cursor-not-allowed disabled:text-slate-400"
-            onClick={() => void onCopyTranscript()}
-            disabled={!transcript?.transcript}
-          >
-            {exportLabel === 'Copying...' || exportLabel === 'Copied' ? exportLabel : 'Copy'}
-          </button>
         </div>
 
-        <div className="mt-4 flex flex-wrap gap-2">
-          <button
-            type="button"
-            className="rounded-full border border-slate-300 px-3 py-2 text-xs font-medium text-slate-700 transition hover:border-slate-400 hover:bg-slate-50 disabled:cursor-not-allowed disabled:text-slate-400"
-            onClick={onExportText}
-            disabled={!transcript?.transcript}
-          >
-            {exportLabel === 'Exporting .txt...' ? exportLabel : 'Export .txt'}
-          </button>
-          <button
-            type="button"
-            className="rounded-full border border-slate-300 px-3 py-2 text-xs font-medium text-slate-700 transition hover:border-slate-400 hover:bg-slate-50 disabled:cursor-not-allowed disabled:text-slate-400"
-            onClick={onExportMarkdown}
-            disabled={!transcript?.transcript}
-          >
-            {exportLabel === 'Exporting .md...' ? exportLabel : 'Export .md'}
-          </button>
-        </div>
+        <div className="mt-5 rounded-[1.75rem] border border-slate-200 bg-slate-50/80 p-4">
+          <p className="text-sm leading-7 text-slate-600">
+            Copy the full transcript or export it as a plain text or Markdown file. The transcript body stays hidden here to keep the runtime panel compact.
+          </p>
 
-        <pre className="mt-5 min-h-0 flex-1 overflow-auto rounded-[1.75rem] border border-slate-800 bg-[linear-gradient(180deg,#0f172a,#111827)] px-5 py-5 text-xs leading-7 text-slate-200 shadow-inner">
-          {transcript?.transcript || 'No transcript yet.'}
-        </pre>
+          <div className="mt-4 flex flex-wrap gap-2">
+            <ActionButton
+              disabled={!transcript?.transcript}
+              icon={<CopyIcon />}
+              label={exportLabel === 'Copying...' || exportLabel === 'Copied' ? exportLabel : 'Copy'}
+              onClick={() => void onCopyTranscript()}
+              type="button"
+            />
+            <ActionButton
+              disabled={!transcript?.transcript}
+              icon={<DownloadIcon />}
+              label={exportLabel === 'Exporting .txt...' ? '.txt...' : '.txt'}
+              onClick={onExportText}
+              type="button"
+            />
+            <ActionButton
+              disabled={!transcript?.transcript}
+              icon={<DownloadIcon />}
+              label={exportLabel === 'Exporting .md...' ? '.md...' : '.md'}
+              onClick={onExportMarkdown}
+              type="button"
+            />
+          </div>
+        </div>
         <p className="mt-3 text-xs leading-6 text-slate-500">
-          Export preview only. Backend data remains unchanged.
+          {transcript?.transcript
+            ? 'Exports are generated client-side from the latest backend transcript.'
+            : 'Transcript actions unlock after the interview has generated at least one turn.'}
         </p>
       </section>
     </aside>

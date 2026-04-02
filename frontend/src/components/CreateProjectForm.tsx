@@ -82,7 +82,7 @@ export function CreateProjectForm({
           onClick={() => void onCreateDemo()}
           disabled={disabled}
         >
-          {workingLabel === 'Creating project...' ? 'Please wait...' : 'Quick Demo'}
+          {workingLabel ? 'Please wait...' : 'Quick Demo'}
         </button>
       </div>
     </form>
