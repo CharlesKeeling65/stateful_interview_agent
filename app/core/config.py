@@ -4,6 +4,12 @@ from pydantic_settings import BaseSettings, SettingsConfigDict
 class Settings(BaseSettings):
     app_name: str = "Stateful Interview Agent"
     app_env: str = "dev"
+    log_level: str = "INFO"
+    log_dir: str = "./logs"
+    log_llm_payloads: bool = True
+    log_artifacts_enabled: bool = False
+    log_pretty_json: bool = False
+    log_text_preview_chars: int = 240
 
     openai_api_key: str
     openai_base_url: str = "https://api.scnet.cn/api/llm/v1"
