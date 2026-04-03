@@ -42,6 +42,7 @@ class ProjectNextResponse(BaseModel):
     project: ProjectRead
     previous_turn: TurnRead
     next_turn: TurnRead | None
+    run_id: int | None = None
     interview_finished: bool
     minimum_goal_reached: bool
     usage_summary: TokenUsageSummary
@@ -60,6 +61,9 @@ class ProjectStatusResponse(BaseModel):
     latest_turn_answered: bool | None
     latest_question_text: str | None
     latest_question_text_for_copy: str | None
+    cumulative_generation_time_ms: int = 0
+    run_count: int = 0
+    average_run_duration_ms: int = 0
     usage_summary: TokenUsageSummary
 
 

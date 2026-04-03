@@ -5,6 +5,7 @@ from app.core.llm_client import get_openai_client
 from app.logging import emit_event, preview_payload
 from app.prompts import get_prompt_manager
 from app.services.question_postprocessor import clean_generated_question
+from app.services.run_trace_service import traced_run_step
 from app.services.stage_manager import (
     ARCHITECTURE_STAGE,
     CODE_DETAIL_STAGE,
@@ -131,6 +132,8 @@ def generate_next_question_from_history(
     next_turn_no: int,
     current_stage: str,
     planner_decision: dict | None = None,
+    project_id: int | None = None,
+    run_id: int | None = None,
 ) -> dict:
     client = get_openai_client()
 
@@ -144,23 +147,33 @@ def generate_next_question_from_history(
     )
     planner = planner_decision or default_planner_decision(current_stage)
     prompt_id = get_prompt_id_for_plan(current_stage, planner)
-    prompt = get_prompt_manager().render(
-        prompt_id,
-        {
-            "system_prompt": system_prompt,
-            "current_stage": current_stage,
-            "stage_objective": stage_instruction,
-            "next_turn_no": next_turn_no,
-            "recent_context": recent_context,
-            "retrieved_context": retrieved_context,
-            "coverage_priorities": coverage_priorities,
-            "question_intent": planner["question_intent"],
-            "target_type": planner["target_type"],
-            "target_label": planner["target_label"],
-            "planner_reasoning": planner["reasoning"],
-            "style_constraints": "; ".join(planner["constraints"]) + f"; Closing guidance: {closing_instruction}",
-        },
-    )
+    with traced_run_step(
+        run_id=run_id,
+        project_id=project_id or 0,
+        turn_no=next_turn_no,
+        step_key="render_prompt",
+        description=f"Render prompt asset {prompt_id} for the next question.",
+        next_step_hint="Call model",
+    ) as render_step:
+        prompt = get_prompt_manager().render(
+            prompt_id,
+            {
+                "system_prompt": system_prompt,
+                "current_stage": current_stage,
+                "stage_objective": stage_instruction,
+                "next_turn_no": next_turn_no,
+                "recent_context": recent_context,
+                "retrieved_context": retrieved_context,
+                "coverage_priorities": coverage_priorities,
+                "question_intent": planner["question_intent"],
+                "target_type": planner["target_type"],
+                "target_label": planner["target_label"],
+                "planner_reasoning": planner["reasoning"],
+                "style_constraints": "; ".join(planner["constraints"]) + f"; Closing guidance: {closing_instruction}",
+            },
+        )
+        if render_step:
+            render_step.set_meta(prompt_id=prompt.prompt_id, prompt_version=prompt.version)
     prompt_text = "\n\n".join(message["content"] for message in prompt.messages)
     start_time = time.perf_counter()
     emit_event(
@@ -184,12 +197,33 @@ def generate_next_question_from_history(
     )
 
     try:
-        response = client.chat.completions.create(
-            model=settings.openai_model,
-            messages=prompt.messages,
-            temperature=0.4,
-            stream=False,
-        )
+        with traced_run_step(
+            run_id=run_id,
+            project_id=project_id or 0,
+            turn_no=next_turn_no,
+            step_key="call_llm",
+            description=f"Call {settings.openai_model} to draft the next question.",
+            next_step_hint="Validate question",
+        ) as llm_step:
+            response = client.chat.completions.create(
+                model=settings.openai_model,
+                messages=prompt.messages,
+                temperature=0.4,
+                stream=False,
+            )
+            if llm_step:
+                llm_step.set_meta(model=settings.openai_model, prompt_id=prompt.prompt_id)
+            content = response.choices[0].message.content
+            if not content:
+                raise ValueError("Model returned empty content.")
+            cleaned = clean_generated_question(content, next_turn_no)
+            usage_metrics = extract_usage_metrics(
+                response,
+                prompt_text=prompt_text,
+                completion_text=cleaned,
+            )
+            if llm_step:
+                llm_step.set_usage(usage_metrics)
     except Exception as exc:
         emit_event(
             "llm",
@@ -205,28 +239,6 @@ def generate_next_question_from_history(
         )
         raise
 
-    content = response.choices[0].message.content
-    if not content:
-        error = ValueError("Model returned empty content.")
-        emit_event(
-            "llm",
-            "llm.call.error",
-            "Next-question LLM call returned empty content",
-            level=40,
-            operation="question_generation",
-            stage=current_stage,
-            turn_no=next_turn_no,
-            status="error",
-            duration_ms=round((time.perf_counter() - start_time) * 1000, 2),
-            exc_info=error,
-        )
-        raise error
-    cleaned = clean_generated_question(content, next_turn_no)
-    usage_metrics = extract_usage_metrics(
-        response,
-        prompt_text=prompt_text,
-        completion_text=cleaned,
-    )
     emit_event(
         "llm",
         "llm.call.complete",

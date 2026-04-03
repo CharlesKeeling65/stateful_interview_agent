@@ -2,6 +2,7 @@ from typing import TypedDict
 
 
 class InterviewGraphState(TypedDict, total=False):
+    run_id: int
     project_id: int
     answer_text: str
 

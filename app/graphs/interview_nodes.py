@@ -11,6 +11,7 @@ from app.services.question_planner import plan_next_question
 from app.services.question_generator import generate_next_question_from_history
 from app.services.question_validator import validate_question_for_stage
 from app.services.repetition_guard import is_question_too_similar
+from app.services.run_trace_service import traced_run_step
 from app.services.summarization_service import ensure_turn_summaries
 from app.services.stage_manager import decide_next_stage
 from app.services.transcript_service import build_compact_interview_context
@@ -19,61 +20,67 @@ from app.services.usage_service import create_usage_record
 
 def load_project_context(state, db: Session):
     bind_log_context(project_id=state.get("project_id"))
-    project = (
-        db.query(ProjectSession)
-        .filter(ProjectSession.id == state["project_id"])
-        .first()
-    )
-    if not project:
-        raise ValueError("Project not found")
+    with traced_run_step(
+        run_id=state.get("run_id"),
+        project_id=state["project_id"],
+        turn_no=None,
+        step_key="load_project_context",
+        description="Load the active project, latest turn, and compact history baseline.",
+        next_step_hint="Refresh summaries",
+    ):
+        project = (
+            db.query(ProjectSession)
+            .filter(ProjectSession.id == state["project_id"])
+            .first()
+        )
+        if not project:
+            raise ValueError("Project not found")
 
-    latest_turn = (
-        db.query(InterviewTurn)
-        .filter(InterviewTurn.project_id == state["project_id"])
-        .order_by(InterviewTurn.turn_no.desc())
-        .first()
-    )
-    if not latest_turn:
-        raise ValueError("Project interview has not started")
+        latest_turn = (
+            db.query(InterviewTurn)
+            .filter(InterviewTurn.project_id == state["project_id"])
+            .order_by(InterviewTurn.turn_no.desc())
+            .first()
+        )
+        if not latest_turn:
+            raise ValueError("Project interview has not started")
 
-    if project.status == "finished":
-        raise ValueError("Project interview is already finished")
+        if project.status == "finished":
+            raise ValueError("Project interview is already finished")
 
-    if latest_turn.answer_text is not None:
-        raise ValueError("Latest turn already has an answer")
+        if latest_turn.answer_text is not None:
+            raise ValueError("Latest turn already has an answer")
 
-    turns = (
-        db.query(InterviewTurn)
-        .filter(InterviewTurn.project_id == state["project_id"])
-        .order_by(InterviewTurn.turn_no.asc())
-        .all()
-    )
+        turns = (
+            db.query(InterviewTurn)
+            .filter(InterviewTurn.project_id == state["project_id"])
+            .order_by(InterviewTurn.turn_no.asc())
+            .all()
+        )
 
-    return {
-        "project_status": project.status,
-        "current_turn_no": latest_turn.turn_no,
-        "current_stage": latest_turn.stage,
-        "history_text": build_compact_interview_context(turns),
-        "coverage_state": project.coverage_state_data,
-        "minimum_goal_reached": is_minimum_goal_reached(project.turn_count),
-        "pending_turn_id": latest_turn.id,
-        # Clear request-scoped graph fields so a durable thread does not
-        # accidentally reuse transient data from a prior /next invocation.
-        "next_turn_no": None,
-        "next_stage": None,
-        "generated_question": None,
-        "retrieved_context": None,
-        "coverage_priorities": None,
-        "selected_turn_ids": [],
-        "selected_branch_ids": [],
-        "stage_decision": {},
-        "planner_decision": {},
-        "validation_result": {},
-        "prompt_metadata": {},
-        "question_usage_metrics": [],
-        "message": None,
-        "interview_finished": None,
-    }
+        return {
+            "project_status": project.status,
+            "current_turn_no": latest_turn.turn_no,
+            "current_stage": latest_turn.stage,
+            "history_text": build_compact_interview_context(turns),
+            "coverage_state": project.coverage_state_data,
+            "minimum_goal_reached": is_minimum_goal_reached(project.turn_count),
+            "pending_turn_id": latest_turn.id,
+            "next_turn_no": None,
+            "next_stage": None,
+            "generated_question": None,
+            "retrieved_context": None,
+            "coverage_priorities": None,
+            "selected_turn_ids": [],
+            "selected_branch_ids": [],
+            "stage_decision": {},
+            "planner_decision": {},
+            "validation_result": {},
+            "prompt_metadata": {},
+            "question_usage_metrics": [],
+            "message": None,
+            "interview_finished": None,
+        }
 
 
 def decide_progress(state):
@@ -119,12 +126,22 @@ def draft_next_question(state, db: Session):
     )
 
     answered_turns = [turn for turn in turns if turn.answer_text]
-    summarized_count = ensure_turn_summaries(
-        db=db,
+    with traced_run_step(
+        run_id=state.get("run_id"),
         project_id=project.id,
-        system_prompt=project.system_prompt,
-        turns_to_summarize=answered_turns,
-    )
+        turn_no=state["next_turn_no"],
+        step_key="refresh_summaries",
+        description="Ensure older answered turns have compact summaries available.",
+        next_step_hint="Refresh coverage",
+    ) as summary_step:
+        summarized_count = ensure_turn_summaries(
+            db=db,
+            project_id=project.id,
+            system_prompt=project.system_prompt,
+            turns_to_summarize=answered_turns,
+        )
+        if summary_step:
+            summary_step.set_meta(summarized_count=summarized_count)
     if summarized_count:
         db.commit()
         turns = (
@@ -134,10 +151,18 @@ def draft_next_question(state, db: Session):
             .all()
         )
 
-    history_text = build_compact_interview_context(
-        turns,
-        latest_answer_override=state["answer_text"],
-    )
+    with traced_run_step(
+        run_id=state.get("run_id"),
+        project_id=project.id,
+        turn_no=state["next_turn_no"],
+        step_key="build_compact_context",
+        description="Build compact recent-history context for the next question.",
+        next_step_hint="Refresh coverage",
+    ):
+        history_text = build_compact_interview_context(
+            turns,
+            latest_answer_override=state["answer_text"],
+        )
     emit_event(
         "workflow",
         "context.compaction.complete",
@@ -155,7 +180,17 @@ def draft_next_question(state, db: Session):
     pending_turn = turns[-1]
     original_answer_text = pending_turn.answer_text
     pending_turn.answer_text = state["answer_text"]
-    coverage_state = rebuild_coverage_state(turns)
+    with traced_run_step(
+        run_id=state.get("run_id"),
+        project_id=project.id,
+        turn_no=state["next_turn_no"],
+        step_key="refresh_coverage",
+        description="Refresh framework coverage and branch state from answered turns.",
+        next_step_hint="Retrieve relevant context",
+    ) as coverage_step:
+        coverage_state = rebuild_coverage_state(turns)
+        if coverage_step:
+            coverage_step.set_meta(branch_count=coverage_state.get("branch_count", 0))
     pending_turn.answer_text = original_answer_text
     emit_event(
         "workflow",
@@ -171,14 +206,27 @@ def draft_next_question(state, db: Session):
         },
     )
 
-    context_payload = build_generation_context(
-        turns=turns,
-        current_stage=state["next_stage"],
-        next_turn_no=state["next_turn_no"],
-        coverage_state=coverage_state,
+    with traced_run_step(
+        run_id=state.get("run_id"),
         project_id=project.id,
-        latest_answer_override=state["answer_text"],
-    )
+        turn_no=state["next_turn_no"],
+        step_key="retrieve_relevant_branches",
+        description="Select the highest-value branch evidence and compact retrieval context.",
+        next_step_hint="Render prompt",
+    ) as retrieval_step:
+        context_payload = build_generation_context(
+            turns=turns,
+            current_stage=state["next_stage"],
+            next_turn_no=state["next_turn_no"],
+            coverage_state=coverage_state,
+            project_id=project.id,
+            latest_answer_override=state["answer_text"],
+        )
+        if retrieval_step:
+            retrieval_step.set_meta(
+                selected_branch_ids=context_payload["selected_branch_ids"],
+                selected_turn_ids=context_payload["selected_turn_ids"],
+            )
     planner_decision = plan_next_question(
         turns=turns,
         current_stage=state["next_stage"],
@@ -204,6 +252,8 @@ def draft_next_question(state, db: Session):
         next_turn_no=state["next_turn_no"],
         current_stage=state["next_stage"],
         planner_decision=planner_decision,
+        project_id=project.id,
+        run_id=state.get("run_id"),
     )
     next_question = next_question_result["question_text"]
     question_usage_metrics = [next_question_result["usage_metrics"]]
@@ -225,15 +275,27 @@ def draft_next_question(state, db: Session):
             next_turn_no=state["next_turn_no"],
             current_stage=state["next_stage"],
             planner_decision=planner_decision,
+            project_id=project.id,
+            run_id=state.get("run_id"),
         )
         next_question = retried_question_result["question_text"]
         question_usage_metrics.append(retried_question_result["usage_metrics"])
 
-    validation = validate_question_for_stage(
-        text=next_question,
-        expected_turn_no=state["next_turn_no"],
-        current_stage=state["next_stage"],
-    )
+    with traced_run_step(
+        run_id=state.get("run_id"),
+        project_id=project.id,
+        turn_no=state["next_turn_no"],
+        step_key="validate_question",
+        description="Validate the generated question against stage-specific rules.",
+        next_step_hint="Persist result",
+    ) as validation_step:
+        validation = validate_question_for_stage(
+            text=next_question,
+            expected_turn_no=state["next_turn_no"],
+            current_stage=state["next_stage"],
+        )
+        if validation_step:
+            validation_step.set_meta(reasons=validation["reasons"])
 
     if not validation["is_valid"]:
         retry_prompt = (
@@ -260,6 +322,8 @@ def draft_next_question(state, db: Session):
             next_turn_no=state["next_turn_no"],
             current_stage=state["next_stage"],
             planner_decision=planner_decision,
+            project_id=project.id,
+            run_id=state.get("run_id"),
         )
         next_question = retried_question_result["question_text"]
         question_usage_metrics.append(retried_question_result["usage_metrics"])
@@ -293,115 +357,123 @@ def draft_next_question(state, db: Session):
 
 def persist_next_step(state, db: Session):
     bind_log_context(project_id=state.get("project_id"))
-    project = (
-        db.query(ProjectSession)
-        .filter(ProjectSession.id == state["project_id"])
-        .first()
-    )
-
-    pending_turn = (
-        db.query(InterviewTurn)
-        .filter(
-            InterviewTurn.project_id == state["project_id"],
-            InterviewTurn.id == state["pending_turn_id"],
+    with traced_run_step(
+        run_id=state.get("run_id"),
+        project_id=state["project_id"],
+        turn_no=state.get("next_turn_no"),
+        step_key="persist_result",
+        description="Persist the answered turn, generated question, and refreshed project state.",
+        next_step_hint=None,
+    ):
+        project = (
+            db.query(ProjectSession)
+            .filter(ProjectSession.id == state["project_id"])
+            .first()
         )
-        .first()
-    )
-    if not pending_turn:
-        raise ValueError("Pending turn no longer exists")
-    if pending_turn.answer_text is not None:
-        raise ValueError("Pending turn was already answered by another request")
 
-    pending_turn.answer_text = state["answer_text"]
-    all_turns = (
-        db.query(InterviewTurn)
-        .filter(InterviewTurn.project_id == state["project_id"])
-        .order_by(InterviewTurn.turn_no.asc())
-        .all()
-    )
-    refreshed_coverage_state = rebuild_coverage_state(all_turns)
-    save_coverage_state(project, refreshed_coverage_state)
-    emit_event(
-        "persistence",
-        "coverage.persist.complete",
-        "Persisted refreshed coverage state",
-        operation="save_coverage_state",
-        project_id=project.id,
-        turn_no=pending_turn.turn_no,
-        stage=pending_turn.stage,
-        output={
-            "branch_count": refreshed_coverage_state.get("branch_count", 0),
-            "updated_through_turn_no": refreshed_coverage_state.get("updated_through_turn_no", 0),
-        },
-    )
+        pending_turn = (
+            db.query(InterviewTurn)
+            .filter(
+                InterviewTurn.project_id == state["project_id"],
+                InterviewTurn.id == state["pending_turn_id"],
+            )
+            .first()
+        )
+        if not pending_turn:
+            raise ValueError("Pending turn no longer exists")
+        if pending_turn.answer_text is not None:
+            raise ValueError("Pending turn was already answered by another request")
 
-    if state.get("interview_finished"):
-        project.status = "finished"
-        db.commit()
-        db.refresh(project)
-        db.refresh(pending_turn)
+        pending_turn.answer_text = state["answer_text"]
+        all_turns = (
+            db.query(InterviewTurn)
+            .filter(InterviewTurn.project_id == state["project_id"])
+            .order_by(InterviewTurn.turn_no.asc())
+            .all()
+        )
+        refreshed_coverage_state = rebuild_coverage_state(all_turns)
+        save_coverage_state(project, refreshed_coverage_state)
         emit_event(
             "persistence",
-            "workflow.persist.complete",
-            "Persisted final answered turn and finished project",
-            operation="persist_next_step",
+            "coverage.persist.complete",
+            "Persisted refreshed coverage state",
+            operation="save_coverage_state",
             project_id=project.id,
             turn_no=pending_turn.turn_no,
             stage=pending_turn.stage,
-            status="success",
+            output={
+                "branch_count": refreshed_coverage_state.get("branch_count", 0),
+                "updated_through_turn_no": refreshed_coverage_state.get("updated_through_turn_no", 0),
+            },
         )
-        return {
-            "message": "Interview finished. Maximum turn limit reached.",
-            "minimum_goal_reached": is_minimum_goal_reached(pending_turn.turn_no),
-        }
 
-    current_max_turn_no = max((turn.turn_no for turn in all_turns), default=0)
-    safe_next_turn_no = max(state["next_turn_no"], current_max_turn_no + 1)
-    next_turn = InterviewTurn(
-        project_id=project.id,
-        turn_no=safe_next_turn_no,
-        stage=state["next_stage"],
-        question_text=state["generated_question"],
-        answer_text=None,
-    )
-    db.add(next_turn)
-    db.flush()
-
-    for usage_metrics in state.get("question_usage_metrics", []):
-        db.add(
-            create_usage_record(
+        if state.get("interview_finished"):
+            project.status = "finished"
+            db.commit()
+            db.refresh(project)
+            db.refresh(pending_turn)
+            emit_event(
+                "persistence",
+                "workflow.persist.complete",
+                "Persisted final answered turn and finished project",
+                operation="persist_next_step",
                 project_id=project.id,
-                turn_id=next_turn.id,
-                operation_type="question_generation",
-                usage_metrics=usage_metrics,
+                turn_no=pending_turn.turn_no,
+                stage=pending_turn.stage,
+                status="success",
             )
+            return {
+                "message": "Interview finished. Maximum turn limit reached.",
+                "minimum_goal_reached": is_minimum_goal_reached(pending_turn.turn_no),
+            }
+
+        current_max_turn_no = max((turn.turn_no for turn in all_turns), default=0)
+        safe_next_turn_no = max(state["next_turn_no"], current_max_turn_no + 1)
+        next_turn = InterviewTurn(
+            project_id=project.id,
+            turn_no=safe_next_turn_no,
+            stage=state["next_stage"],
+            question_text=state["generated_question"],
+            answer_text=None,
+        )
+        db.add(next_turn)
+        db.flush()
+
+        for usage_metrics in state.get("question_usage_metrics", []):
+            db.add(
+                create_usage_record(
+                    project_id=project.id,
+                    turn_id=next_turn.id,
+                    operation_type="question_generation",
+                    usage_metrics=usage_metrics,
+                )
+            )
+
+        project.turn_count = next_turn.turn_no
+        project.current_stage = state["next_stage"]
+        save_coverage_state(project, refreshed_coverage_state)
+
+        db.commit()
+        db.refresh(project)
+        db.refresh(pending_turn)
+        db.refresh(next_turn)
+        emit_event(
+            "persistence",
+            "workflow.persist.complete",
+            "Persisted answered turn and next question",
+            operation="persist_next_step",
+            project_id=project.id,
+            turn_no=next_turn.turn_no,
+            stage=next_turn.stage,
+            status="success",
+            output={
+                "latest_answer_turn": pending_turn.turn_no,
+                "next_turn_id": next_turn.id,
+                "selected_branch_ids": state.get("selected_branch_ids", []),
+            },
         )
 
-    project.turn_count = next_turn.turn_no
-    project.current_stage = state["next_stage"]
-    save_coverage_state(project, refreshed_coverage_state)
-
-    db.commit()
-    db.refresh(project)
-    db.refresh(pending_turn)
-    db.refresh(next_turn)
-    emit_event(
-        "persistence",
-        "workflow.persist.complete",
-        "Persisted answered turn and next question",
-        operation="persist_next_step",
-        project_id=project.id,
-        turn_no=next_turn.turn_no,
-        stage=next_turn.stage,
-        status="success",
-        output={
-            "latest_answer_turn": pending_turn.turn_no,
-            "next_turn_id": next_turn.id,
-            "selected_branch_ids": state.get("selected_branch_ids", []),
-        },
-    )
-
-    return {
-        "message": "Answer submitted and next question generated successfully.",
-        "minimum_goal_reached": is_minimum_goal_reached(project.turn_count),
-    }
+        return {
+            "message": "Answer submitted and next question generated successfully.",
+            "minimum_goal_reached": is_minimum_goal_reached(project.turn_count),
+        }

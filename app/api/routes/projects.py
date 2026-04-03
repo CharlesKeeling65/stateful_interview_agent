@@ -5,6 +5,7 @@ from app.core.config import settings
 from app.core.database import get_db
 from app.graphs.interview_graph import interview_graph
 from app.logging import bind_log_context, emit_event, preview_payload
+from app.models.agent_run import AgentRun
 from app.models.project import ProjectSession
 from app.models.turn import InterviewTurn
 from app.schemas.project import (
@@ -16,9 +17,11 @@ from app.schemas.project import (
     ProjectUpdate,
     TranscriptResponse,
 )
+from app.schemas.run_trace import RunRead
 from app.schemas.turn import AnswerSubmitRequest, AnswerSubmitResponse, TurnRead
 from app.services.interview_lifecycle import is_minimum_goal_reached
 from app.services.question_generator import generate_first_question_result
+from app.services.run_trace_service import create_run, finalize_run, serialize_run
 from app.services.transcript_service import build_project_transcript
 from app.services.usage_service import aggregate_project_usage, create_usage_record
 
@@ -231,6 +234,17 @@ def submit_answer_and_generate_next(
     project = db.query(ProjectSession).filter(ProjectSession.id == project_id).first()
     if not project:
         raise HTTPException(status_code=404, detail="Project not found")
+    latest_turn = (
+        db.query(InterviewTurn)
+        .filter(InterviewTurn.project_id == project_id)
+        .order_by(InterviewTurn.turn_no.desc())
+        .first()
+    )
+    run = create_run(
+        project_id=project_id,
+        turn_no=(latest_turn.turn_no + 1) if latest_turn else None,
+    )
+    bind_log_context(run_id=run.id)
 
     try:
         emit_event(
@@ -243,12 +257,14 @@ def submit_answer_and_generate_next(
         )
         result = interview_graph.invoke(
             {
+                "run_id": run.id,
                 "project_id": project_id,
                 "answer_text": payload.answer_text,
             },
             config={"configurable": {"thread_id": f"project-{project_id}"}},
         )
     except ValueError as e:
+        finalize_run(run_id=run.id, status="failed")
         emit_event(
             "workflow",
             "workflow.invoke.error",
@@ -307,16 +323,66 @@ def submit_answer_and_generate_next(
             "selected_branch_ids": result.get("selected_branch_ids", []),
         },
     )
+    finalize_run(
+        run_id=run.id,
+        status="completed",
+        turn_no=(next_turn.turn_no if next_turn else previous_turn.turn_no if previous_turn else None),
+    )
 
     return {
         "project": updated_project,
         "previous_turn": previous_turn,
         "next_turn": next_turn,
+        "run_id": run.id,
         "interview_finished": result.get("interview_finished", False),
         "minimum_goal_reached": result.get("minimum_goal_reached", False),
         "usage_summary": aggregate_project_usage(updated_project.llm_usages),
         "message": result.get("message", ""),
     }
+
+
+@router.get("/{project_id}/runs", response_model=list[RunRead])
+def list_project_runs(project_id: int, db: Session = Depends(get_db)):
+    project = db.query(ProjectSession).filter(ProjectSession.id == project_id).first()
+    if not project:
+        raise HTTPException(status_code=404, detail="Project not found")
+
+    runs = (
+        db.query(AgentRun)
+        .filter(AgentRun.project_id == project_id)
+        .order_by(AgentRun.started_at.desc(), AgentRun.id.desc())
+        .all()
+    )
+    return [serialize_run(run) for run in runs]
+
+
+@router.get("/{project_id}/runs/latest", response_model=RunRead)
+def get_latest_project_run(project_id: int, db: Session = Depends(get_db)):
+    project = db.query(ProjectSession).filter(ProjectSession.id == project_id).first()
+    if not project:
+        raise HTTPException(status_code=404, detail="Project not found")
+
+    run = (
+        db.query(AgentRun)
+        .filter(AgentRun.project_id == project_id)
+        .order_by(AgentRun.started_at.desc(), AgentRun.id.desc())
+        .first()
+    )
+    if not run:
+        raise HTTPException(status_code=404, detail="Run not found")
+    return serialize_run(run)
+
+
+@router.get("/{project_id}/runs/{run_id}", response_model=RunRead)
+def get_project_run(project_id: int, run_id: int, db: Session = Depends(get_db)):
+    run = (
+        db.query(AgentRun)
+        .filter(AgentRun.project_id == project_id, AgentRun.id == run_id)
+        .first()
+    )
+    if not run:
+        raise HTTPException(status_code=404, detail="Run not found")
+    return serialize_run(run)
 
 
 @router.get("/{project_id}/turns", response_model=list[TurnRead])
@@ -385,5 +451,8 @@ def get_project_status(project_id: int, db: Session = Depends(get_db)):
         "latest_question_text_for_copy": (
             latest_turn.question_text_for_copy if latest_turn else None
         ),
+        "cumulative_generation_time_ms": project.cumulative_generation_time_ms,
+        "run_count": project.run_count,
+        "average_run_duration_ms": project.average_run_duration_ms,
         "usage_summary": aggregate_project_usage(project.llm_usages),
     }

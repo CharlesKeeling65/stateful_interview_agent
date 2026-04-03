@@ -32,6 +32,9 @@ class ProjectSession(Base):
     llm_usages = relationship(
         "LLMUsage", back_populates="project", cascade="all, delete-orphan"
     )
+    agent_runs = relationship(
+        "AgentRun", back_populates="project", cascade="all, delete-orphan"
+    )
 
     @property
     def total_prompt_tokens(self) -> int:
@@ -62,3 +65,18 @@ class ProjectSession(Base):
         parsed.setdefault("updated_through_turn_no", 0)
         parsed.setdefault("branches", [])
         return parsed
+
+    @property
+    def cumulative_generation_time_ms(self) -> int:
+        return sum(run.duration_ms or 0 for run in self.agent_runs if run.status == "completed")
+
+    @property
+    def run_count(self) -> int:
+        return sum(1 for run in self.agent_runs if run.status == "completed")
+
+    @property
+    def average_run_duration_ms(self) -> int:
+        completed_runs = [run.duration_ms or 0 for run in self.agent_runs if run.status == "completed"]
+        if not completed_runs:
+            return 0
+        return int(sum(completed_runs) / len(completed_runs))
