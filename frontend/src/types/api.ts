@@ -18,7 +18,7 @@ export type TokenUsageSummary = {
 }
 
 export type HumanReviewInput = {
-  verdict: 'sufficient' | 'insufficient' | 'drifted'
+  verdict?: 'sufficient' | 'insufficient' | 'drifted' | null
   direction: 'continue' | 'redirect'
   preferred_next_focus?: string | null
   note?: string | null

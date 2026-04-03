@@ -37,12 +37,9 @@ export function AnswerComposer({
     if (!reviewVerdict && !preferredNextFocus.trim() && !reviewNote.trim() && !phaseReady) {
       return null
     }
-    if (!reviewVerdict) {
-      return null
-    }
 
     return {
-      verdict: reviewVerdict,
+      verdict: reviewVerdict || null,
       direction: reviewDirection,
       preferred_next_focus: preferredNextFocus.trim() || null,
       note: reviewNote.trim() || null,

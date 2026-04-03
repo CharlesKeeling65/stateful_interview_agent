@@ -153,7 +153,9 @@ export const TurnCard = memo(function TurnCard({
               Human Review
             </p>
             <div className="mt-3 flex flex-wrap gap-2 text-xs font-semibold uppercase tracking-[0.16em] text-indigo-800">
-              <span className="rounded-full bg-white/80 px-3 py-1">{turn.human_review.verdict}</span>
+              {turn.human_review.verdict ? (
+                <span className="rounded-full bg-white/80 px-3 py-1">{turn.human_review.verdict}</span>
+              ) : null}
               <span className="rounded-full bg-white/80 px-3 py-1">{turn.human_review.direction}</span>
               {turn.human_review.preferred_next_focus ? (
                 <span className="rounded-full bg-white/80 px-3 py-1">
