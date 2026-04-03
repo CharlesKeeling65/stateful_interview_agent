@@ -12,7 +12,7 @@ from app.services.interview_lifecycle import can_continue_interview, is_minimum_
 from app.services.question_planner import plan_next_question
 from app.services.question_generator import generate_next_question_from_history
 from app.services.question_validator import validate_question_for_stage
-from app.services.repetition_guard import is_question_too_similar
+from app.services.repetition_guard import build_question_signature, is_question_too_similar
 from app.services.run_trace_service import traced_run_step
 from app.services.summarization_service import ensure_turn_summaries
 from app.services.stage_manager import decide_next_stage
@@ -144,16 +144,17 @@ def draft_next_question(state, db: Session):
             system_prompt=project.system_prompt,
             turns_to_summarize=answered_turns,
         )
+        if summarized_count:
+            # Release the main SQLite write lock before run-trace bookkeeping commits its own session.
+            db.commit()
+            turns = (
+                db.query(InterviewTurn)
+                .filter(InterviewTurn.project_id == state["project_id"])
+                .order_by(InterviewTurn.turn_no.asc())
+                .all()
+            )
         if summary_step:
             summary_step.set_meta(summarized_count=summarized_count)
-    if summarized_count:
-        db.commit()
-        turns = (
-            db.query(InterviewTurn)
-            .filter(InterviewTurn.project_id == state["project_id"])
-            .order_by(InterviewTurn.turn_no.asc())
-            .all()
-        )
 
     with traced_run_step(
         run_id=state.get("run_id"),
@@ -264,16 +265,41 @@ def draft_next_question(state, db: Session):
     question_usage_metrics = [next_question_result["usage_metrics"]]
 
     old_questions = [turn.question_text for turn in turns]
+    recent_question_signatures = coverage_state.get("question_history", [])[-8:]
 
     if is_question_too_similar(next_question, old_questions):
-        retry_prompt = (
-            project.system_prompt
-            + "\n\nThe next question draft was too similar to an earlier question. "
-            "Generate a more specific and substantially different follow-up question."
+        blocked_branch_ids = {
+            planner_decision.get("target_branch_id")
+        } - {None}
+        blocked_target_signatures = {
+            build_question_signature(
+                stage=state["next_stage"],
+                intent=planner_decision.get("question_intent"),
+                branch_id=planner_decision.get("target_branch_id"),
+                target_type=planner_decision.get("target_type"),
+                target_label=planner_decision.get("target_label"),
+            )
+        }
+        context_payload = build_generation_context(
+            turns=turns,
+            current_stage=state["next_stage"],
+            next_turn_no=state["next_turn_no"],
+            coverage_state=coverage_state,
+            project_id=project.id,
+            latest_answer_override=state["answer_text"],
+            excluded_branch_ids=blocked_branch_ids,
         )
-
+        planner_decision = plan_next_question(
+            turns=turns,
+            current_stage=state["next_stage"],
+            next_turn_no=state["next_turn_no"],
+            coverage_state=coverage_state,
+            human_review_signal=state.get("human_review_signal"),
+            excluded_branch_ids=blocked_branch_ids,
+            excluded_target_signatures=blocked_target_signatures,
+        )
         retried_question_result = generate_next_question_from_history(
-            system_prompt=retry_prompt,
+            system_prompt=project.system_prompt,
             recent_context=context_payload["recent_context"],
             retrieved_context=context_payload["retrieved_context"],
             coverage_priorities=context_payload["coverage_priorities"],
@@ -299,6 +325,8 @@ def draft_next_question(state, db: Session):
             expected_turn_no=state["next_turn_no"],
             current_stage=state["next_stage"],
             intent_mode=planner_decision.get("intent_mode", "understand_current_code"),
+            recent_question_signatures=recent_question_signatures,
+            branch_id=planner_decision.get("target_branch_id"),
         )
         if validation_step:
             validation_step.set_meta(reasons=validation["reasons"])
@@ -338,6 +366,8 @@ def draft_next_question(state, db: Session):
             expected_turn_no=state["next_turn_no"],
             current_stage=state["next_stage"],
             intent_mode=planner_decision.get("intent_mode", "understand_current_code"),
+            recent_question_signatures=recent_question_signatures,
+            branch_id=planner_decision.get("target_branch_id"),
         )
         if not validation["is_valid"]:
             raise ValueError(
@@ -447,6 +477,18 @@ def persist_next_step(state, db: Session):
             turn_no=safe_next_turn_no,
             stage=state["next_stage"],
             question_text=state["generated_question"],
+            question_plan_json=json.dumps(
+                {
+                    "question_intent": state.get("planner_decision", {}).get("question_intent"),
+                    "intent_mode": state.get("planner_decision", {}).get("intent_mode"),
+                    "target_branch_id": state.get("planner_decision", {}).get("target_branch_id"),
+                    "target_type": state.get("planner_decision", {}).get("target_type"),
+                    "target_label": state.get("planner_decision", {}).get("target_label"),
+                    "why_this_question": state.get("planner_decision", {}).get("why_this_question"),
+                },
+                ensure_ascii=True,
+                sort_keys=True,
+            ),
             answer_text=None,
         )
         db.add(next_turn)
@@ -464,6 +506,7 @@ def persist_next_step(state, db: Session):
 
         project.turn_count = next_turn.turn_no
         project.current_stage = state["next_stage"]
+        refreshed_coverage_state = rebuild_coverage_state([*all_turns, next_turn])
         save_coverage_state(project, refreshed_coverage_state)
 
         db.commit()

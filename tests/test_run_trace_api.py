@@ -12,6 +12,7 @@ from sqlalchemy.orm import sessionmaker
 
 from app.core.database import Base, get_db
 from app.graphs import interview_graph as graph_module
+from app.graphs import interview_nodes as interview_nodes_module
 from app.main import app
 from app.services import question_generator, summarization_service
 from app.services import run_trace_service
@@ -128,6 +129,82 @@ class RunTraceApiTests(unittest.TestCase):
         self.assertEqual(status.status_code, 200)
         self.assertGreaterEqual(status.json()["cumulative_generation_time_ms"], 0)
         self.assertEqual(status.json()["run_count"], 1)
+
+    def test_failed_next_call_marks_latest_run_failed(self):
+        created = self.client.post(
+            "/projects",
+            json={
+                "project_name": "Trace Failure Project",
+                "system_prompt": "You are a stateful interview agent.",
+            },
+        )
+        self.assertEqual(created.status_code, 200)
+        project_id = created.json()["id"]
+
+        started = self.client.post(f"/projects/{project_id}/start")
+        self.assertEqual(started.status_code, 200)
+
+        original_generate = interview_nodes_module.generate_next_question_from_history
+
+        def failing_generate(*args, **kwargs):
+            raise RuntimeError("synthetic question generation failure")
+
+        interview_nodes_module.generate_next_question_from_history = failing_generate
+        try:
+            failure_client = TestClient(app, raise_server_exceptions=False)
+            failed = failure_client.post(
+                f"/projects/{project_id}/next",
+                json={"answer_text": "Long answer that will fail during next question generation."},
+            )
+        finally:
+            interview_nodes_module.generate_next_question_from_history = original_generate
+
+        self.assertEqual(failed.status_code, 500)
+
+        latest = self.client.get(f"/projects/{project_id}/runs/latest")
+        self.assertEqual(latest.status_code, 200)
+        self.assertEqual(latest.json()["status"], "failed")
+
+    def test_trace_step_write_failure_does_not_fail_successful_next_call(self):
+        created = self.client.post(
+            "/projects",
+            json={
+                "project_name": "Trace Write Failure Project",
+                "system_prompt": "You are a stateful interview agent.",
+            },
+        )
+        self.assertEqual(created.status_code, 200)
+        project_id = created.json()["id"]
+
+        started = self.client.post(f"/projects/{project_id}/start")
+        self.assertEqual(started.status_code, 200)
+
+        original_finish = run_trace_service._finish_step
+        state = {"raised": False}
+
+        def flaky_finish(span, *, status, error_message=None):
+            if not state["raised"] and status == "completed":
+                state["raised"] = True
+                raise RuntimeError("synthetic run trace step finalization failure")
+            return original_finish(span, status=status, error_message=error_message)
+
+        run_trace_service._finish_step = flaky_finish
+        try:
+            advanced = self.client.post(
+                f"/projects/{project_id}/next",
+                json={"answer_text": "Long answer that should still succeed even if trace bookkeeping fails."},
+            )
+        finally:
+            run_trace_service._finish_step = original_finish
+
+        self.assertEqual(advanced.status_code, 200)
+        payload = advanced.json()
+        self.assertIsNotNone(payload["next_turn"])
+        self.assertEqual(payload["next_turn"]["turn_no"], 2)
+
+        status = self.client.get(f"/projects/{project_id}/status")
+        self.assertEqual(status.status_code, 200)
+        self.assertEqual(status.json()["turn_count"], 2)
 
 
 if __name__ == "__main__":

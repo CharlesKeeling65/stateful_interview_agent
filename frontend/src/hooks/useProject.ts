@@ -23,6 +23,7 @@ import type {
   TranscriptResponse,
   TurnRead,
 } from '../types/api'
+import { parseApiDateMs } from '../utils/format'
 import { estimateNextOutputTokens, estimateNextPromptTokens, estimateTokenCount } from '../utils/tokens'
 
 const SELECTED_PROJECT_STORAGE_KEY = 'stateful-interview-agent:selected-project-id'
@@ -144,7 +145,7 @@ export function useProject() {
             if (a.updated_at === b.updated_at) {
               return b.id - a.id
             }
-            return new Date(b.updated_at).getTime() - new Date(a.updated_at).getTime()
+            return parseApiDateMs(b.updated_at) - parseApiDateMs(a.updated_at)
           }),
       )
     })
@@ -170,7 +171,15 @@ export function useProject() {
   }
 
   async function handleCreateDemoProject() {
-    const demoName = `Demo Interview ${new Date().toLocaleString()}`
+    const demoName = `Demo Interview ${new Intl.DateTimeFormat('en-US', {
+      year: 'numeric',
+      month: '2-digit',
+      day: '2-digit',
+      hour: '2-digit',
+      minute: '2-digit',
+      hour12: false,
+      timeZone: 'Asia/Shanghai',
+    }).format(new Date())}`
     await handleCreateProject({
       project_name: demoName,
       system_prompt: DEFAULT_SYSTEM_PROMPT,
@@ -211,9 +220,11 @@ export function useProject() {
     setError('')
     setLastMessage('Generating the next question...')
 
+    let settled = false
+    let pollActiveRun: Promise<void> | null = null
+
     try {
-      let settled = false
-      const pollActiveRun = (async () => {
+      pollActiveRun = (async () => {
         while (!settled) {
           try {
             const latestRun = await getLatestProjectRun(project.id)
@@ -255,8 +266,13 @@ export function useProject() {
       })
       await refreshSelected(project.id)
     } catch (err) {
+      settled = true
+      if (pollActiveRun) {
+        await pollActiveRun
+      }
       setError(err instanceof Error ? err.message : 'Unable to submit the answer.')
     } finally {
+      settled = true
       startTransition(() => {
         setActiveRun(null)
       })

@@ -1,10 +1,25 @@
+const DISPLAY_TIME_ZONE = 'Asia/Shanghai'
+
+export function parseApiDate(value: string) {
+  const normalizedValue =
+    /z|[+-]\d{2}:\d{2}$/i.test(value) ? value : `${value}Z`
+  return new Date(normalizedValue)
+}
+
+export function parseApiDateMs(value: string) {
+  return parseApiDate(value).getTime()
+}
+
 export function formatTimestamp(value: string) {
-  return new Intl.DateTimeFormat(undefined, {
+  return new Intl.DateTimeFormat('en-US', {
     month: 'short',
     day: 'numeric',
     hour: '2-digit',
     minute: '2-digit',
-  }).format(new Date(value))
+    hour12: false,
+    timeZone: DISPLAY_TIME_ZONE,
+    timeZoneName: 'short',
+  }).format(parseApiDate(value))
 }
 
 export function formatDurationMs(value: number | null | undefined) {

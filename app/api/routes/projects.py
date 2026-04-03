@@ -276,6 +276,18 @@ def submit_answer_and_generate_next(
             exc_info=e,
         )
         raise HTTPException(status_code=400, detail=str(e))
+    except Exception as e:
+        finalize_run(run_id=run.id, status="failed")
+        emit_event(
+            "workflow",
+            "workflow.invoke.error",
+            "Interview workflow failed",
+            level=40,
+            operation="submit_answer_and_generate_next",
+            project_id=project_id,
+            exc_info=e,
+        )
+        raise
 
     updated_project = (
         db.query(ProjectSession).filter(ProjectSession.id == project_id).first()

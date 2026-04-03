@@ -6,6 +6,7 @@ from time import perf_counter
 from typing import Any, Iterator
 
 from app.core.database import SessionLocal
+from app.logging import emit_event
 from app.logging.context import get_log_context
 from app.models.agent_run import AgentRun
 from app.models.agent_run_step import AgentRunStep
@@ -55,6 +56,25 @@ def utcnow() -> datetime:
     return datetime.utcnow()
 
 
+def _emit_trace_write_error(
+    *,
+    operation: str,
+    exc: Exception,
+    run_id: int | None = None,
+    step_key: str | None = None,
+) -> None:
+    emit_event(
+        "errors",
+        "run_trace.write_error",
+        "Run trace bookkeeping failed",
+        level=40,
+        operation=operation,
+        run_id=run_id,
+        step_key=step_key,
+        exc_info=exc,
+    )
+
+
 def create_run(*, project_id: int, turn_no: int | None) -> AgentRun:
     context = get_log_context()
     db = SessionLocal()
@@ -76,21 +96,24 @@ def create_run(*, project_id: int, turn_no: int | None) -> AgentRun:
 
 
 def finalize_run(*, run_id: int, status: str, turn_no: int | None = None) -> None:
-    db = SessionLocal()
     try:
-        run = db.query(AgentRun).filter(AgentRun.id == run_id).first()
-        if not run:
-            return
-        run.status = status
-        run.turn_no = turn_no if turn_no is not None else run.turn_no
-        run.ended_at = utcnow()
-        run.duration_ms = max(0, int((run.ended_at - run.started_at).total_seconds() * 1000))
-        run.total_llm_calls = sum(1 for step in run.steps if step.step_key == "call_llm" and step.status == "completed")
-        run.total_llm_tokens = sum(step.total_tokens for step in run.steps)
-        run.step_count = len(run.steps)
-        db.commit()
-    finally:
-        db.close()
+        db = SessionLocal()
+        try:
+            run = db.query(AgentRun).filter(AgentRun.id == run_id).first()
+            if not run:
+                return
+            run.status = status
+            run.turn_no = turn_no if turn_no is not None else run.turn_no
+            run.ended_at = utcnow()
+            run.duration_ms = max(0, int((run.ended_at - run.started_at).total_seconds() * 1000))
+            run.total_llm_calls = sum(1 for step in run.steps if step.step_key == "call_llm" and step.status == "completed")
+            run.total_llm_tokens = sum(step.total_tokens for step in run.steps)
+            run.step_count = len(run.steps)
+            db.commit()
+        finally:
+            db.close()
+    except Exception as exc:
+        _emit_trace_write_error(operation="finalize_run", exc=exc, run_id=run_id)
 
 
 @dataclass
@@ -198,22 +221,48 @@ def traced_run_step(
         yield None
         return
 
-    span = _start_step(
-        run_id=run_id,
-        project_id=project_id,
-        turn_no=turn_no,
-        step_key=step_key,
-        description=description,
-        next_step_hint=next_step_hint,
-    )
+    try:
+        span = _start_step(
+            run_id=run_id,
+            project_id=project_id,
+            turn_no=turn_no,
+            step_key=step_key,
+            description=description,
+            next_step_hint=next_step_hint,
+        )
+    except Exception as exc:
+        _emit_trace_write_error(
+            operation="start_step",
+            exc=exc,
+            run_id=run_id,
+            step_key=step_key,
+        )
+        yield None
+        return
     try:
         yield span
     except Exception as exc:
-        _finish_step(span, status="failed", error_message=str(exc))
+        try:
+            _finish_step(span, status="failed", error_message=str(exc))
+        except Exception as trace_exc:
+            _emit_trace_write_error(
+                operation="finish_step_failed",
+                exc=trace_exc,
+                run_id=run_id,
+                step_key=step_key,
+            )
         finalize_run(run_id=run_id, status="failed")
         raise
     else:
-        _finish_step(span, status="completed")
+        try:
+            _finish_step(span, status="completed")
+        except Exception as exc:
+            _emit_trace_write_error(
+                operation="finish_step_completed",
+                exc=exc,
+                run_id=run_id,
+                step_key=step_key,
+            )
 
 
 def serialize_run(run: AgentRun) -> dict[str, Any]:

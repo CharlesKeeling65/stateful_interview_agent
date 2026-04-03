@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from 'react'
 
-import { formatDurationMs } from '../../utils/format'
+import { formatDurationMs, parseApiDateMs } from '../../utils/format'
 import { PretextLiveText } from './PretextLiveText'
 
 type PretextElapsedTimeProps = {
@@ -14,9 +14,9 @@ export function PretextElapsedTime({
   endedAt,
   startedAt,
 }: PretextElapsedTimeProps) {
-  const startedAtMs = useMemo(() => new Date(startedAt).getTime(), [startedAt])
+  const startedAtMs = useMemo(() => parseApiDateMs(startedAt), [startedAt])
   const endedAtMs = useMemo(
-    () => (endedAt ? new Date(endedAt).getTime() : null),
+    () => (endedAt ? parseApiDateMs(endedAt) : null),
     [endedAt],
   )
   const [now, setNow] = useState(() => Date.now())
