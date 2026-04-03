@@ -147,6 +147,31 @@ export const TurnCard = memo(function TurnCard({
           </div>
         </div>
 
+        {turn.human_review ? (
+          <div className="rounded-2xl border border-indigo-200 bg-indigo-50/70 px-4 py-4">
+            <p className="text-[0.68rem] font-semibold uppercase tracking-[0.28em] text-indigo-700">
+              Human Review
+            </p>
+            <div className="mt-3 flex flex-wrap gap-2 text-xs font-semibold uppercase tracking-[0.16em] text-indigo-800">
+              <span className="rounded-full bg-white/80 px-3 py-1">{turn.human_review.verdict}</span>
+              <span className="rounded-full bg-white/80 px-3 py-1">{turn.human_review.direction}</span>
+              {turn.human_review.preferred_next_focus ? (
+                <span className="rounded-full bg-white/80 px-3 py-1">
+                  Focus: {turn.human_review.preferred_next_focus}
+                </span>
+              ) : null}
+            </div>
+            {turn.human_review.note ? (
+              <p className="mt-3 text-sm leading-7 text-indigo-950">{turn.human_review.note}</p>
+            ) : null}
+            {turn.human_review.phase_ready ? (
+              <p className="mt-2 text-xs leading-6 text-indigo-700">
+                The human marked this phase as sufficiently complete.
+              </p>
+            ) : null}
+          </div>
+        ) : null}
+
         {turn.total_tokens > 0 ? (
           <TokenUsagePanel
             compact

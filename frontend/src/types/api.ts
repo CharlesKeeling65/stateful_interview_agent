@@ -17,6 +17,14 @@ export type TokenUsageSummary = {
   estimated_total_tokens: number
 }
 
+export type HumanReviewInput = {
+  verdict: 'sufficient' | 'insufficient' | 'drifted'
+  direction: 'continue' | 'redirect'
+  preferred_next_focus?: string | null
+  note?: string | null
+  phase_ready?: boolean | null
+}
+
 export type RunStepRead = {
   id: number
   step_index: number
@@ -78,6 +86,7 @@ export type TurnRead = {
   question_text_for_copy: string
   answer_text: string | null
   answer_summary: string | null
+  human_review: HumanReviewInput | null
   prompt_tokens: number
   completion_tokens: number
   total_tokens: number

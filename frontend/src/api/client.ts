@@ -1,5 +1,6 @@
 import type {
   CreateProjectPayload,
+  HumanReviewInput,
   ProjectNextResponse,
   ProjectRead,
   ProjectStartResponse,
@@ -48,11 +49,11 @@ export async function startProject(projectId: number) {
   })
 }
 
-export async function submitNext(projectId: number, answer_text: string) {
+export async function submitNext(projectId: number, answer_text: string, human_review?: HumanReviewInput | null) {
   return request<ProjectNextResponse>(`/projects/${projectId}/next`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ answer_text }),
+    body: JSON.stringify({ answer_text, human_review: human_review ?? null }),
   })
 }
 

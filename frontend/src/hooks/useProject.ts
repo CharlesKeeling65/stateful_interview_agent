@@ -16,6 +16,7 @@ import {
 } from '../api/client'
 import type {
   CreateProjectPayload,
+  HumanReviewInput,
   ProjectRead,
   ProjectStatusResponse,
   RunRead,
@@ -200,7 +201,7 @@ export function useProject() {
     }
   }
 
-  async function handleNext(answerText: string) {
+  async function handleNext(answerText: string, humanReview?: HumanReviewInput | null) {
     if (!project || !answerText.trim()) {
       return
     }
@@ -245,7 +246,7 @@ export function useProject() {
         }
       })()
 
-      const result = await submitNext(project.id, answerText.trim())
+      const result = await submitNext(project.id, answerText.trim(), humanReview ?? null)
       settled = true
       await pollActiveRun
       startTransition(() => {
