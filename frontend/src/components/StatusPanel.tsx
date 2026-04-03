@@ -1,4 +1,5 @@
 import type { ProjectRead, ProjectStatusResponse, TranscriptResponse } from '../types/api'
+import { formatDurationMs } from '../utils/format'
 import {
   formatBooleanLabel,
   hasInterviewStarted,
@@ -83,6 +84,15 @@ export function StatusPanel({
             </div>
             <StatusItem label="Current Stage" value={status?.current_stage ?? project.current_stage} />
             <StatusItem label="Turns" value={String(status?.turn_count ?? project.turn_count)} />
+            <StatusItem label="Runs" value={String(status?.run_count ?? 0)} />
+            <StatusItem
+              label="Total Generation"
+              value={formatDurationMs(status?.cumulative_generation_time_ms ?? 0)}
+            />
+            <StatusItem
+              label="Average Run"
+              value={formatDurationMs(status?.average_run_duration_ms ?? 0)}
+            />
             <StatusItem
               label="Minimum Goal"
               value={formatBooleanLabel(status?.minimum_goal_reached, {

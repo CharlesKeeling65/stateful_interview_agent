@@ -4,6 +4,7 @@ import type {
   ProjectRead,
   ProjectStartResponse,
   ProjectStatusResponse,
+  RunRead,
   TranscriptResponse,
   TurnRead,
   UpdateProjectPayload,
@@ -69,6 +70,18 @@ export async function getProjectStatus(projectId: number) {
 
 export async function getProjectTranscript(projectId: number) {
   return request<TranscriptResponse>(`/projects/${projectId}/transcript`)
+}
+
+export async function getProjectRuns(projectId: number) {
+  return request<RunRead[]>(`/projects/${projectId}/runs`)
+}
+
+export async function getLatestProjectRun(projectId: number) {
+  return request<RunRead>(`/projects/${projectId}/runs/latest`)
+}
+
+export async function getProjectRun(projectId: number, runId: number) {
+  return request<RunRead>(`/projects/${projectId}/runs/${runId}`)
 }
 
 export async function updateProject(projectId: number, payload: UpdateProjectPayload) {

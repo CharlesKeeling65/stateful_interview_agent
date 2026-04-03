@@ -4,6 +4,8 @@ import {
   createProject,
   deleteProject,
   getProject,
+  getLatestProjectRun,
+  getProjectRuns,
   getProjectStatus,
   getProjectTranscript,
   getProjectTurns,
@@ -16,6 +18,7 @@ import type {
   CreateProjectPayload,
   ProjectRead,
   ProjectStatusResponse,
+  RunRead,
   TranscriptResponse,
   TurnRead,
 } from '../types/api'
@@ -25,6 +28,7 @@ const SELECTED_PROJECT_STORAGE_KEY = 'stateful-interview-agent:selected-project-
 
 type ProjectDetails = {
   project: ProjectRead
+  runs: RunRead[]
   turns: TurnRead[]
   status: ProjectStatusResponse
   transcript: TranscriptResponse
@@ -41,14 +45,15 @@ export type BusyAction =
   | null
 
 async function loadProjectDetails(projectId: number): Promise<ProjectDetails> {
-  const [project, turns, status, transcript] = await Promise.all([
+  const [project, turns, status, transcript, runs] = await Promise.all([
     getProject(projectId),
     getProjectTurns(projectId),
     getProjectStatus(projectId),
     getProjectTranscript(projectId),
+    getProjectRuns(projectId).catch(() => []),
   ])
 
-  return { project, turns, status, transcript }
+  return { project, turns, status, transcript, runs }
 }
 
 const DEFAULT_SYSTEM_PROMPT =
@@ -60,6 +65,8 @@ export function useProject() {
   const [turns, setTurns] = useState<TurnRead[]>([])
   const [status, setStatus] = useState<ProjectStatusResponse | null>(null)
   const [transcript, setTranscript] = useState<TranscriptResponse | null>(null)
+  const [runs, setRuns] = useState<RunRead[]>([])
+  const [activeRun, setActiveRun] = useState<RunRead | null>(null)
   const [loading, setLoading] = useState(false)
   const [busyAction, setBusyAction] = useState<BusyAction>(null)
   const [error, setError] = useState('')
@@ -88,6 +95,8 @@ export function useProject() {
         setTurns([])
         setStatus(null)
         setTranscript(null)
+        setRuns([])
+        setActiveRun(null)
       })
     }
   }
@@ -105,6 +114,8 @@ export function useProject() {
         setTurns(details.turns)
         setStatus(details.status)
         setTranscript(details.transcript)
+        setRuns(details.runs)
+        setActiveRun(details.runs.find((run) => run.status === 'running') ?? null)
         setLastMessage('')
       })
     } catch (err) {
@@ -119,10 +130,12 @@ export function useProject() {
     const details = await loadProjectDetails(projectId)
     startTransition(() => {
       setProject(details.project)
-      setTurns(details.turns)
-      setStatus(details.status)
-      setTranscript(details.transcript)
-      setProjects((current) =>
+        setTurns(details.turns)
+        setStatus(details.status)
+        setTranscript(details.transcript)
+        setRuns(details.runs)
+        setActiveRun(details.runs.find((run) => run.status === 'running') ?? null)
+        setProjects((current) =>
         current
           .filter((item) => item.id !== details.project.id)
           .concat(details.project)
@@ -195,9 +208,46 @@ export function useProject() {
     setBusyAction('submitting')
     setLoading(true)
     setError('')
+    setLastMessage('Generating the next question...')
 
     try {
+      let settled = false
+      const pollActiveRun = (async () => {
+        while (!settled) {
+          try {
+            const latestRun = await getLatestProjectRun(project.id)
+            startTransition(() => {
+              setActiveRun(latestRun.status === 'running' ? latestRun : null)
+              setRuns((current) => {
+                const nextRuns = current.filter((run) => run.id !== latestRun.id)
+                return [latestRun, ...nextRuns].toSorted((a, b) => b.id - a.id)
+              })
+            })
+          } catch {
+            // Ignore until the backend creates or updates the run trace.
+          }
+          await new Promise((resolve) => window.setTimeout(resolve, 700))
+        }
+
+        try {
+          const latestRun = await getLatestProjectRun(project.id)
+          startTransition(() => {
+            setRuns((current) => {
+              const nextRuns = current.filter((run) => run.id !== latestRun.id)
+              return [latestRun, ...nextRuns].toSorted((a, b) => b.id - a.id)
+            })
+            setActiveRun(latestRun.status === 'running' ? latestRun : null)
+          })
+        } catch {
+          startTransition(() => {
+            setActiveRun(null)
+          })
+        }
+      })()
+
       const result = await submitNext(project.id, answerText.trim())
+      settled = true
+      await pollActiveRun
       startTransition(() => {
         setProject(result.project)
         setLastMessage(result.message)
@@ -206,6 +256,9 @@ export function useProject() {
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Unable to submit the answer.')
     } finally {
+      startTransition(() => {
+        setActiveRun(null)
+      })
       setBusyAction(null)
       setLoading(false)
     }
@@ -266,6 +319,8 @@ export function useProject() {
         setTurns([])
         setStatus(null)
         setTranscript(null)
+        setRuns([])
+        setActiveRun(null)
       })
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Unable to delete the project.')
@@ -299,9 +354,11 @@ export function useProject() {
     loading,
     project,
     projects,
+    runs,
     status,
     transcript,
     turns,
+    activeRun,
     estimateDraftUsage: (answerDraft: string) => ({
       estimatedAnswerInputTokens: estimateTokenCount(answerDraft),
       estimatedNextPromptTokens: estimateNextPromptTokens({

@@ -21,6 +21,7 @@ function App() {
     loading,
     project,
     projects,
+    runs,
     selectProject,
     startProject,
     status,
@@ -29,6 +30,7 @@ function App() {
     turns,
     updateProject,
     estimateDraftUsage,
+    activeRun,
   } = useProject()
   const [exportLabel, setExportLabel] = useState<string | null>(null)
   const [latestQuestionCopyLabel, setLatestQuestionCopyLabel] = useState<string | null>(null)
@@ -131,6 +133,7 @@ function App() {
             <div className="min-h-0 flex-1">
               <TranscriptPanel
                 key={project?.id ?? 'empty-project'}
+                activeRun={activeRun}
                 copyLabel={latestQuestionCopyLabel}
                 onCopyLatestQuestion={handleCopyLatestQuestion}
                 onRequestDelete={setProjectPendingDelete}
@@ -139,6 +142,7 @@ function App() {
                 }
                 project={project}
                 renameDisabled={loading}
+                runs={runs}
                 turns={turns}
               />
             </div>

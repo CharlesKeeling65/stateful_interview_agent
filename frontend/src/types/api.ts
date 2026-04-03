@@ -17,6 +17,43 @@ export type TokenUsageSummary = {
   estimated_total_tokens: number
 }
 
+export type RunStepRead = {
+  id: number
+  step_index: number
+  step_key: string
+  label: string
+  status: 'pending' | 'running' | 'completed' | 'failed' | string
+  description: string | null
+  method: string | null
+  started_at: string
+  ended_at: string | null
+  duration_ms: number | null
+  next_step_hint: string | null
+  prompt_tokens: number
+  completion_tokens: number
+  total_tokens: number
+  meta: Record<string, unknown>
+}
+
+export type RunRead = {
+  id: number
+  project_id: number
+  turn_no: number | null
+  request_id: string | null
+  trace_id: string | null
+  status: 'running' | 'completed' | 'failed' | string
+  started_at: string
+  ended_at: string | null
+  duration_ms: number | null
+  total_llm_tokens: number
+  total_llm_calls: number
+  step_count: number
+  current_step_key: string | null
+  current_step_label: string | null
+  current_step_status: string | null
+  steps: RunStepRead[]
+}
+
 export type ProjectRead = {
   id: number
   project_name: string
@@ -57,6 +94,7 @@ export type ProjectNextResponse = {
   project: ProjectRead
   previous_turn: TurnRead
   next_turn: TurnRead | null
+  run_id: number | null
   interview_finished: boolean
   minimum_goal_reached: boolean
   usage_summary: TokenUsageSummary
@@ -75,6 +113,9 @@ export type ProjectStatusResponse = {
   latest_turn_answered: boolean | null
   latest_question_text: string | null
   latest_question_text_for_copy: string | null
+  cumulative_generation_time_ms: number
+  run_count: number
+  average_run_duration_ms: number
   usage_summary: TokenUsageSummary
 }
 

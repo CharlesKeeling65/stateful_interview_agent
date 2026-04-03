@@ -1,8 +1,9 @@
 import { useDeferredValue, useMemo, useState } from 'react'
 
-import type { ProjectRead, TurnRead } from '../types/api'
+import type { ProjectRead, RunRead, TurnRead } from '../types/api'
 import { ActionButton } from './ActionButton'
 import { CopyIcon, TrashIcon } from './Icons'
+import { ActiveRunPanel } from './ExecutionTraceSection'
 import { ProjectMetadataEditor } from './ProjectMetadataEditor'
 import { TranscriptPagination } from './TranscriptPagination'
 import { TurnCard } from './TurnCard'
@@ -14,6 +15,8 @@ type TranscriptPanelProps = {
   onRenameProject?: (nextTitle: string) => Promise<void> | void
   project: ProjectRead | null
   renameDisabled?: boolean
+  activeRun?: RunRead | null
+  runs?: RunRead[]
   turns: TurnRead[]
 }
 
@@ -40,6 +43,8 @@ export function TranscriptPanel({
   onRenameProject,
   project,
   renameDisabled = false,
+  activeRun = null,
+  runs = [],
   turns,
 }: TranscriptPanelProps) {
   const deferredTurns = useDeferredValue(turns)
@@ -54,6 +59,10 @@ export function TranscriptPanel({
     return deferredTurns.slice(startIndex, startIndex + pageSize)
   }, [deferredTurns, pageSize, safeCurrentPage])
   const latestTurnId = deferredTurns[deferredTurns.length - 1]?.id
+  const runByTurnNo = useMemo(
+    () => new Map(runs.filter((run) => run.turn_no != null).map((run) => [run.turn_no as number, run])),
+    [runs],
+  )
 
   if (!project) {
     return <EmptyState />
@@ -116,6 +125,10 @@ export function TranscriptPanel({
 
       <div className="mt-4 min-h-0 flex-1 overflow-auto rounded-[2rem] border border-white/60 bg-[linear-gradient(180deg,rgba(255,255,255,0.88),rgba(248,250,252,0.92))] p-5 shadow-[0_20px_50px_rgba(148,163,184,0.16)] backdrop-blur">
         <div className="space-y-4">
+          {activeRun ? (
+            <ActiveRunPanel run={activeRun} />
+          ) : null}
+
           <TranscriptPagination
             currentPage={safeCurrentPage}
             onPageChange={(nextPage) => {
@@ -137,6 +150,7 @@ export function TranscriptPanel({
               copyLabel={copyLabel}
               isLatestActiveTurn={!turn.answer_text && turn.id === latestTurnId}
               onCopyLatestQuestion={onCopyLatestQuestion}
+              run={runByTurnNo.get(turn.turn_no) ?? null}
               turn={turn}
             />
           ))}

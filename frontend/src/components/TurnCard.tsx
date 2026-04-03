@@ -1,11 +1,12 @@
-import { useState } from 'react'
+import { memo, useState } from 'react'
 
-import type { TurnRead } from '../types/api'
-import { formatTimestamp } from '../utils/format'
+import type { RunRead, TurnRead } from '../types/api'
+import { formatDurationMs, formatTimestamp } from '../utils/format'
 import { normalizeAnswerText, normalizeQuestionText } from '../utils/text'
 import { summarizeOperationUsage } from '../utils/tokens'
 import { ActionButton } from './ActionButton'
 import { CheckIcon, ChevronDownIcon, ClockIcon, CopyIcon } from './Icons'
+import { ExecutionTraceSection } from './ExecutionTraceSection'
 import { TokenUsagePanel } from './TokenUsagePanel'
 
 const ANSWER_COLLAPSE_THRESHOLD = 680
@@ -14,13 +15,15 @@ type TurnCardProps = {
   copyLabel?: string | null
   isLatestActiveTurn?: boolean
   onCopyLatestQuestion?: (text: string) => Promise<void> | void
+  run?: RunRead | null
   turn: TurnRead
 }
 
-export function TurnCard({
+export const TurnCard = memo(function TurnCard({
   copyLabel = null,
   isLatestActiveTurn = false,
   onCopyLatestQuestion,
+  run = null,
   turn,
 }: TurnCardProps) {
   const normalizedQuestion = normalizeQuestionText(turn.question_text)
@@ -76,6 +79,11 @@ export function TurnCard({
               {waitingForAnswer ? <ClockIcon className="size-3.5" /> : <CheckIcon className="size-3.5" />}
               {waitingForAnswer ? 'Waiting' : 'Answered'}
             </span>
+            {run ? (
+              <span className="inline-flex items-center rounded-full bg-slate-100 px-3 py-1 text-xs font-semibold uppercase tracking-[0.16em] text-slate-700">
+                Trace {formatDurationMs(run.duration_ms)}
+              </span>
+            ) : null}
           </div>
         </div>
       </div>
@@ -166,7 +174,9 @@ export function TurnCard({
             ))}
           </div>
         ) : null}
+
+        {run ? <ExecutionTraceSection run={run} /> : null}
       </div>
     </article>
   )
-}
+})
