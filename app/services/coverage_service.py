@@ -97,11 +97,30 @@ ARCHITECTURE_KEYWORDS = {
 }
 
 USE_CASE_KEYWORDS = {
-    "typical_scenarios_count": {"scenario", "workflow", "journey", "request", "case"},
+    "scenario_count": {"scenario", "workflow", "journey", "request", "case"},
     "user_roles_count": {"role", "operator", "customer", "admin", "analyst", "actor"},
     "input_output_patterns_count": {"input", "output", "payload", "response", "request", "result"},
     "boundary_conditions_count": {"edge", "boundary", "limit", "invalid", "failure", "condition"},
     "extension_points_count": {"extension", "plugin", "customize", "hook", "configuration"},
+}
+
+COLLABORATION_MARKERS = {
+    "judgment_turn_count": ("i think", "i believe", "my judgment", "my read is", "my view"),
+    "correction_turn_count": ("correct", "actually", "instead", "not that", "misread", "fix the earlier"),
+    "redirection_turn_count": ("redirect", "back to", "return to", "focus back", "instead of that branch"),
+    "prioritization_turn_count": ("prioritize", "worth continuing", "deepen next", "first before", "more central"),
+}
+
+DRIFT_NARROW_TOPIC_MARKERS = {
+    "safety",
+    "audit",
+    "edge",
+    "exception",
+    "failure",
+    "retry",
+    "fallback",
+    "boundary",
+    "subprocess",
 }
 
 
@@ -241,11 +260,17 @@ def default_framework_coverage() -> dict[str, Any]:
             "error_handling_count": 0,
         },
         "use_cases": {
-            "typical_scenarios_count": 0,
+            "scenario_count": 0,
             "user_roles_count": 0,
             "input_output_patterns_count": 0,
             "boundary_conditions_count": 0,
             "extension_points_count": 0,
+        },
+        "human_collaboration": {
+            "judgment_turn_count": 0,
+            "correction_turn_count": 0,
+            "redirection_turn_count": 0,
+            "prioritization_turn_count": 0,
         },
         "stage_turn_counts": {
             "Panorama Mapping": 0,
@@ -265,6 +290,7 @@ def rebuild_framework_coverage(turns: list[InterviewTurn]) -> dict[str, Any]:
     architecture = framework["architecture"]
     code_detail = framework["code_detail"]
     use_cases = framework["use_cases"]
+    collaboration = framework["human_collaboration"]
     stage_turn_counts = framework["stage_turn_counts"]
 
     for turn in turns:
@@ -302,6 +328,10 @@ def rebuild_framework_coverage(turns: list[InterviewTurn]) -> dict[str, Any]:
             if any(keyword in text for keyword in keywords):
                 use_cases[key] += 1
 
+        for key, markers in COLLABORATION_MARKERS.items():
+            if any(marker in text for marker in markers):
+                collaboration[key] += 1
+
     framework["gaps"] = {
         "panorama": [
             key for key, covered in panorama.items() if not covered
@@ -319,13 +349,18 @@ def rebuild_framework_coverage(turns: list[InterviewTurn]) -> dict[str, Any]:
             for key, count in use_cases.items()
             if count <= 0
         ],
+        "human_collaboration": [
+            key
+            for key, count in collaboration.items()
+            if count <= 0
+        ],
     }
     framework["wrap_up_ready"] = (
         len(framework["gaps"]["panorama"]) <= 1
         and len(framework["gaps"]["architecture"]) <= 1
         and code_detail["key_files_count"] >= 2
         and code_detail["key_methods_count"] >= 2
-        and use_cases["typical_scenarios_count"] >= 1
+        and use_cases["scenario_count"] >= 1
     )
     return framework
 
@@ -439,6 +474,11 @@ def framework_gaps_for_stage(coverage_state: dict[str, Any], stage: str) -> list
                 for key, count in framework.get("use_cases", {}).items()
                 if isinstance(count, (int, float)) and count <= 0
             ],
+            "human_collaboration": [
+                key
+                for key, count in framework.get("human_collaboration", {}).items()
+                if isinstance(count, (int, float)) and count <= 0
+            ],
         }
     if stage == "Panorama Mapping":
         return gap_map.get("panorama", [])
@@ -449,3 +489,34 @@ def framework_gaps_for_stage(coverage_state: dict[str, Any], stage: str) -> list
     if stage == "Use Cases & Scenarios":
         return gap_map.get("use_cases", [])
     return []
+
+
+def detect_topic_drift(coverage_state: dict[str, Any], stage: str) -> dict[str, Any]:
+    framework = coverage_state.get("framework", default_framework_coverage())
+    panorama_gaps = framework_gaps_for_stage(coverage_state, "Panorama Mapping")
+    architecture_gaps = framework_gaps_for_stage(coverage_state, "Architecture Understanding")
+    branches = coverage_state.get("branches", [])
+    if not branches:
+        return {"detected": False, "reason": "", "branch_id": None}
+
+    top_branch = branches[0]
+    branch_text = " ".join(
+        str(top_branch.get(key, "")) for key in ("label", "summary", "keywords")
+    ).lower()
+    narrow_topic_hits = sum(1 for marker in DRIFT_NARROW_TOPIC_MARKERS if marker in branch_text)
+
+    if stage == "Panorama Mapping" and panorama_gaps and narrow_topic_hits >= 2:
+        return {
+            "detected": True,
+            "reason": "Panorama still has macro gaps, but the active branch is drifting into a narrow safety or edge-case audit.",
+            "branch_id": top_branch.get("branch_id"),
+        }
+
+    if stage == "Architecture Understanding" and architecture_gaps and narrow_topic_hits >= 2:
+        return {
+            "detected": True,
+            "reason": "Architecture still has structural gaps, but the active branch is drifting into a narrow local mechanism.",
+            "branch_id": top_branch.get("branch_id"),
+        }
+
+    return {"detected": False, "reason": "", "branch_id": None}

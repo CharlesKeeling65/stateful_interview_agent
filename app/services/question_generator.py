@@ -142,8 +142,8 @@ def generate_next_question_from_history(
         if is_near_end
         else "The interview still has room to deepen partially explored branches."
     )
-    prompt_id = get_stage_prompt_id(current_stage)
     planner = planner_decision or default_planner_decision(current_stage)
+    prompt_id = get_prompt_id_for_plan(current_stage, planner)
     prompt = get_prompt_manager().render(
         prompt_id,
         {
@@ -271,6 +271,12 @@ def get_stage_prompt_id(stage: str) -> str:
         WRAP_UP_STAGE: "next_question_wrap_up",
     }
     return mapping.get(stage, "next_question_architecture")
+
+
+def get_prompt_id_for_plan(stage: str, planner: dict | None) -> str:
+    if planner and planner.get("prompt_id"):
+        return planner["prompt_id"]
+    return get_stage_prompt_id(stage)
 
 
 def default_planner_decision(stage: str) -> dict:

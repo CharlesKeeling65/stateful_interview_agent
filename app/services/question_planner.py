@@ -2,7 +2,11 @@ import re
 from typing import Any
 
 from app.models.turn import InterviewTurn
-from app.services.coverage_service import default_framework_coverage, framework_gaps_for_stage
+from app.services.coverage_service import (
+    default_framework_coverage,
+    detect_topic_drift,
+    framework_gaps_for_stage,
+)
 from app.services.stage_manager import (
     ARCHITECTURE_STAGE,
     CODE_DETAIL_STAGE,
@@ -27,6 +31,31 @@ def plan_next_question(
     branches = coverage_state.get("branches", [])
     branch = branches[0] if branches else None
     stage_gaps = framework_gaps_for_stage(coverage_state, current_stage)
+    collaboration = framework.get("human_collaboration", {})
+    collaboration_gap_count = sum(
+        1 for count in collaboration.values() if isinstance(count, (int, float)) and count <= 0
+    )
+    drift = detect_topic_drift(coverage_state, current_stage)
+
+    if drift["detected"]:
+        target_label = stage_gaps[0] if stage_gaps else "the most important missing framework target"
+        return {
+            "question_intent": "drift_repair",
+            "target_type": "framework_gap",
+            "target_label": target_label,
+            "target_branch_id": drift["branch_id"],
+            "retrieval_focus": "framework gaps first, then earlier broad branches",
+            "constraints": [
+                "Repair drift and return to the highest-priority framework gap",
+                "Do not continue the narrow branch unless the human explicitly chooses it",
+                "Stay at the current phase-appropriate level of abstraction",
+            ],
+            "prompt_id": "drift_repair_question",
+            "reasoning": drift["reason"],
+            "drift_detected": True,
+            "human_collaboration_gate": False,
+            "why_this_question": f"Repair drift by returning to the missing {target_label} coverage.",
+        }
 
     if current_stage == PANORAMA_STAGE:
         return {
@@ -42,6 +71,9 @@ def plan_next_question(
             ],
             "prompt_id": "next_question_panorama",
             "reasoning": f"Panorama gaps remaining: {', '.join(stage_gaps) or 'none detected'}",
+            "drift_detected": False,
+            "human_collaboration_gate": False,
+            "why_this_question": f"Panorama is still incomplete, so the next question should fill {stage_gaps[0] if stage_gaps else 'the broadest remaining macro gap'}.",
         }
 
     if current_stage == ARCHITECTURE_STAGE:
@@ -58,9 +90,31 @@ def plan_next_question(
             ],
             "prompt_id": "next_question_architecture",
             "reasoning": f"Architecture gaps remaining: {', '.join(stage_gaps) or 'none detected'}",
+            "drift_detected": False,
+            "human_collaboration_gate": False,
+            "why_this_question": "Architecture still needs clearer module responsibilities or call-chain evidence.",
         }
 
     if current_stage == CODE_DETAIL_STAGE:
+        if collaboration_gap_count >= 3 and framework_gaps_for_stage(coverage_state, CODE_DETAIL_STAGE):
+            return {
+                "question_intent": "human_review",
+                "target_type": "prioritization",
+                "target_label": branch["label"] if branch else "which implementation branch to deepen next",
+                "target_branch_id": branch.get("branch_id") if branch else None,
+                "retrieval_focus": "highest-priority branch plus code-detail gaps",
+                "constraints": [
+                    "Ask the human to choose which module, file, path, or branch should be deepened next",
+                    "Make human prioritization explicit",
+                    "Keep the collaboration visible before deeper code detail begins",
+                ],
+                "prompt_id": "human_review_question",
+                "reasoning": "Code-detail work is about to deepen, but explicit human judgment and prioritization evidence is still thin.",
+                "drift_detected": False,
+                "human_collaboration_gate": True,
+                "why_this_question": "Before going deeper into implementation, the interview should record the human's prioritization choice.",
+            }
+
         target_type, target_label = choose_code_detail_target(branch)
         return {
             "question_intent": "code_detail_deep_dive",
@@ -75,22 +129,29 @@ def plan_next_question(
             ],
             "prompt_id": "next_question_code_detail",
             "reasoning": f"Code-detail gaps remaining: {', '.join(stage_gaps) or 'need more concrete implementation evidence'}",
+            "drift_detected": False,
+            "human_collaboration_gate": False,
+            "why_this_question": f"Code-detail should dominate now, so the next question targets the concrete {target_type} '{target_label}'.",
         }
 
     if current_stage == USE_CASE_STAGE:
         return {
             "question_intent": "scenario_completion",
             "target_type": "scenario",
-            "target_label": branch["label"] if branch else (stage_gaps[0] if stage_gaps else "typical scenario"),
+            "target_label": branch["label"] if branch else (stage_gaps[0] if stage_gaps else "representative scenario"),
             "target_branch_id": branch.get("branch_id") if branch else None,
             "retrieval_focus": "scenario gaps, earlier actor/module evidence, and boundary conditions",
             "constraints": [
+                "Collect trigger, actors, inputs, process, result, and boundary conditions",
                 "Tie the scenario back to real actors and inputs/outputs",
                 "Avoid returning to broad overview",
                 "Avoid purely internal code questions without scenario relevance",
             ],
             "prompt_id": "next_question_use_cases",
             "reasoning": f"Use-case gaps remaining: {', '.join(stage_gaps) or 'complete one concrete scenario cleanly'}",
+            "drift_detected": False,
+            "human_collaboration_gate": False,
+            "why_this_question": "The interview now needs a complete representative scenario rather than more isolated code details.",
         }
 
     return {
@@ -105,6 +166,9 @@ def plan_next_question(
         ],
         "prompt_id": "next_question_wrap_up",
         "reasoning": "The interview is in final wrap-up mode.",
+        "drift_detected": False,
+        "human_collaboration_gate": False,
+        "why_this_question": "Coverage is mostly complete, so the next question should only close the final remaining gap.",
     }
 
 

@@ -14,7 +14,7 @@ from app.schemas.debug import (
 from app.services.context_engineering import build_generation_context
 from app.services.coverage_service import rebuild_coverage_state, save_coverage_state
 from app.services.llm_test import test_llm_call
-from app.services.question_generator import get_stage_prompt_id
+from app.services.question_generator import get_prompt_id_for_plan
 from app.services.question_planner import plan_next_question
 from app.services.question_validator import validate_question_for_stage
 from app.services.stage_manager import decide_next_stage
@@ -102,7 +102,7 @@ def debug_next_context_preview(
     )
 
     prompt = get_prompt_manager().render(
-        get_stage_prompt_id(next_stage),
+        get_prompt_id_for_plan(next_stage, planner_decision),
         {
             "system_prompt": project.system_prompt,
             "current_stage": next_stage,

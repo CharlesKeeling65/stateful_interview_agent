@@ -35,6 +35,7 @@ def decide_next_stage(
     architecture_gaps = framework_gaps_for_stage(coverage_state, ARCHITECTURE_STAGE)
     code_detail_gaps = framework_gaps_for_stage(coverage_state, CODE_DETAIL_STAGE)
     use_case_gaps = framework_gaps_for_stage(coverage_state, USE_CASE_STAGE)
+    collaboration_gaps = framework.get("gaps", {}).get("human_collaboration", [])
 
     if wrap_up_ready and remaining_turns <= 1:
         return {
@@ -75,6 +76,18 @@ def decide_next_stage(
 
     code_detail_turns = stage_turn_counts.get(CODE_DETAIL_STAGE, 0)
     target_code_detail_turns = max(1, max_turns - 8)
+    code_detail_is_dominant = code_detail_turns >= max(8, int(max_turns * 0.55))
+
+    if code_detail_is_dominant and use_case_gaps and remaining_turns <= max(10, max_turns // 4):
+        return {
+            "next_stage": USE_CASE_STAGE,
+            "reason": (
+                "Code-detail coverage has already dominated the interview, so the remaining turns "
+                f"should complete use-case evidence: {', '.join(use_case_gaps[:3])}."
+            ),
+            "gaps": use_case_gaps,
+        }
+
     if code_detail_turns < target_code_detail_turns or code_detail_gaps:
         return {
             "next_stage": CODE_DETAIL_STAGE,
@@ -100,9 +113,13 @@ def decide_next_stage(
         }
 
     return {
-        "next_stage": CODE_DETAIL_STAGE,
-        "reason": "Defaulting to code detail to keep implementation coverage dominant.",
-        "gaps": code_detail_gaps,
+        "next_stage": USE_CASE_STAGE if use_case_gaps else CODE_DETAIL_STAGE,
+        "reason": (
+            "Human collaboration gaps remain visible in the record and the remaining turns should stay inspectable."
+            if collaboration_gaps and use_case_gaps
+            else "Defaulting to code detail to keep implementation coverage dominant."
+        ),
+        "gaps": use_case_gaps if use_case_gaps else code_detail_gaps,
     }
 
 
