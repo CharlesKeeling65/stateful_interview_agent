@@ -1,16 +1,18 @@
 from sqlalchemy.orm import Session
 
+from app.core.config import settings
 from app.logging import bind_log_context, emit_event, preview_payload
 from app.models.project import ProjectSession
 from app.models.turn import InterviewTurn
 from app.services.context_engineering import build_generation_context
 from app.services.coverage_service import rebuild_coverage_state, save_coverage_state
 from app.services.interview_lifecycle import can_continue_interview, is_minimum_goal_reached
+from app.services.question_planner import plan_next_question
 from app.services.question_generator import generate_next_question_from_history
-from app.services.question_validator import looks_like_valid_question
+from app.services.question_validator import validate_question_for_stage
 from app.services.repetition_guard import is_question_too_similar
 from app.services.summarization_service import ensure_turn_summaries
-from app.services.stage_manager import determine_stage_by_turn
+from app.services.stage_manager import decide_next_stage
 from app.services.transcript_service import build_compact_interview_context
 from app.services.usage_service import create_usage_record
 
@@ -55,6 +57,22 @@ def load_project_context(state, db: Session):
         "coverage_state": project.coverage_state_data,
         "minimum_goal_reached": is_minimum_goal_reached(project.turn_count),
         "pending_turn_id": latest_turn.id,
+        # Clear request-scoped graph fields so a durable thread does not
+        # accidentally reuse transient data from a prior /next invocation.
+        "next_turn_no": None,
+        "next_stage": None,
+        "generated_question": None,
+        "retrieved_context": None,
+        "coverage_priorities": None,
+        "selected_turn_ids": [],
+        "selected_branch_ids": [],
+        "stage_decision": {},
+        "planner_decision": {},
+        "validation_result": {},
+        "prompt_metadata": {},
+        "question_usage_metrics": [],
+        "message": None,
+        "interview_finished": None,
     }
 
 
@@ -70,12 +88,19 @@ def decide_progress(state):
         }
 
     next_turn_no = current_turn_no + 1
-    next_stage = determine_stage_by_turn(next_turn_no)
+    stage_decision = decide_next_stage(
+        next_turn_no=next_turn_no,
+        coverage_state=state.get("coverage_state", {}),
+        current_stage=state.get("current_stage", ""),
+        max_turns=settings.interview_max_turns,
+    )
+    next_stage = stage_decision["next_stage"]
 
     return {
         "interview_finished": False,
         "next_turn_no": next_turn_no,
         "next_stage": next_stage,
+        "stage_decision": stage_decision,
     }
 
 
@@ -154,6 +179,22 @@ def draft_next_question(state, db: Session):
         project_id=project.id,
         latest_answer_override=state["answer_text"],
     )
+    planner_decision = plan_next_question(
+        turns=turns,
+        current_stage=state["next_stage"],
+        next_turn_no=state["next_turn_no"],
+        coverage_state=coverage_state,
+    )
+    emit_event(
+        "workflow",
+        "planner.decision.complete",
+        "Built planner decision for next question",
+        operation="plan_next_question",
+        project_id=project.id,
+        turn_no=state["next_turn_no"],
+        stage=state["next_stage"],
+        output=planner_decision,
+    )
 
     next_question_result = generate_next_question_from_history(
         system_prompt=project.system_prompt,
@@ -162,6 +203,7 @@ def draft_next_question(state, db: Session):
         coverage_priorities=context_payload["coverage_priorities"],
         next_turn_no=state["next_turn_no"],
         current_stage=state["next_stage"],
+        planner_decision=planner_decision,
     )
     next_question = next_question_result["question_text"]
     question_usage_metrics = [next_question_result["usage_metrics"]]
@@ -182,12 +224,55 @@ def draft_next_question(state, db: Session):
             coverage_priorities=context_payload["coverage_priorities"],
             next_turn_no=state["next_turn_no"],
             current_stage=state["next_stage"],
+            planner_decision=planner_decision,
         )
         next_question = retried_question_result["question_text"]
         question_usage_metrics.append(retried_question_result["usage_metrics"])
 
-    if not looks_like_valid_question(next_question, state["next_turn_no"]):
-        raise ValueError("Generated question format is invalid")
+    validation = validate_question_for_stage(
+        text=next_question,
+        expected_turn_no=state["next_turn_no"],
+        current_stage=state["next_stage"],
+    )
+
+    if not validation["is_valid"]:
+        retry_prompt = (
+            project.system_prompt
+            + "\n\nThe previous draft did not satisfy the stage-specific validator. "
+            + "Fix these issues and regenerate one better question: "
+            + "; ".join(validation["reasons"])
+        )
+        emit_event(
+            "workflow",
+            "question.validation.retry",
+            "Regenerating because the question failed stage validation",
+            operation="validate_question_for_stage",
+            project_id=project.id,
+            turn_no=state["next_turn_no"],
+            stage=state["next_stage"],
+            output={"reasons": validation["reasons"]},
+        )
+        retried_question_result = generate_next_question_from_history(
+            system_prompt=retry_prompt,
+            recent_context=context_payload["recent_context"],
+            retrieved_context=context_payload["retrieved_context"],
+            coverage_priorities=context_payload["coverage_priorities"],
+            next_turn_no=state["next_turn_no"],
+            current_stage=state["next_stage"],
+            planner_decision=planner_decision,
+        )
+        next_question = retried_question_result["question_text"]
+        question_usage_metrics.append(retried_question_result["usage_metrics"])
+        validation = validate_question_for_stage(
+            text=next_question,
+            expected_turn_no=state["next_turn_no"],
+            current_stage=state["next_stage"],
+        )
+        if not validation["is_valid"]:
+            raise ValueError(
+                "Generated question failed stage-specific validation: "
+                + "; ".join(validation["reasons"])
+            )
 
     return {
         "generated_question": next_question,
@@ -197,6 +282,8 @@ def draft_next_question(state, db: Session):
         "coverage_priorities": context_payload["coverage_priorities"],
         "selected_turn_ids": context_payload["selected_turn_ids"],
         "selected_branch_ids": context_payload["selected_branch_ids"],
+        "planner_decision": planner_decision,
+        "validation_result": validation,
         "prompt_metadata": {
             "prompt_id": next_question_result.get("prompt_id"),
             "prompt_version": next_question_result.get("prompt_version"),
@@ -212,14 +299,20 @@ def persist_next_step(state, db: Session):
         .first()
     )
 
-    latest_turn = (
+    pending_turn = (
         db.query(InterviewTurn)
-        .filter(InterviewTurn.project_id == state["project_id"])
-        .order_by(InterviewTurn.turn_no.desc())
+        .filter(
+            InterviewTurn.project_id == state["project_id"],
+            InterviewTurn.id == state["pending_turn_id"],
+        )
         .first()
     )
+    if not pending_turn:
+        raise ValueError("Pending turn no longer exists")
+    if pending_turn.answer_text is not None:
+        raise ValueError("Pending turn was already answered by another request")
 
-    latest_turn.answer_text = state["answer_text"]
+    pending_turn.answer_text = state["answer_text"]
     all_turns = (
         db.query(InterviewTurn)
         .filter(InterviewTurn.project_id == state["project_id"])
@@ -234,8 +327,8 @@ def persist_next_step(state, db: Session):
         "Persisted refreshed coverage state",
         operation="save_coverage_state",
         project_id=project.id,
-        turn_no=latest_turn.turn_no,
-        stage=latest_turn.stage,
+        turn_no=pending_turn.turn_no,
+        stage=pending_turn.stage,
         output={
             "branch_count": refreshed_coverage_state.get("branch_count", 0),
             "updated_through_turn_no": refreshed_coverage_state.get("updated_through_turn_no", 0),
@@ -246,25 +339,27 @@ def persist_next_step(state, db: Session):
         project.status = "finished"
         db.commit()
         db.refresh(project)
-        db.refresh(latest_turn)
+        db.refresh(pending_turn)
         emit_event(
             "persistence",
             "workflow.persist.complete",
             "Persisted final answered turn and finished project",
             operation="persist_next_step",
             project_id=project.id,
-            turn_no=latest_turn.turn_no,
-            stage=latest_turn.stage,
+            turn_no=pending_turn.turn_no,
+            stage=pending_turn.stage,
             status="success",
         )
         return {
             "message": "Interview finished. Maximum turn limit reached.",
-            "minimum_goal_reached": is_minimum_goal_reached(latest_turn.turn_no),
+            "minimum_goal_reached": is_minimum_goal_reached(pending_turn.turn_no),
         }
 
+    current_max_turn_no = max((turn.turn_no for turn in all_turns), default=0)
+    safe_next_turn_no = max(state["next_turn_no"], current_max_turn_no + 1)
     next_turn = InterviewTurn(
         project_id=project.id,
-        turn_no=state["next_turn_no"],
+        turn_no=safe_next_turn_no,
         stage=state["next_stage"],
         question_text=state["generated_question"],
         answer_text=None,
@@ -282,13 +377,13 @@ def persist_next_step(state, db: Session):
             )
         )
 
-    project.turn_count = state["next_turn_no"]
+    project.turn_count = next_turn.turn_no
     project.current_stage = state["next_stage"]
     save_coverage_state(project, refreshed_coverage_state)
 
     db.commit()
     db.refresh(project)
-    db.refresh(latest_turn)
+    db.refresh(pending_turn)
     db.refresh(next_turn)
     emit_event(
         "persistence",
@@ -300,7 +395,7 @@ def persist_next_step(state, db: Session):
         stage=next_turn.stage,
         status="success",
         output={
-            "latest_answer_turn": latest_turn.turn_no,
+            "latest_answer_turn": pending_turn.turn_no,
             "next_turn_id": next_turn.id,
             "selected_branch_ids": state.get("selected_branch_ids", []),
         },

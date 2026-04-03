@@ -2,8 +2,19 @@ from typing import Any
 
 from app.logging import emit_event, preview_payload
 from app.models.turn import InterviewTurn
-from app.services.coverage_service import default_coverage_state, extract_keywords
-from app.services.stage_manager import get_stage_instruction
+from app.services.coverage_service import (
+    default_coverage_state,
+    extract_keywords,
+    framework_gaps_for_stage,
+)
+from app.services.stage_manager import (
+    ARCHITECTURE_STAGE,
+    CODE_DETAIL_STAGE,
+    PANORAMA_STAGE,
+    USE_CASE_STAGE,
+    WRAP_UP_STAGE,
+    get_stage_instruction,
+)
 
 STAGE_WEIGHTS = {
     "Panorama Mapping": 0.9,
@@ -23,12 +34,14 @@ def build_generation_context(
     latest_answer_override: str | None = None,
 ) -> dict[str, Any]:
     coverage = coverage_state or default_coverage_state()
+    stage_gaps = framework_gaps_for_stage(coverage, current_stage)
     recent_context = build_recent_context(turns, latest_answer_override=latest_answer_override)
     selected_branches = select_relevant_branches(
         turns=turns,
         current_stage=current_stage,
         latest_answer_override=latest_answer_override,
         coverage_state=coverage,
+        stage_gaps=stage_gaps,
     )
     selected_turn_ids = sorted(
         {
@@ -39,7 +52,7 @@ def build_generation_context(
     )
     selected_branch_ids = [branch["branch_id"] for branch in selected_branches]
     retrieved_context = build_retrieved_branch_context(selected_branches)
-    coverage_priorities = build_coverage_priorities(selected_branches, current_stage)
+    coverage_priorities = build_coverage_priorities(selected_branches, current_stage, stage_gaps)
     emit_event(
         "retrieval",
         "retrieval.context.complete",
@@ -73,6 +86,7 @@ def build_generation_context(
         "current_stage": current_stage,
         "next_turn_no": next_turn_no,
         "stage_objective": get_stage_instruction(current_stage),
+        "framework_gaps": stage_gaps,
         "recent_context": recent_context,
         "retrieved_context": retrieved_context,
         "coverage_priorities": coverage_priorities,
@@ -121,6 +135,7 @@ def select_relevant_branches(
     current_stage: str,
     latest_answer_override: str | None,
     coverage_state: dict[str, Any],
+    stage_gaps: list[str],
 ) -> list[dict[str, Any]]:
     latest_text = latest_answer_override or turns[-1].answer_text or ""
     latest_keywords = set(extract_keywords(latest_text, turns[-1].question_text if turns else ""))
@@ -144,15 +159,17 @@ def select_relevant_branches(
 
         if branch.get("stage") == current_stage:
             score += 0.4 * stage_weight
-        elif current_stage == "Architecture Understanding" and branch.get("stage") == "Panorama Mapping":
+        elif current_stage == ARCHITECTURE_STAGE and branch.get("stage") == PANORAMA_STAGE:
             score += 0.18
-        elif current_stage == "Use Cases & Scenarios" and branch.get("stage") in {
-            "Panorama Mapping",
-            "Architecture Understanding",
+        elif current_stage == USE_CASE_STAGE and branch.get("stage") in {
+            PANORAMA_STAGE,
+            ARCHITECTURE_STAGE,
         }:
             score += 0.22
-        elif current_stage == "Code Detail Completion" and branch.get("stage") == "Architecture Understanding":
+        elif current_stage == CODE_DETAIL_STAGE and branch.get("stage") == ARCHITECTURE_STAGE:
             score += 0.25
+        elif current_stage == WRAP_UP_STAGE:
+            score += 0.1
 
         if status == "needs_follow_up":
             score += 0.35
@@ -164,6 +181,13 @@ def select_relevant_branches(
 
         if keyword_overlap:
             score += min(keyword_overlap * 0.18, 0.54)
+
+        label_and_summary = " ".join(
+            str(branch.get(field, "")) for field in ("label", "summary")
+        ).lower()
+        gap_hits = sum(1 for gap in stage_gaps if gap.replace("_", " ") in label_and_summary)
+        if gap_hits:
+            score += gap_hits * 0.22
 
         branch_copy = dict(branch)
         branch_copy["_score"] = round(score, 3)
@@ -193,11 +217,18 @@ def build_retrieved_branch_context(branches: list[dict[str, Any]]) -> str:
     return "\n".join(lines)
 
 
-def build_coverage_priorities(branches: list[dict[str, Any]], current_stage: str) -> str:
+def build_coverage_priorities(
+    branches: list[dict[str, Any]], current_stage: str, stage_gaps: list[str]
+) -> str:
     if not branches:
-        return f"No high-priority branches found for {current_stage}. Stay aligned with the current stage objective."
+        base = f"No high-priority branches found for {current_stage}. Stay aligned with the current stage objective."
+        if stage_gaps:
+            base += f" Framework gaps: {', '.join(stage_gaps)}."
+        return base
 
     lines = [f"Focus on the strongest uncovered branches for {current_stage}:"]
+    if stage_gaps:
+        lines.append(f"- Required framework gaps: {', '.join(stage_gaps)}")
     for branch in branches:
         lines.append(
             f"- {branch['label']} [{branch['status']}] via turns {', '.join(str(turn_no) for turn_no in branch.get('evidence_turn_nos', []))}"

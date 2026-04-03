@@ -14,7 +14,10 @@ from app.schemas.debug import (
 from app.services.context_engineering import build_generation_context
 from app.services.coverage_service import rebuild_coverage_state, save_coverage_state
 from app.services.llm_test import test_llm_call
-from app.services.stage_manager import determine_stage_by_turn
+from app.services.question_generator import get_stage_prompt_id
+from app.services.question_planner import plan_next_question
+from app.services.question_validator import validate_question_for_stage
+from app.services.stage_manager import decide_next_stage
 from app.services.summarization_service import ensure_turn_summaries
 
 router = APIRouter(prefix="/debug", tags=["debug"])
@@ -75,7 +78,13 @@ def debug_next_context_preview(
     db.refresh(project)
 
     next_turn_no = pending_turn.turn_no + 1
-    next_stage = determine_stage_by_turn(next_turn_no)
+    stage_decision = decide_next_stage(
+        next_turn_no=next_turn_no,
+        coverage_state=coverage_state,
+        current_stage=project.current_stage,
+        max_turns=settings.interview_max_turns,
+    )
+    next_stage = stage_decision["next_stage"]
     context_payload = build_generation_context(
         turns=turns,
         current_stage=next_stage,
@@ -85,26 +94,42 @@ def debug_next_context_preview(
         latest_answer_override=payload.answer_text,
     )
 
+    planner_decision = plan_next_question(
+        turns=turns,
+        current_stage=next_stage,
+        next_turn_no=next_turn_no,
+        coverage_state=coverage_state,
+    )
+
     prompt = get_prompt_manager().render(
-        "next_question",
+        get_stage_prompt_id(next_stage),
         {
             "system_prompt": project.system_prompt,
             "current_stage": next_stage,
             "stage_objective": context_payload["stage_objective"],
+            "question_intent": planner_decision["question_intent"],
+            "target_type": planner_decision["target_type"],
+            "target_label": planner_decision["target_label"],
+            "planner_reasoning": planner_decision["reasoning"],
             "next_turn_no": next_turn_no,
-            "closing_guidance": (
-                "The interview is now in its closing phase. Prefer questions that help complete coverage cleanly instead of opening entirely new broad topics."
-                if next_turn_no >= settings.interview_min_turns
-                else "The interview still has room to deepen partially explored branches."
-            ),
             "recent_context": context_payload["recent_context"],
             "retrieved_context": context_payload["retrieved_context"],
             "coverage_priorities": context_payload["coverage_priorities"],
+            "style_constraints": "\n".join(planner_decision.get("constraints", [])),
         },
+    )
+
+    validation_preview = validate_question_for_stage(
+        text=f"Q{next_turn_no}: Placeholder validation preview?",
+        expected_turn_no=next_turn_no,
+        current_stage=next_stage,
     )
 
     return {
         **context_payload,
+        "stage_decision": stage_decision,
+        "planner_decision": planner_decision,
+        "validation_preview": validation_preview,
         "prompt_id": prompt.prompt_id,
         "prompt_version": prompt.version,
         "prompt_messages": prompt.messages,

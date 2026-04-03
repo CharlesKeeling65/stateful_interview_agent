@@ -18,6 +18,9 @@ class InterviewGraphState(TypedDict, total=False):
     coverage_priorities: str
     selected_turn_ids: list[int]
     selected_branch_ids: list[str]
+    stage_decision: dict
+    planner_decision: dict
+    validation_result: dict
     prompt_metadata: dict
     latest_question: str
     generated_question: str

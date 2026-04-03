@@ -1,0 +1,46 @@
+id: next_question_architecture
+version: "1.0"
+description: Architecture Understanding question-writing prompt.
+system_template: |
+  {system_prompt}
+user_template: |
+  Continue the interview for software project understanding.
+
+  Current stage: {current_stage}
+  Stage objective: {stage_objective}
+  Planner intent: {question_intent}
+  Planner target: {target_type} -> {target_label}
+  Planner reasoning: {planner_reasoning}
+  Next question number: Q{next_turn_no}
+
+  Recent context:
+  {recent_context}
+
+  Retrieved branch context:
+  {retrieved_context}
+
+  Framework gaps:
+  {coverage_priorities}
+
+  Constraints:
+  {style_constraints}
+
+  Requirements:
+  1. Ask exactly one English question labeled Q{next_turn_no}.
+  2. Focus on responsibilities, collaboration, communication mechanisms, or key call chains.
+  3. Avoid repeating shallow overview questions.
+  4. Avoid broad code-detail questions unless tied to a call path or component interaction.
+  5. Do not provide explanations or alternatives.
+required_variables:
+  - system_prompt
+  - current_stage
+  - stage_objective
+  - question_intent
+  - target_type
+  - target_label
+  - planner_reasoning
+  - next_turn_no
+  - recent_context
+  - retrieved_context
+  - coverage_priorities
+  - style_constraints

@@ -20,6 +20,7 @@ class CoverageDebugResponse(BaseModel):
     branch_count: int
     updated_through_turn_no: int
     branches: list[CoverageBranchDebug]
+    framework: dict
 
 
 class ContextPreviewRequest(BaseModel):
@@ -30,11 +31,15 @@ class ContextPreviewResponse(BaseModel):
     current_stage: str
     next_turn_no: int
     stage_objective: str
+    framework_gaps: list[str]
     recent_context: str
     retrieved_context: str
     coverage_priorities: str
     selected_turn_ids: list[int]
     selected_branch_ids: list[str]
+    stage_decision: dict
+    planner_decision: dict
+    validation_preview: dict
     prompt_id: str
     prompt_version: str
     prompt_messages: list[dict[str, str]]

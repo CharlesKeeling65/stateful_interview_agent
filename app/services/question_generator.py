@@ -5,7 +5,14 @@ from app.core.llm_client import get_openai_client
 from app.logging import emit_event, preview_payload
 from app.prompts import get_prompt_manager
 from app.services.question_postprocessor import clean_generated_question
-from app.services.stage_manager import get_stage_instruction
+from app.services.stage_manager import (
+    ARCHITECTURE_STAGE,
+    CODE_DETAIL_STAGE,
+    PANORAMA_STAGE,
+    USE_CASE_STAGE,
+    WRAP_UP_STAGE,
+    get_stage_instruction,
+)
 from app.services.usage_service import extract_usage_metrics
 
 
@@ -123,6 +130,7 @@ def generate_next_question_from_history(
     coverage_priorities: str,
     next_turn_no: int,
     current_stage: str,
+    planner_decision: dict | None = None,
 ) -> dict:
     client = get_openai_client()
 
@@ -134,17 +142,23 @@ def generate_next_question_from_history(
         if is_near_end
         else "The interview still has room to deepen partially explored branches."
     )
+    prompt_id = get_stage_prompt_id(current_stage)
+    planner = planner_decision or default_planner_decision(current_stage)
     prompt = get_prompt_manager().render(
-        "next_question",
+        prompt_id,
         {
             "system_prompt": system_prompt,
             "current_stage": current_stage,
             "stage_objective": stage_instruction,
             "next_turn_no": next_turn_no,
-            "closing_guidance": closing_instruction,
             "recent_context": recent_context,
             "retrieved_context": retrieved_context,
             "coverage_priorities": coverage_priorities,
+            "question_intent": planner["question_intent"],
+            "target_type": planner["target_type"],
+            "target_label": planner["target_label"],
+            "planner_reasoning": planner["reasoning"],
+            "style_constraints": "; ".join(planner["constraints"]) + f"; Closing guidance: {closing_instruction}",
         },
     )
     prompt_text = "\n\n".join(message["content"] for message in prompt.messages)
@@ -245,4 +259,25 @@ def generate_next_question_from_history(
         "usage_metrics": usage_metrics,
         "prompt_id": prompt.prompt_id,
         "prompt_version": prompt.version,
+    }
+
+
+def get_stage_prompt_id(stage: str) -> str:
+    mapping = {
+        PANORAMA_STAGE: "next_question_panorama",
+        ARCHITECTURE_STAGE: "next_question_architecture",
+        CODE_DETAIL_STAGE: "next_question_code_detail",
+        USE_CASE_STAGE: "next_question_use_cases",
+        WRAP_UP_STAGE: "next_question_wrap_up",
+    }
+    return mapping.get(stage, "next_question_architecture")
+
+
+def default_planner_decision(stage: str) -> dict:
+    return {
+        "question_intent": "stage_follow_up",
+        "target_type": "framework_gap",
+        "target_label": "the next uncovered target",
+        "constraints": ["Stay aligned with the current stage"],
+        "reasoning": f"Fallback planner decision for {stage}.",
     }

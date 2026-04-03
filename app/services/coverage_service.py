@@ -72,6 +72,38 @@ UNRESOLVED_MARKERS = (
     "ambigu",
 )
 
+FILE_PATTERN = re.compile(r"\b[\w./-]+\.(?:py|ts|tsx|js|jsx|java|go|rb|yaml|yml|json)\b")
+CLASS_PATTERN = re.compile(r"\b[A-Z][A-Za-z0-9_]{2,}\b")
+METHOD_PATTERN = re.compile(r"\b[a-z_][a-z0-9_]{2,}\s*\(")
+LIBRARY_PATTERN = re.compile(
+    r"\b(?:openai|fastapi|sqlalchemy|langgraph|langchain|pydantic|react|tailwind|vite)\b",
+    re.IGNORECASE,
+)
+
+PANORAMA_KEYWORDS = {
+    "purpose": {"purpose", "goal", "achieve", "problem", "supports", "helps"},
+    "target_users": {"user", "users", "customer", "customers", "operator", "operators", "admin", "admins", "analyst"},
+    "boundaries": {"boundary", "boundaries", "scope", "limit", "outside", "inside"},
+    "major_modules": {"module", "modules", "service", "services", "component", "components", "gateway"},
+    "high_level_workflow": {"workflow", "flow", "routing", "pipeline", "intake", "handoff", "request"},
+}
+
+ARCHITECTURE_KEYWORDS = {
+    "architecture_style": {"layered", "pipeline", "monolith", "microservice", "architecture", "tier"},
+    "module_responsibilities": {"responsibility", "responsibilities", "owns", "split", "organize", "module"},
+    "communication_mechanisms": {"http", "rpc", "event", "queue", "message", "async", "synchronous"},
+    "key_call_chains": {"call chain", "path", "handoff", "request path", "execution path", "routes to", "->"},
+    "design_rationale": {"rationale", "tradeoff", "reliability", "performance", "maintainability", "why"},
+}
+
+USE_CASE_KEYWORDS = {
+    "typical_scenarios_count": {"scenario", "workflow", "journey", "request", "case"},
+    "user_roles_count": {"role", "operator", "customer", "admin", "analyst", "actor"},
+    "input_output_patterns_count": {"input", "output", "payload", "response", "request", "result"},
+    "boundary_conditions_count": {"edge", "boundary", "limit", "invalid", "failure", "condition"},
+    "extension_points_count": {"extension", "plugin", "customize", "hook", "configuration"},
+}
+
 
 def default_coverage_state() -> dict[str, Any]:
     return {
@@ -79,6 +111,7 @@ def default_coverage_state() -> dict[str, Any]:
         "branch_count": 0,
         "updated_through_turn_no": 0,
         "branches": [],
+        "framework": default_framework_coverage(),
     }
 
 
@@ -98,6 +131,7 @@ def load_coverage_state(project: ProjectSession) -> dict[str, Any]:
     parsed.setdefault("branches", [])
     parsed.setdefault("branch_count", len(parsed["branches"]))
     parsed.setdefault("updated_through_turn_no", 0)
+    parsed.setdefault("framework", default_framework_coverage())
     return parsed
 
 
@@ -172,12 +206,128 @@ def rebuild_coverage_state(turns: list[InterviewTurn]) -> dict[str, Any]:
         (turn.turn_no for turn in turns if turn.answer_text),
         default=0,
     )
+    framework = rebuild_framework_coverage(turns)
     return {
         "version": 1,
         "branch_count": len(branches),
         "updated_through_turn_no": updated_through_turn_no,
         "branches": sorted(branches, key=lambda item: item["priority"], reverse=True),
+        "framework": framework,
     }
+
+
+def default_framework_coverage() -> dict[str, Any]:
+    return {
+        "panorama": {
+            "purpose": False,
+            "target_users": False,
+            "boundaries": False,
+            "major_modules": False,
+            "high_level_workflow": False,
+        },
+        "architecture": {
+            "architecture_style": False,
+            "module_responsibilities": False,
+            "communication_mechanisms": False,
+            "key_call_chains": False,
+            "design_rationale": False,
+        },
+        "code_detail": {
+            "key_files_count": 0,
+            "key_classes_count": 0,
+            "key_methods_count": 0,
+            "execution_paths_count": 0,
+            "third_party_library_usage_count": 0,
+            "error_handling_count": 0,
+        },
+        "use_cases": {
+            "typical_scenarios_count": 0,
+            "user_roles_count": 0,
+            "input_output_patterns_count": 0,
+            "boundary_conditions_count": 0,
+            "extension_points_count": 0,
+        },
+        "stage_turn_counts": {
+            "Panorama Mapping": 0,
+            "Architecture Understanding": 0,
+            "Code Detail Completion": 0,
+            "Use Cases & Scenarios": 0,
+            "Final Wrap-up": 0,
+        },
+        "gaps": {},
+        "wrap_up_ready": False,
+    }
+
+
+def rebuild_framework_coverage(turns: list[InterviewTurn]) -> dict[str, Any]:
+    framework = default_framework_coverage()
+    panorama = framework["panorama"]
+    architecture = framework["architecture"]
+    code_detail = framework["code_detail"]
+    use_cases = framework["use_cases"]
+    stage_turn_counts = framework["stage_turn_counts"]
+
+    for turn in turns:
+        if not turn.answer_text:
+            continue
+
+        stage_turn_counts[turn.stage] = stage_turn_counts.get(turn.stage, 0) + 1
+        text = " ".join(
+            filter(
+                None,
+                [turn.question_text, turn.answer_text, turn.answer_summary],
+            )
+        ).lower()
+
+        for key, keywords in PANORAMA_KEYWORDS.items():
+            if any(keyword in text for keyword in keywords):
+                panorama[key] = True
+
+        for key, keywords in ARCHITECTURE_KEYWORDS.items():
+            if any(keyword in text for keyword in keywords):
+                architecture[key] = True
+
+        code_detail["key_files_count"] += len(set(FILE_PATTERN.findall(turn.answer_text)))
+        code_detail["key_classes_count"] += len(set(CLASS_PATTERN.findall(turn.answer_text)))
+        code_detail["key_methods_count"] += len(set(method.strip(" (") for method in METHOD_PATTERN.findall(turn.answer_text)))
+        if any(marker in text for marker in {"execution path", "request path", "call chain", "->"}):
+            code_detail["execution_paths_count"] += 1
+        code_detail["third_party_library_usage_count"] += len(
+            set(token.lower() for token in LIBRARY_PATTERN.findall(turn.answer_text))
+        )
+        if any(marker in text for marker in {"error", "exception", "retry", "fallback", "http exception", "log"}):
+            code_detail["error_handling_count"] += 1
+
+        for key, keywords in USE_CASE_KEYWORDS.items():
+            if any(keyword in text for keyword in keywords):
+                use_cases[key] += 1
+
+    framework["gaps"] = {
+        "panorama": [
+            key for key, covered in panorama.items() if not covered
+        ],
+        "architecture": [
+            key for key, covered in architecture.items() if not covered
+        ],
+        "code_detail": [
+            key
+            for key, count in code_detail.items()
+            if count <= 0
+        ],
+        "use_cases": [
+            key
+            for key, count in use_cases.items()
+            if count <= 0
+        ],
+    }
+    framework["wrap_up_ready"] = (
+        len(framework["gaps"]["panorama"]) <= 1
+        and len(framework["gaps"]["architecture"]) <= 1
+        and code_detail["key_files_count"] >= 2
+        and code_detail["key_methods_count"] >= 2
+        and use_cases["typical_scenarios_count"] >= 1
+    )
+    return framework
 
 
 def build_branch_label(turn: InterviewTurn, keywords: list[str]) -> str:
@@ -262,3 +412,40 @@ def merge_unique(existing: list[Any], incoming: list[Any], *, limit: int | None 
     if limit is not None:
         return merged[:limit]
     return merged
+
+
+def framework_gaps_for_stage(coverage_state: dict[str, Any], stage: str) -> list[str]:
+    framework = coverage_state.get("framework", default_framework_coverage())
+    gap_map = framework.get("gaps", {})
+    if not gap_map:
+        gap_map = {
+            "panorama": [
+                key
+                for key, covered in framework.get("panorama", {}).items()
+                if not covered
+            ],
+            "architecture": [
+                key
+                for key, covered in framework.get("architecture", {}).items()
+                if not covered
+            ],
+            "code_detail": [
+                key
+                for key, count in framework.get("code_detail", {}).items()
+                if isinstance(count, (int, float)) and count <= 0
+            ],
+            "use_cases": [
+                key
+                for key, count in framework.get("use_cases", {}).items()
+                if isinstance(count, (int, float)) and count <= 0
+            ],
+        }
+    if stage == "Panorama Mapping":
+        return gap_map.get("panorama", [])
+    if stage == "Architecture Understanding":
+        return gap_map.get("architecture", [])
+    if stage == "Code Detail Completion":
+        return gap_map.get("code_detail", [])
+    if stage == "Use Cases & Scenarios":
+        return gap_map.get("use_cases", [])
+    return []

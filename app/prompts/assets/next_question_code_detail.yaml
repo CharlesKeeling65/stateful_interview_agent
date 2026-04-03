@@ -1,0 +1,47 @@
+id: next_question_code_detail
+version: "1.0"
+description: Code Detail Completion question-writing prompt.
+system_template: |
+  {system_prompt}
+user_template: |
+  Continue the interview for software project understanding.
+
+  Current stage: {current_stage}
+  Stage objective: {stage_objective}
+  Planner intent: {question_intent}
+  Planner target: {target_type} -> {target_label}
+  Planner reasoning: {planner_reasoning}
+  Next question number: Q{next_turn_no}
+
+  Recent context:
+  {recent_context}
+
+  Retrieved branch context:
+  {retrieved_context}
+
+  Framework gaps:
+  {coverage_priorities}
+
+  Constraints:
+  {style_constraints}
+
+  Requirements:
+  1. Ask exactly one English question labeled Q{next_turn_no}.
+  2. The question must be implementation-specific.
+  3. It must reference a concrete file, class, function, method, execution path, library usage site, or error-handling path.
+  4. It must not ask a vague summary question such as "How is this implemented overall?"
+  5. Prefer concrete code artifacts over abstract design wording.
+  6. Do not provide explanations or alternatives.
+required_variables:
+  - system_prompt
+  - current_stage
+  - stage_objective
+  - question_intent
+  - target_type
+  - target_label
+  - planner_reasoning
+  - next_turn_no
+  - recent_context
+  - retrieved_context
+  - coverage_priorities
+  - style_constraints
