@@ -7,6 +7,7 @@ from app.services.coverage_service import (
     detect_topic_drift,
     framework_gaps_for_stage,
 )
+from app.services.repetition_guard import build_question_signature, normalize_target_label
 from app.services.stage_manager import (
     ARCHITECTURE_STAGE,
     CODE_DETAIL_STAGE,
@@ -27,10 +28,21 @@ def plan_next_question(
     next_turn_no: int,
     coverage_state: dict[str, Any],
     human_review_signal: dict[str, Any] | None = None,
+    excluded_branch_ids: set[str] | None = None,
+    excluded_target_signatures: set[str] | None = None,
 ) -> dict[str, Any]:
     framework = coverage_state.get("framework", default_framework_coverage())
     branches = coverage_state.get("branches", [])
-    branch = branches[0] if branches else None
+    question_history = coverage_state.get("question_history", [])
+    recent_question_history = question_history[-8:]
+    excluded_branch_ids = excluded_branch_ids or set()
+    excluded_target_signatures = excluded_target_signatures or set()
+    branch = choose_branch_for_stage(
+        branches=branches,
+        current_stage=current_stage,
+        recent_question_history=recent_question_history,
+        excluded_branch_ids=excluded_branch_ids,
+    )
     stage_gaps = framework_gaps_for_stage(coverage_state, current_stage)
     collaboration = framework.get("human_collaboration", {})
     collaboration_gap_count = sum(
@@ -43,7 +55,10 @@ def plan_next_question(
     intent_mode = "understand_current_code"
 
     if review and (
-        review.get("direction") == "redirect" or review.get("verdict") in {"insufficient", "drifted"}
+        review.get("direction") == "redirect"
+        or review.get("verdict") in {"insufficient", "drifted"}
+        or preferred_focus
+        or review_note
     ):
         target_label = resolve_human_review_target(
             current_stage=current_stage,
@@ -160,6 +175,15 @@ def plan_next_question(
             }
 
         target_type, target_label = choose_code_detail_target(branch)
+        if branch:
+            branch, target_type, target_label = choose_non_redundant_code_detail_target(
+                branches=branches,
+                current_stage=current_stage,
+                recent_question_history=recent_question_history,
+                default_branch=branch,
+                excluded_branch_ids=excluded_branch_ids,
+                excluded_target_signatures=excluded_target_signatures,
+            )
         return {
             "question_intent": "code_detail_deep_dive",
             "intent_mode": intent_mode,
@@ -178,7 +202,11 @@ def plan_next_question(
             "drift_detected": False,
             "human_collaboration_gate": False,
             "human_review_applied": False,
-            "why_this_question": f"Code-detail should dominate now, so the next question targets the concrete {target_type} '{target_label}'.",
+            "why_this_question": build_code_detail_why_text(
+                target_type=target_type,
+                target_label=target_label,
+                recent_question_history=recent_question_history,
+            ),
         }
 
     if current_stage == USE_CASE_STAGE:
@@ -307,3 +335,83 @@ def choose_code_detail_target(branch: dict[str, Any] | None) -> tuple[str, str]:
         return "execution_path", keywords[0]
 
     return "execution_path", branch.get("label", "the key execution path")
+
+
+def choose_branch_for_stage(
+    *,
+    branches: list[dict[str, Any]],
+    current_stage: str,
+    recent_question_history: list[dict[str, Any]],
+    excluded_branch_ids: set[str],
+) -> dict[str, Any] | None:
+    if not branches:
+        return None
+
+    recent_branch_ids = {
+        str(item.get("branch_id"))
+        for item in recent_question_history[-4:]
+        if item.get("branch_id")
+    }
+    for branch in branches:
+        if branch.get("branch_id") in excluded_branch_ids:
+            continue
+        if current_stage == CODE_DETAIL_STAGE and branch.get("branch_id") in recent_branch_ids:
+            continue
+        return branch
+    for branch in branches:
+        if branch.get("branch_id") not in excluded_branch_ids:
+            return branch
+    return branches[0]
+
+
+def choose_non_redundant_code_detail_target(
+    *,
+    branches: list[dict[str, Any]],
+    current_stage: str,
+    recent_question_history: list[dict[str, Any]],
+    default_branch: dict[str, Any],
+    excluded_branch_ids: set[str],
+    excluded_target_signatures: set[str],
+) -> tuple[dict[str, Any], str, str]:
+    recent_signatures = {
+        str(item.get("signature", ""))
+        for item in recent_question_history
+    }
+    recent_signatures |= excluded_target_signatures
+
+    for branch in [default_branch, *[item for item in branches if item is not default_branch]]:
+        if branch.get("branch_id") in excluded_branch_ids:
+            continue
+        target_type, target_label = choose_code_detail_target(branch)
+        signature = build_question_signature(
+            stage=current_stage,
+            intent="code_detail_deep_dive",
+            branch_id=branch.get("branch_id"),
+            target_type=target_type,
+            target_label=target_label,
+        )
+        if signature not in recent_signatures:
+            return branch, target_type, target_label
+
+    fallback_branch = branches[0] if branches else default_branch
+    fallback_target_type, fallback_target_label = choose_code_detail_target(fallback_branch)
+    return fallback_branch, fallback_target_type, fallback_target_label
+
+
+def build_code_detail_why_text(
+    *,
+    target_type: str,
+    target_label: str,
+    recent_question_history: list[dict[str, Any]],
+) -> str:
+    recent_targets = {
+        normalize_target_label(str(item.get("target_label", "")))
+        for item in recent_question_history[-4:]
+    }
+    normalized_target = normalize_target_label(target_label)
+    if normalized_target and normalized_target not in recent_targets:
+        return (
+            f"Code-detail should dominate now, and this target avoids recently repeated questions by focusing on the concrete "
+            f"{target_type} '{target_label}'."
+        )
+    return f"Code-detail should dominate now, so the next question targets the concrete {target_type} '{target_label}'."

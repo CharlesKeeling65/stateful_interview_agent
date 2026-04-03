@@ -7,7 +7,7 @@ from app.schemas.usage import LLMUsageRead
 
 
 class HumanReviewInput(BaseModel):
-    verdict: Literal["sufficient", "insufficient", "drifted"]
+    verdict: Literal["sufficient", "insufficient", "drifted"] | None = None
     direction: Literal["continue", "redirect"] = "continue"
     preferred_next_focus: str | None = Field(default=None, max_length=120)
     note: str | None = Field(default=None, max_length=500)

@@ -4,6 +4,7 @@ from typing import Any
 
 from app.models.project import ProjectSession
 from app.models.turn import InterviewTurn
+from app.services.repetition_guard import build_question_history_entry
 
 STOPWORDS = {
     "the",
@@ -130,6 +131,7 @@ def default_coverage_state() -> dict[str, Any]:
         "branch_count": 0,
         "updated_through_turn_no": 0,
         "branches": [],
+        "question_history": [],
         "framework": default_framework_coverage(),
     }
 
@@ -150,6 +152,7 @@ def load_coverage_state(project: ProjectSession) -> dict[str, Any]:
     parsed.setdefault("branches", [])
     parsed.setdefault("branch_count", len(parsed["branches"]))
     parsed.setdefault("updated_through_turn_no", 0)
+    parsed.setdefault("question_history", [])
     parsed.setdefault("framework", default_framework_coverage())
     return parsed
 
@@ -160,8 +163,20 @@ def save_coverage_state(project: ProjectSession, coverage_state: dict[str, Any])
 
 def rebuild_coverage_state(turns: list[InterviewTurn]) -> dict[str, Any]:
     branches: list[dict[str, Any]] = []
+    question_history: list[dict[str, Any]] = []
 
     for turn in turns:
+        question_history.append(
+            build_question_history_entry(
+                turn_no=turn.turn_no,
+                stage=turn.stage,
+                question_text=turn.question_text,
+                intent=(turn.question_plan or {}).get("question_intent"),
+                branch_id=(turn.question_plan or {}).get("target_branch_id"),
+                target_type=(turn.question_plan or {}).get("target_type"),
+                target_label=(turn.question_plan or {}).get("target_label"),
+            )
+        )
         if not turn.answer_text:
             continue
 
@@ -231,6 +246,7 @@ def rebuild_coverage_state(turns: list[InterviewTurn]) -> dict[str, Any]:
         "branch_count": len(branches),
         "updated_through_turn_no": updated_through_turn_no,
         "branches": sorted(branches, key=lambda item: item["priority"], reverse=True),
+        "question_history": question_history[-12:],
         "framework": framework,
     }
 
@@ -325,7 +341,7 @@ def rebuild_framework_coverage(turns: list[InterviewTurn]) -> dict[str, Any]:
             code_detail["error_handling_count"] += 1
 
         for key, keywords in USE_CASE_KEYWORDS.items():
-            if any(keyword in text for keyword in keywords):
+            if turn.stage == "Use Cases & Scenarios" and any(keyword in text for keyword in keywords):
                 use_cases[key] += 1
 
         for key, markers in COLLABORATION_MARKERS.items():

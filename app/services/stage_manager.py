@@ -89,8 +89,12 @@ def decide_next_stage(
         }
 
     code_detail_turns = stage_turn_counts.get(CODE_DETAIL_STAGE, 0)
-    target_code_detail_turns = max(1, max_turns - 8)
-    code_detail_is_dominant = code_detail_turns >= max(8, int(max_turns * 0.55))
+    total_completed_turns = sum(stage_turn_counts.values())
+    code_detail_share = (
+        code_detail_turns / total_completed_turns if total_completed_turns > 0 else 0.0
+    )
+    target_code_detail_turns = max(8, int(max_turns * 0.45))
+    code_detail_is_dominant = code_detail_turns >= 8 and code_detail_share >= 0.55
 
     if code_detail_is_dominant and use_case_gaps and remaining_turns <= max(10, max_turns // 4):
         return {
@@ -102,7 +106,7 @@ def decide_next_stage(
             "gaps": use_case_gaps,
         }
 
-    if code_detail_turns < target_code_detail_turns or code_detail_gaps:
+    if code_detail_gaps:
         if current_stage == CODE_DETAIL_STAGE and human_phase_ready and code_detail_turns >= max(6, max_turns // 5):
             return {
                 "next_stage": USE_CASE_STAGE,
@@ -114,6 +118,16 @@ def decide_next_stage(
             "reason": (
                 "Code detail coverage must dominate the remaining interview turns. "
                 f"Outstanding code-detail gaps: {', '.join(code_detail_gaps[:4]) or 'more implementation depth needed'}."
+            ),
+            "gaps": code_detail_gaps,
+        }
+
+    if code_detail_turns < target_code_detail_turns and not use_case_gaps:
+        return {
+            "next_stage": CODE_DETAIL_STAGE,
+            "reason": (
+                "Code-detail coverage is still growing, but scenario coverage is already complete, "
+                "so the interview can spend another turn in implementation detail."
             ),
             "gaps": code_detail_gaps,
         }

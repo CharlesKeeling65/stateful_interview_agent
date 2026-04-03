@@ -1,11 +1,13 @@
 import os
 import unittest
+from unittest.mock import patch
 
 os.environ.setdefault("OPENAI_API_KEY", "test-key")
 
 from app.models.turn import InterviewTurn
 from app.services.coverage_service import rebuild_coverage_state
 from app.services.question_planner import plan_next_question
+from app.services.repetition_guard import is_question_semantically_redundant
 from app.services.question_validator import validate_question_for_stage
 from app.services.stage_manager import decide_next_stage
 
@@ -140,6 +142,76 @@ class StageControllerTests(unittest.TestCase):
         self.assertEqual(decision["next_stage"], "Code Detail Completion")
         self.assertIn("code detail", decision["reason"].lower())
 
+    def test_stage_controller_can_move_to_use_cases_before_hardcoded_turn_32_when_code_detail_is_already_dominant(self):
+        coverage_state = {
+            "framework": {
+                "panorama": {
+                    "purpose": True,
+                    "target_users": True,
+                    "boundaries": True,
+                    "major_modules": True,
+                    "high_level_workflow": True,
+                },
+                "architecture": {
+                    "architecture_style": True,
+                    "module_responsibilities": True,
+                    "communication_mechanisms": True,
+                    "key_call_chains": True,
+                    "design_rationale": True,
+                },
+                "code_detail": {
+                    "key_files_count": 12,
+                    "key_classes_count": 7,
+                    "key_methods_count": 14,
+                    "execution_paths_count": 8,
+                    "third_party_library_usage_count": 4,
+                    "error_handling_count": 5,
+                },
+                "use_cases": {
+                    "scenario_count": 0,
+                    "user_roles_count": 0,
+                    "input_output_patterns_count": 0,
+                    "boundary_conditions_count": 0,
+                    "extension_points_count": 0,
+                },
+                "human_collaboration": {
+                    "judgment_turn_count": 2,
+                    "correction_turn_count": 1,
+                    "redirection_turn_count": 1,
+                    "prioritization_turn_count": 1,
+                },
+                "stage_turn_counts": {
+                    "Panorama Mapping": 5,
+                    "Architecture Understanding": 4,
+                    "Code Detail Completion": 18,
+                    "Use Cases & Scenarios": 0,
+                    "Final Wrap-up": 0,
+                },
+                "gaps": {
+                    "panorama": [],
+                    "architecture": [],
+                    "code_detail": [],
+                    "use_cases": [
+                        "scenario_count",
+                        "user_roles_count",
+                        "input_output_patterns_count",
+                    ],
+                    "human_collaboration": [],
+                },
+                "wrap_up_ready": False,
+            }
+        }
+
+        decision = decide_next_stage(
+            next_turn_no=34,
+            coverage_state=coverage_state,
+            current_stage="Code Detail Completion",
+            max_turns=40,
+        )
+
+        self.assertEqual(decision["next_stage"], "Use Cases & Scenarios")
+        self.assertIn("use-case", decision["reason"].lower())
+
 
 class PlannerAndValidatorTests(unittest.TestCase):
     def test_question_planner_prioritizes_concrete_code_detail_targets(self):
@@ -201,6 +273,82 @@ class PlannerAndValidatorTests(unittest.TestCase):
         self.assertTrue(planner["target_label"])
         self.assertTrue(planner["constraints"])
 
+    def test_question_planner_avoids_recently_asked_same_code_detail_target(self):
+        turns = [
+            InterviewTurn(
+                id=1,
+                turn_no=9,
+                stage="Code Detail Completion",
+                question_text="Q9: In app/services/question_generator.py, how does generate_next_question_from_history currently build the prompt before calling OpenAI?",
+                answer_text="It renders a stage-specific prompt and then calls the OpenAI-compatible chat completions API.",
+                answer_summary="question_generator.py builds the prompt and calls the model.",
+            ),
+        ]
+
+        coverage_state = {
+            "branches": [
+                {
+                    "branch_id": "question_generator",
+                    "label": "app/services/question_generator.py prompt rendering path",
+                    "stage": "Code Detail Completion",
+                    "status": "needs_follow_up",
+                    "priority": 0.98,
+                    "keywords": ["question_generator.py", "render_prompt", "call_llm"],
+                    "evidence_turn_ids": [1],
+                    "evidence_turn_nos": [9],
+                    "summary": "question_generator.py builds the prompt before calling the model.",
+                    "unresolved_points": ["Need to inspect validation and persistence path next."],
+                    "last_turn_no": 9,
+                },
+                {
+                    "branch_id": "persist_next_step",
+                    "label": "app/graphs/interview_nodes.py persist_next_step path",
+                    "stage": "Code Detail Completion",
+                    "status": "needs_follow_up",
+                    "priority": 0.91,
+                    "keywords": ["interview_nodes.py", "persist_next_step", "pending_turn_id"],
+                    "evidence_turn_ids": [1],
+                    "evidence_turn_nos": [9],
+                    "summary": "persist_next_step updates the answered turn and creates the next one.",
+                    "unresolved_points": ["Need to inspect how the stale pending turn is guarded."],
+                    "last_turn_no": 9,
+                },
+            ],
+            "framework": {
+                "code_detail": {
+                    "key_files_count": 1,
+                    "key_classes_count": 0,
+                    "key_methods_count": 1,
+                    "execution_paths_count": 0,
+                    "third_party_library_usage_count": 1,
+                    "error_handling_count": 0,
+                }
+            },
+            "question_history": [
+                {
+                    "turn_no": 9,
+                    "stage": "Code Detail Completion",
+                    "intent": "code_detail_deep_dive",
+                    "branch_id": "question_generator",
+                    "target_type": "file",
+                    "target_label": "app/services/question_generator.py",
+                    "signature": "Code Detail Completion|code_detail_deep_dive|question_generator|file|app/services/question_generator.py",
+                }
+            ],
+        }
+
+        planner = plan_next_question(
+            turns=turns,
+            current_stage="Code Detail Completion",
+            next_turn_no=10,
+            coverage_state=coverage_state,
+        )
+
+        self.assertEqual(planner["question_intent"], "code_detail_deep_dive")
+        self.assertNotEqual(planner["target_label"], "app/services/question_generator.py")
+        self.assertNotEqual(planner.get("target_branch_id"), "question_generator")
+        self.assertIn("recent", planner["why_this_question"].lower())
+
     def test_stage_validator_rejects_generic_code_detail_questions(self):
         invalid = validate_question_for_stage(
             text="Q11: How is this implemented in the project overall?",
@@ -238,6 +386,79 @@ class PlannerAndValidatorTests(unittest.TestCase):
             any("change" in reason.lower() or "current code" in reason.lower() for reason in invalid["reasons"])
         )
         self.assertTrue(valid["is_valid"])
+
+    def test_stage_validator_rejects_semantically_redundant_recent_question(self):
+        invalid = validate_question_for_stage(
+            text="Q18: In app/services/question_generator.py, how does generate_next_question_from_history currently assemble the prompt right before the model call?",
+            expected_turn_no=18,
+            current_stage="Code Detail Completion",
+            intent_mode="understand_current_code",
+            recent_question_signatures=[
+                {
+                    "turn_no": 17,
+                    "stage": "Code Detail Completion",
+                    "intent": "code_detail_deep_dive",
+                    "branch_id": "question_generator",
+                    "target_type": "file",
+                    "target_label": "app/services/question_generator.py",
+                    "signature": "Code Detail Completion|code_detail_deep_dive|question_generator|file|app/services/question_generator.py",
+                    "question_text": "Q17: In app/services/question_generator.py, how does generate_next_question_from_history build the prompt before calling OpenAI?",
+                }
+            ],
+        )
+
+        self.assertFalse(invalid["is_valid"])
+        self.assertTrue(any("similar" in reason.lower() or "already" in reason.lower() for reason in invalid["reasons"]))
+
+    def test_semantic_duplicate_guard_can_use_optional_embeddings(self):
+        with patch("app.services.repetition_guard.settings.duplicate_guard_use_embeddings", True), patch(
+            "app.services.repetition_guard.settings.duplicate_guard_embedding_threshold", 0.9
+        ), patch("app.services.repetition_guard.get_embedding_similarity", return_value=0.96):
+            is_redundant = is_question_semantically_redundant(
+                text="Q18: In app/services/question_generator.py, how does that prompt assembly path work immediately before the model call?",
+                stage="Code Detail Completion",
+                intent="code_detail_deep_dive",
+                branch_id="question_generator",
+                recent_question_signatures=[
+                    {
+                        "turn_no": 17,
+                        "stage": "Code Detail Completion",
+                        "intent": "code_detail_deep_dive",
+                        "branch_id": "question_generator_alt",
+                        "target_type": "topic",
+                        "target_label": "prompt assembly path",
+                        "signature": "different-signature",
+                        "question_text": "Q17: Walk me through the prompt assembly path before the OpenAI call in question_generator.",
+                    }
+                ],
+            )
+
+        self.assertTrue(is_redundant)
+
+
+class CoverageCountingTests(unittest.TestCase):
+    def test_use_case_counts_do_not_get_falsely_satisfied_by_code_detail_keyword_hits(self):
+        turns = [
+            InterviewTurn(
+                id=1,
+                turn_no=30,
+                stage="Code Detail Completion",
+                question_text="Q30: In typer_agent.py, how are input payloads parsed and how are boundary errors logged in the current execution path?",
+                answer_text=(
+                    "The current code parses the input payload in typer_agent.py, passes it into the execution path, "
+                    "and logs boundary or exception cases when subprocess execution fails."
+                ),
+                answer_summary="Code-detail answer discussing input payload parsing and boundary error logging.",
+            )
+        ]
+
+        coverage = rebuild_coverage_state(turns)
+        use_cases = coverage["framework"]["use_cases"]
+
+        self.assertEqual(use_cases["scenario_count"], 0)
+        self.assertEqual(use_cases["user_roles_count"], 0)
+        self.assertEqual(use_cases["input_output_patterns_count"], 0)
+        self.assertEqual(use_cases["boundary_conditions_count"], 0)
 
 
 if __name__ == "__main__":
