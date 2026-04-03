@@ -133,6 +133,75 @@ class ContextEngineeringTests(unittest.TestCase):
         self.assertIn("operator_workflow", result["selected_branch_ids"])
         self.assertIn("No concrete operator workflow has been walked end to end.", result["context_text"])
 
+    def test_context_builder_applies_novelty_penalty_to_recently_asked_branch(self):
+        turns = [
+            InterviewTurn(
+                id=1,
+                turn_no=8,
+                stage="Code Detail Completion",
+                question_text="Q8: In app/services/question_generator.py, how does the prompt rendering path currently work?",
+                answer_text="It renders prompt assets and calls the model.",
+                answer_summary="question_generator.py renders prompts and calls the model.",
+            ),
+            InterviewTurn(
+                id=2,
+                turn_no=9,
+                stage="Code Detail Completion",
+                question_text="Q9: What should we deepen next?",
+                answer_text=None,
+            ),
+        ]
+
+        coverage_state = {
+            "branches": [
+                {
+                    "branch_id": "question_generator",
+                    "label": "app/services/question_generator.py prompt rendering path",
+                    "stage": "Code Detail Completion",
+                    "status": "needs_follow_up",
+                    "priority": 0.98,
+                    "keywords": ["question_generator.py", "render_prompt", "call_llm"],
+                    "evidence_turn_ids": [1],
+                    "evidence_turn_nos": [8],
+                    "unresolved_points": ["Need to inspect validation details."],
+                },
+                {
+                    "branch_id": "persist_step",
+                    "label": "app/graphs/interview_nodes.py persist_next_step path",
+                    "stage": "Code Detail Completion",
+                    "status": "needs_follow_up",
+                    "priority": 0.88,
+                    "keywords": ["interview_nodes.py", "persist_next_step", "pending_turn_id"],
+                    "evidence_turn_ids": [1],
+                    "evidence_turn_nos": [8],
+                    "unresolved_points": ["Need to inspect how duplicate pending turns are rejected."],
+                },
+            ],
+            "question_history": [
+                {
+                    "turn_no": 8,
+                    "stage": "Code Detail Completion",
+                    "intent": "code_detail_deep_dive",
+                    "branch_id": "question_generator",
+                    "target_type": "file",
+                    "target_label": "app/services/question_generator.py",
+                    "signature": "Code Detail Completion|code_detail_deep_dive|question_generator|file|app/services/question_generator.py",
+                    "question_text": "Q8: In app/services/question_generator.py, how does the prompt rendering path currently work?",
+                }
+            ],
+        }
+
+        result = build_generation_context(
+            turns=turns,
+            current_stage="Code Detail Completion",
+            next_turn_no=10,
+            latest_answer_override="The latest answer discusses prompt rendering and model calls.",
+            coverage_state=coverage_state,
+        )
+
+        self.assertNotIn("question_generator", result["selected_branch_ids"][:1])
+        self.assertIn("persist_step", result["selected_branch_ids"])
+
 
 if __name__ == "__main__":
     unittest.main()

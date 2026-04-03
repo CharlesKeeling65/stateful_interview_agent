@@ -159,6 +159,7 @@ class ProjectApiFlowTests(unittest.TestCase):
         self.assertEqual(coverage.status_code, 200)
         self.assertGreaterEqual(coverage.json()["branch_count"], 1)
         self.assertTrue(coverage.json()["branches"])
+        self.assertTrue(coverage.json()["question_history"])
 
     def test_delete_project_removes_session_from_listing(self):
         created = self.client.post(

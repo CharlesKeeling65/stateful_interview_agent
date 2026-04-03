@@ -134,6 +134,7 @@ def debug_next_context_preview(
 
     return {
         **context_payload,
+        "question_history": coverage_state.get("question_history", []),
         "stage_decision": stage_decision,
         "planner_decision": planner_decision,
         "validation_preview": validation_preview,

@@ -17,11 +17,23 @@ class CoverageBranchDebug(BaseModel):
     last_turn_no: int
 
 
+class QuestionHistoryDebug(BaseModel):
+    turn_no: int
+    stage: str
+    intent: str
+    branch_id: str
+    target_type: str
+    target_label: str
+    signature: str
+    question_text: str
+
+
 class CoverageDebugResponse(BaseModel):
     version: int
     branch_count: int
     updated_through_turn_no: int
     branches: list[CoverageBranchDebug]
+    question_history: list[QuestionHistoryDebug]
     framework: dict
 
 
@@ -40,6 +52,8 @@ class ContextPreviewResponse(BaseModel):
     coverage_priorities: str
     selected_turn_ids: list[int]
     selected_branch_ids: list[str]
+    branch_selection_meta: dict[str, dict]
+    question_history: list[QuestionHistoryDebug]
     stage_decision: dict
     planner_decision: dict
     validation_preview: dict

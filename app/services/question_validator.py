@@ -1,5 +1,7 @@
 import re
 
+from app.services.repetition_guard import is_question_semantically_redundant
+
 CHANGE_PROPOSAL_MARKERS = (
     "should be changed",
     "should change",
@@ -81,6 +83,8 @@ def validate_question_for_stage(
     expected_turn_no: int,
     current_stage: str | None,
     intent_mode: str = "understand_current_code",
+    recent_question_signatures: list[dict] | None = None,
+    branch_id: str | None = None,
 ) -> dict:
     text = text.strip()
     normalized = text.lower()
@@ -102,6 +106,16 @@ def validate_question_for_stage(
         if any(marker in normalized for marker in CHANGE_PROPOSAL_MARKERS):
             reasons.append(
                 "Understand-mode questions must explain the current code, not ask for changes, redesigns, or test updates."
+            )
+        if is_question_semantically_redundant(
+            text=text,
+            stage=current_stage,
+            intent="code_detail_deep_dive" if current_stage == "Code Detail Completion" else None,
+            branch_id=branch_id,
+            recent_question_signatures=recent_question_signatures,
+        ):
+            reasons.append(
+                "Question is too similar to a recently asked question and should target a different branch or implementation detail."
             )
 
     if current_stage == "Panorama Mapping":

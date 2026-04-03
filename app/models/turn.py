@@ -20,6 +20,7 @@ class InterviewTurn(Base):
     stage: Mapped[str] = mapped_column(String(100), nullable=False)
 
     question_text: Mapped[str] = mapped_column(Text, nullable=False)
+    question_plan_json: Mapped[str | None] = mapped_column(Text, nullable=True)
     answer_text: Mapped[str | None] = mapped_column(Text, nullable=True)
     answer_summary: Mapped[str | None] = mapped_column(Text, nullable=True)
     human_review_json: Mapped[str | None] = mapped_column(Text, nullable=True)
@@ -53,6 +54,16 @@ class InterviewTurn(Base):
             return None
         try:
             parsed = json.loads(self.human_review_json)
+        except json.JSONDecodeError:
+            return None
+        return parsed if isinstance(parsed, dict) else None
+
+    @property
+    def question_plan(self) -> dict | None:
+        if not self.question_plan_json:
+            return None
+        try:
+            parsed = json.loads(self.question_plan_json)
         except json.JSONDecodeError:
             return None
         return parsed if isinstance(parsed, dict) else None

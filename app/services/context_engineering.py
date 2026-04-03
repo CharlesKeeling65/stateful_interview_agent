@@ -32,6 +32,7 @@ def build_generation_context(
     coverage_state: dict[str, Any] | None,
     project_id: int | None = None,
     latest_answer_override: str | None = None,
+    excluded_branch_ids: set[str] | None = None,
 ) -> dict[str, Any]:
     coverage = coverage_state or default_coverage_state()
     stage_gaps = framework_gaps_for_stage(coverage, current_stage)
@@ -42,6 +43,7 @@ def build_generation_context(
         latest_answer_override=latest_answer_override,
         coverage_state=coverage,
         stage_gaps=stage_gaps,
+        excluded_branch_ids=excluded_branch_ids or set(),
     )
     selected_turn_ids = sorted(
         {
@@ -66,7 +68,11 @@ def build_generation_context(
             "selected_branch_ids": selected_branch_ids,
             "selected_turn_ids": selected_turn_ids,
             "branch_scores": {
-                branch["branch_id"]: branch["_score"] for branch in selected_branches
+                branch["branch_id"]: {
+                    "score": branch["_score"],
+                    "novelty_penalty": branch.get("_novelty_penalty", 0.0),
+                }
+                for branch in selected_branches
             },
             "context_preview": preview_payload(
                 "\n\n".join(
@@ -92,6 +98,13 @@ def build_generation_context(
         "coverage_priorities": coverage_priorities,
         "selected_turn_ids": selected_turn_ids,
         "selected_branch_ids": selected_branch_ids,
+        "branch_selection_meta": {
+            branch["branch_id"]: {
+                "score": branch["_score"],
+                "novelty_penalty": branch.get("_novelty_penalty", 0.0),
+            }
+            for branch in selected_branches
+        },
         "context_text": "\n\n".join(
             [
                 f"Recent context:\n{recent_context}",
@@ -136,13 +149,22 @@ def select_relevant_branches(
     latest_answer_override: str | None,
     coverage_state: dict[str, Any],
     stage_gaps: list[str],
+    excluded_branch_ids: set[str],
 ) -> list[dict[str, Any]]:
     latest_text = latest_answer_override or turns[-1].answer_text or ""
     latest_keywords = set(extract_keywords(latest_text, turns[-1].question_text if turns else ""))
     stage_weight = STAGE_WEIGHTS.get(current_stage, 1.0)
+    recent_question_history = coverage_state.get("question_history", [])[-6:]
+    recent_branch_counts: dict[str, int] = {}
+    for item in recent_question_history:
+        branch_id = str(item.get("branch_id") or "")
+        if branch_id:
+            recent_branch_counts[branch_id] = recent_branch_counts.get(branch_id, 0) + 1
     branches = []
 
     for branch in coverage_state.get("branches", []):
+        if branch.get("branch_id") in excluded_branch_ids:
+            continue
         branch_keywords = set(branch.get("keywords", []))
         keyword_overlap = len(branch_keywords & latest_keywords)
         unresolved_points = branch.get("unresolved_points", [])
@@ -189,8 +211,18 @@ def select_relevant_branches(
         if gap_hits:
             score += gap_hits * 0.22
 
+        branch_id = str(branch.get("branch_id") or "")
+        novelty_penalty = 0.0
+        if branch_id:
+            novelty_penalty += recent_branch_counts.get(branch_id, 0) * 0.34
+            recent_top_branch_id = str(recent_question_history[-1].get("branch_id") or "") if recent_question_history else ""
+            if recent_top_branch_id and recent_top_branch_id == branch_id:
+                novelty_penalty += 0.28
+        score -= novelty_penalty
+
         branch_copy = dict(branch)
         branch_copy["_score"] = round(score, 3)
+        branch_copy["_novelty_penalty"] = round(novelty_penalty, 3)
         branches.append(branch_copy)
 
     branches.sort(key=lambda branch: branch["_score"], reverse=True)
