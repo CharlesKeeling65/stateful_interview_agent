@@ -166,9 +166,11 @@ def generate_next_question_from_history(
                 "retrieved_context": retrieved_context,
                 "coverage_priorities": coverage_priorities,
                 "question_intent": planner["question_intent"],
+                "intent_mode": planner.get("intent_mode", "understand_current_code"),
                 "target_type": planner["target_type"],
                 "target_label": planner["target_label"],
                 "planner_reasoning": planner["reasoning"],
+                "human_review_context": format_human_review_context(planner.get("human_review_signal")),
                 "style_constraints": "; ".join(planner["constraints"]) + f"; Closing guidance: {closing_instruction}",
             },
         )
@@ -294,8 +296,26 @@ def get_prompt_id_for_plan(stage: str, planner: dict | None) -> str:
 def default_planner_decision(stage: str) -> dict:
     return {
         "question_intent": "stage_follow_up",
+        "intent_mode": "understand_current_code",
         "target_type": "framework_gap",
         "target_label": "the next uncovered target",
         "constraints": ["Stay aligned with the current stage"],
         "reasoning": f"Fallback planner decision for {stage}.",
     }
+
+
+def format_human_review_context(human_review_signal: dict | None) -> str:
+    if not human_review_signal:
+        return "No explicit human review signal was provided for this turn."
+
+    parts = [
+        f"Verdict: {human_review_signal.get('verdict', 'unknown')}",
+        f"Direction: {human_review_signal.get('direction', 'continue')}",
+    ]
+    if human_review_signal.get("preferred_next_focus"):
+        parts.append(f"Preferred next focus: {human_review_signal['preferred_next_focus']}")
+    if human_review_signal.get("note"):
+        parts.append(f"Human note: {human_review_signal['note']}")
+    if human_review_signal.get("phase_ready") is not None:
+        parts.append(f"Phase ready: {human_review_signal['phase_ready']}")
+    return " | ".join(parts)

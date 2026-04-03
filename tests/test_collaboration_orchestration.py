@@ -46,6 +46,95 @@ class CollaborationCoverageTests(unittest.TestCase):
 
 
 class PlannerGateTests(unittest.TestCase):
+    def test_planner_applies_explicit_human_redirection_signal(self):
+        coverage_state = {
+            "branches": [
+                {
+                    "branch_id": "request_path",
+                    "label": "request path through api_gateway and orchestration_service",
+                    "stage": "Architecture Understanding",
+                    "status": "needs_follow_up",
+                    "priority": 0.92,
+                    "keywords": ["api_gateway", "orchestration_service", "request_path"],
+                    "evidence_turn_ids": [4],
+                    "evidence_turn_nos": [4],
+                    "summary": "Main request path is known at module level but the collaboration chain is still unclear.",
+                    "unresolved_points": ["Return to the main call chain before going deeper into retry logic."],
+                    "last_turn_no": 4,
+                }
+            ],
+            "framework": {
+                "panorama": {
+                    "purpose": True,
+                    "target_users": True,
+                    "boundaries": True,
+                    "major_modules": True,
+                    "high_level_workflow": True,
+                },
+                "architecture": {
+                    "architecture_style": True,
+                    "module_responsibilities": False,
+                    "communication_mechanisms": False,
+                    "key_call_chains": False,
+                    "design_rationale": True,
+                },
+                "code_detail": {
+                    "key_files_count": 0,
+                    "key_classes_count": 0,
+                    "key_methods_count": 0,
+                    "execution_paths_count": 0,
+                    "third_party_library_usage_count": 0,
+                    "error_handling_count": 0,
+                },
+                "use_cases": {
+                    "scenario_count": 0,
+                    "user_roles_count": 0,
+                    "input_output_patterns_count": 0,
+                    "boundary_conditions_count": 0,
+                    "extension_points_count": 0,
+                },
+                "human_collaboration": {
+                    "judgment_turn_count": 1,
+                    "correction_turn_count": 0,
+                    "redirection_turn_count": 0,
+                    "prioritization_turn_count": 0,
+                },
+                "stage_turn_counts": {
+                    "Panorama Mapping": 2,
+                    "Architecture Understanding": 3,
+                    "Code Detail Completion": 0,
+                    "Use Cases & Scenarios": 0,
+                    "Final Wrap-up": 0,
+                },
+                "gaps": {
+                    "panorama": [],
+                    "architecture": ["module_responsibilities", "communication_mechanisms", "key_call_chains"],
+                    "code_detail": ["key_files_count", "key_methods_count"],
+                    "use_cases": ["scenario_count"],
+                    "human_collaboration": ["redirection_turn_count", "prioritization_turn_count"],
+                },
+                "wrap_up_ready": False,
+            },
+        }
+
+        planner = plan_next_question(
+            turns=[],
+            current_stage="Architecture Understanding",
+            next_turn_no=6,
+            coverage_state=coverage_state,
+            human_review_signal={
+                "verdict": "drifted",
+                "direction": "redirect",
+                "preferred_next_focus": "architecture",
+                "note": "Return to the main call chain before talking about safety retries.",
+            },
+        )
+
+        self.assertTrue(planner["human_review_applied"])
+        self.assertEqual(planner["question_intent"], "human_guided_redirect")
+        self.assertEqual(planner["intent_mode"], "understand_current_code")
+        self.assertIn("call chain", planner["why_this_question"].lower())
+
     def test_planner_requests_human_judgment_before_deep_code_detail_when_collaboration_is_thin(self):
         coverage_state = {
             "branches": [
@@ -177,6 +266,79 @@ class PlannerGateTests(unittest.TestCase):
 
 
 class StageGateTests(unittest.TestCase):
+    def test_stage_controller_can_honor_explicit_phase_ready_signal(self):
+        coverage_state = {
+            "framework": {
+                "panorama": {
+                    "purpose": True,
+                    "target_users": True,
+                    "boundaries": False,
+                    "major_modules": True,
+                    "high_level_workflow": False,
+                },
+                "architecture": {
+                    "architecture_style": False,
+                    "module_responsibilities": False,
+                    "communication_mechanisms": False,
+                    "key_call_chains": False,
+                    "design_rationale": False,
+                },
+                "code_detail": {
+                    "key_files_count": 0,
+                    "key_classes_count": 0,
+                    "key_methods_count": 0,
+                    "execution_paths_count": 0,
+                    "third_party_library_usage_count": 0,
+                    "error_handling_count": 0,
+                },
+                "use_cases": {
+                    "scenario_count": 0,
+                    "user_roles_count": 0,
+                    "input_output_patterns_count": 0,
+                    "boundary_conditions_count": 0,
+                    "extension_points_count": 0,
+                },
+                "human_collaboration": {
+                    "judgment_turn_count": 1,
+                    "correction_turn_count": 0,
+                    "redirection_turn_count": 0,
+                    "prioritization_turn_count": 0,
+                },
+                "stage_turn_counts": {
+                    "Panorama Mapping": 3,
+                    "Architecture Understanding": 0,
+                    "Code Detail Completion": 0,
+                    "Use Cases & Scenarios": 0,
+                    "Final Wrap-up": 0,
+                },
+                "gaps": {
+                    "panorama": ["boundaries", "high_level_workflow"],
+                    "architecture": [
+                        "architecture_style",
+                        "module_responsibilities",
+                        "communication_mechanisms",
+                        "key_call_chains",
+                        "design_rationale",
+                    ],
+                    "code_detail": ["key_files_count"],
+                    "use_cases": ["scenario_count"],
+                    "human_collaboration": [],
+                },
+                "wrap_up_ready": False,
+            }
+        }
+
+        decision = decide_next_stage(
+            next_turn_no=4,
+            coverage_state=coverage_state,
+            current_stage="Panorama Mapping",
+            max_turns=40,
+            human_review_signal={"phase_ready": True},
+        )
+
+        self.assertEqual(decision["next_stage"], "Architecture Understanding")
+        self.assertIn("human", decision["reason"].lower())
+
     def test_stage_controller_moves_to_use_cases_after_code_detail_dominates(self):
         coverage_state = {
             "framework": {

@@ -109,6 +109,12 @@ class ProjectApiFlowTests(unittest.TestCase):
             f"/projects/{project_id}/next",
             json={
                 "answer_text": "Long answer one with product goals, user roles, data flow, and module boundaries.",
+                "human_review": {
+                    "verdict": "insufficient",
+                    "direction": "redirect",
+                    "preferred_next_focus": "architecture",
+                    "note": "Return to the current module interaction before proposing any changes.",
+                },
             },
         )
         self.assertEqual(next_one.status_code, 200)
@@ -132,6 +138,8 @@ class ProjectApiFlowTests(unittest.TestCase):
             turns_payload[0]["answer_text"],
             "Long answer one with product goals, user roles, data flow, and module boundaries.",
         )
+        self.assertEqual(turns_payload[0]["human_review"]["verdict"], "insufficient")
+        self.assertEqual(turns_payload[0]["human_review"]["preferred_next_focus"], "architecture")
         self.assertTrue(turns_payload[0]["answer_summary"])
         self.assertEqual(
             turns_payload[1]["answer_text"],

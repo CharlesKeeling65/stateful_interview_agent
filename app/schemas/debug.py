@@ -1,5 +1,7 @@
 from pydantic import BaseModel
 
+from app.schemas.turn import HumanReviewInput
+
 
 class CoverageBranchDebug(BaseModel):
     branch_id: str
@@ -25,6 +27,7 @@ class CoverageDebugResponse(BaseModel):
 
 class ContextPreviewRequest(BaseModel):
     answer_text: str
+    human_review: HumanReviewInput | None = None
 
 
 class ContextPreviewResponse(BaseModel):

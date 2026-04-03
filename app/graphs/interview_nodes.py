@@ -1,3 +1,5 @@
+import json
+
 from sqlalchemy.orm import Session
 
 from app.core.config import settings
@@ -66,6 +68,7 @@ def load_project_context(state, db: Session):
             "coverage_state": project.coverage_state_data,
             "minimum_goal_reached": is_minimum_goal_reached(project.turn_count),
             "pending_turn_id": latest_turn.id,
+            "human_review_signal": state.get("human_review_signal"),
             "next_turn_no": None,
             "next_stage": None,
             "generated_question": None,
@@ -100,6 +103,7 @@ def decide_progress(state):
         coverage_state=state.get("coverage_state", {}),
         current_stage=state.get("current_stage", ""),
         max_turns=settings.interview_max_turns,
+        human_review_signal=state.get("human_review_signal"),
     )
     next_stage = stage_decision["next_stage"]
 
@@ -232,6 +236,7 @@ def draft_next_question(state, db: Session):
         current_stage=state["next_stage"],
         next_turn_no=state["next_turn_no"],
         coverage_state=coverage_state,
+        human_review_signal=state.get("human_review_signal"),
     )
     emit_event(
         "workflow",
@@ -293,6 +298,7 @@ def draft_next_question(state, db: Session):
             text=next_question,
             expected_turn_no=state["next_turn_no"],
             current_stage=state["next_stage"],
+            intent_mode=planner_decision.get("intent_mode", "understand_current_code"),
         )
         if validation_step:
             validation_step.set_meta(reasons=validation["reasons"])
@@ -331,6 +337,7 @@ def draft_next_question(state, db: Session):
             text=next_question,
             expected_turn_no=state["next_turn_no"],
             current_stage=state["next_stage"],
+            intent_mode=planner_decision.get("intent_mode", "understand_current_code"),
         )
         if not validation["is_valid"]:
             raise ValueError(
@@ -385,6 +392,12 @@ def persist_next_step(state, db: Session):
             raise ValueError("Pending turn was already answered by another request")
 
         pending_turn.answer_text = state["answer_text"]
+        if state.get("human_review_signal"):
+            pending_turn.human_review_json = json.dumps(
+                state["human_review_signal"],
+                ensure_ascii=True,
+                sort_keys=True,
+            )
         all_turns = (
             db.query(InterviewTurn)
             .filter(InterviewTurn.project_id == state["project_id"])

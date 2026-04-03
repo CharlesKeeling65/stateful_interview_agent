@@ -9,8 +9,10 @@ user_template: |
   Current stage: {current_stage}
   Stage objective: {stage_objective}
   Planner intent: {question_intent}
+  Intent mode: {intent_mode}
   Planner target: {target_type} -> {target_label}
   Planner reasoning: {planner_reasoning}
+  Human review context: {human_review_context}
   Next question number: Q{next_turn_no}
 
   Recent context:
@@ -30,15 +32,19 @@ user_template: |
   2. Focus on responsibilities, collaboration, communication mechanisms, or key call chains.
   3. Avoid repeating shallow overview questions.
   4. Avoid broad code-detail questions unless tied to a call path or component interaction.
-  5. Do not provide explanations or alternatives.
+  5. Stay in understand-current-code mode: ask how the current structure and interactions work.
+  6. Do not ask for redesigns, refactors, proposed modifications, or test updates.
+  7. Do not provide explanations or alternatives.
 required_variables:
   - system_prompt
   - current_stage
   - stage_objective
   - question_intent
+  - intent_mode
   - target_type
   - target_label
   - planner_reasoning
+  - human_review_context
   - next_turn_no
   - recent_context
   - retrieved_context

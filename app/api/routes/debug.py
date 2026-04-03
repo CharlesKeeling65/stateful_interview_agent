@@ -83,6 +83,7 @@ def debug_next_context_preview(
         coverage_state=coverage_state,
         current_stage=project.current_stage,
         max_turns=settings.interview_max_turns,
+        human_review_signal=payload.human_review.model_dump() if payload.human_review else None,
     )
     next_stage = stage_decision["next_stage"]
     context_payload = build_generation_context(
@@ -99,6 +100,7 @@ def debug_next_context_preview(
         current_stage=next_stage,
         next_turn_no=next_turn_no,
         coverage_state=coverage_state,
+        human_review_signal=payload.human_review.model_dump() if payload.human_review else None,
     )
 
     prompt = get_prompt_manager().render(
@@ -108,9 +110,13 @@ def debug_next_context_preview(
             "current_stage": next_stage,
             "stage_objective": context_payload["stage_objective"],
             "question_intent": planner_decision["question_intent"],
+            "intent_mode": planner_decision.get("intent_mode", "understand_current_code"),
             "target_type": planner_decision["target_type"],
             "target_label": planner_decision["target_label"],
             "planner_reasoning": planner_decision["reasoning"],
+            "human_review_context": (
+                payload.human_review.model_dump_json() if payload.human_review else "No explicit human review signal was provided for this turn."
+            ),
             "next_turn_no": next_turn_no,
             "recent_context": context_payload["recent_context"],
             "retrieved_context": context_payload["retrieved_context"],
@@ -123,6 +129,7 @@ def debug_next_context_preview(
         text=f"Q{next_turn_no}: Placeholder validation preview?",
         expected_turn_no=next_turn_no,
         current_stage=next_stage,
+        intent_mode=planner_decision.get("intent_mode", "understand_current_code"),
     )
 
     return {

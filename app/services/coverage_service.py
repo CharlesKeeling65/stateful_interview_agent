@@ -332,6 +332,17 @@ def rebuild_framework_coverage(turns: list[InterviewTurn]) -> dict[str, Any]:
             if any(marker in text for marker in markers):
                 collaboration[key] += 1
 
+        human_review = turn.human_review or {}
+        verdict = human_review.get("verdict")
+        direction = human_review.get("direction")
+        if verdict in {"sufficient", "insufficient", "drifted"}:
+            collaboration["judgment_turn_count"] += 1
+        if verdict == "drifted" or direction == "redirect":
+            collaboration["redirection_turn_count"] += 1
+            collaboration["correction_turn_count"] += 1
+        if human_review.get("preferred_next_focus"):
+            collaboration["prioritization_turn_count"] += 1
+
     framework["gaps"] = {
         "panorama": [
             key for key, covered in panorama.items() if not covered
@@ -361,6 +372,8 @@ def rebuild_framework_coverage(turns: list[InterviewTurn]) -> dict[str, Any]:
         and code_detail["key_files_count"] >= 2
         and code_detail["key_methods_count"] >= 2
         and use_cases["scenario_count"] >= 1
+        and use_cases["input_output_patterns_count"] >= 1
+        and use_cases["boundary_conditions_count"] >= 1
     )
     return framework
 
@@ -516,6 +529,23 @@ def detect_topic_drift(coverage_state: dict[str, Any], stage: str) -> dict[str, 
         return {
             "detected": True,
             "reason": "Architecture still has structural gaps, but the active branch is drifting into a narrow local mechanism.",
+            "branch_id": top_branch.get("branch_id"),
+        }
+
+    if stage in {"Architecture Understanding", "Code Detail Completion"} and any(
+        marker in branch_text
+        for marker in {
+            "should change",
+            "should be changed",
+            "redesign",
+            "refactor",
+            "modify",
+            "update tests",
+        }
+    ):
+        return {
+            "detected": True,
+            "reason": "The active branch is drifting from understanding the current code into change-planning or redesign discussion.",
             "branch_id": top_branch.get("branch_id"),
         }
 

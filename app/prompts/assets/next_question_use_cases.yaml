@@ -9,8 +9,10 @@ user_template: |
   Current stage: {current_stage}
   Stage objective: {stage_objective}
   Planner intent: {question_intent}
+  Intent mode: {intent_mode}
   Planner target: {target_type} -> {target_label}
   Planner reasoning: {planner_reasoning}
+  Human review context: {human_review_context}
   Next question number: Q{next_turn_no}
 
   Recent context:
@@ -30,15 +32,18 @@ user_template: |
   2. Tie the question to a realistic scenario, user role, input/output pattern, boundary condition, or extension point.
   3. Avoid drifting back to broad overview.
   4. Avoid purely internal code-detail questions unless they are necessary to explain a scenario boundary.
-  5. Do not provide explanations or alternatives.
+  5. Ask how the current scenario behaves today, not what should change.
+  6. Do not provide explanations or alternatives.
 required_variables:
   - system_prompt
   - current_stage
   - stage_objective
   - question_intent
+  - intent_mode
   - target_type
   - target_label
   - planner_reasoning
+  - human_review_context
   - next_turn_no
   - recent_context
   - retrieved_context

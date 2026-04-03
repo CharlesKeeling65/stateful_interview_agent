@@ -41,6 +41,10 @@ def ensure_database_schema():
                 connection.execute(
                     text("ALTER TABLE interview_turns ADD COLUMN answer_summary TEXT")
                 )
+            if "human_review_json" not in existing_columns:
+                connection.execute(
+                    text("ALTER TABLE interview_turns ADD COLUMN human_review_json TEXT")
+                )
 
     if "project_sessions" in inspector.get_table_names():
         existing_columns = {

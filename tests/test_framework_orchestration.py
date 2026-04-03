@@ -206,16 +206,38 @@ class PlannerAndValidatorTests(unittest.TestCase):
             text="Q11: How is this implemented in the project overall?",
             expected_turn_no=11,
             current_stage="Code Detail Completion",
+            intent_mode="understand_current_code",
         )
         valid = validate_question_for_stage(
             text="Q11: In app/services/question_generator.py, how does generate_next_question_from_history build the prompt before calling OpenAI?",
             expected_turn_no=11,
             current_stage="Code Detail Completion",
+            intent_mode="understand_current_code",
         )
 
         self.assertFalse(invalid["is_valid"])
         self.assertTrue(valid["is_valid"])
         self.assertTrue(invalid["reasons"])
+
+    def test_stage_validator_rejects_change_proposal_questions_in_understand_mode(self):
+        invalid = validate_question_for_stage(
+            text="Q12: Which files should be modified to redesign the return type and update the related tests?",
+            expected_turn_no=12,
+            current_stage="Code Detail Completion",
+            intent_mode="understand_current_code",
+        )
+        valid = validate_question_for_stage(
+            text="Q12: In app/api/routes/projects.py, how does submit_answer_and_generate_next currently persist the answered turn before creating the next one?",
+            expected_turn_no=12,
+            current_stage="Code Detail Completion",
+            intent_mode="understand_current_code",
+        )
+
+        self.assertFalse(invalid["is_valid"])
+        self.assertTrue(
+            any("change" in reason.lower() or "current code" in reason.lower() for reason in invalid["reasons"])
+        )
+        self.assertTrue(valid["is_valid"])
 
 
 if __name__ == "__main__":

@@ -5,6 +5,7 @@ class InterviewGraphState(TypedDict, total=False):
     run_id: int
     project_id: int
     answer_text: str
+    human_review_signal: dict
 
     current_turn_no: int
     next_turn_no: int

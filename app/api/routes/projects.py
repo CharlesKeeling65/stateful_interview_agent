@@ -260,6 +260,7 @@ def submit_answer_and_generate_next(
                 "run_id": run.id,
                 "project_id": project_id,
                 "answer_text": payload.answer_text,
+                "human_review_signal": payload.human_review.model_dump() if payload.human_review else None,
             },
             config={"configurable": {"thread_id": f"project-{project_id}"}},
         )

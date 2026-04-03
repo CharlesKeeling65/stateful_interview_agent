@@ -9,8 +9,10 @@ user_template: |
   Current stage: {current_stage}
   Stage objective: {stage_objective}
   Planner intent: {question_intent}
+  Intent mode: {intent_mode}
   Planner target: {target_type} -> {target_label}
   Planner reasoning: {planner_reasoning}
+  Human review context: {human_review_context}
   Next question number: Q{next_turn_no}
 
   Recent context:
@@ -29,17 +31,21 @@ user_template: |
   1. Ask exactly one English question labeled Q{next_turn_no}.
   2. The question must be implementation-specific.
   3. It must reference a concrete file, class, function, method, execution path, library usage site, or error-handling path.
-  4. It must not ask a vague summary question such as "How is this implemented overall?"
-  5. Prefer concrete code artifacts over abstract design wording.
-  6. Do not provide explanations or alternatives.
+  4. It must ask how the current implementation works right now, not how it should be changed.
+  5. It must not ask a vague summary question such as "How is this implemented overall?"
+  6. It must not ask for redesigns, improvements, modifications, or test updates.
+  7. Prefer concrete code artifacts over abstract design wording.
+  8. Do not provide explanations or alternatives.
 required_variables:
   - system_prompt
   - current_stage
   - stage_objective
   - question_intent
+  - intent_mode
   - target_type
   - target_label
   - planner_reasoning
+  - human_review_context
   - next_turn_no
   - recent_context
   - retrieved_context

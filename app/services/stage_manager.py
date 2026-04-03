@@ -25,6 +25,7 @@ def decide_next_stage(
     coverage_state: dict,
     current_stage: str,
     max_turns: int,
+    human_review_signal: dict | None = None,
 ) -> dict:
     framework = coverage_state.get("framework", default_framework_coverage())
     stage_turn_counts = framework.get("stage_turn_counts", {})
@@ -36,6 +37,7 @@ def decide_next_stage(
     code_detail_gaps = framework_gaps_for_stage(coverage_state, CODE_DETAIL_STAGE)
     use_case_gaps = framework_gaps_for_stage(coverage_state, USE_CASE_STAGE)
     collaboration_gaps = framework.get("gaps", {}).get("human_collaboration", [])
+    human_phase_ready = bool((human_review_signal or {}).get("phase_ready"))
 
     if wrap_up_ready and remaining_turns <= 1:
         return {
@@ -45,6 +47,12 @@ def decide_next_stage(
         }
 
     panorama_turns = stage_turn_counts.get(PANORAMA_STAGE, 0)
+    if current_stage == PANORAMA_STAGE and human_phase_ready and panorama_turns >= 2:
+        return {
+            "next_stage": ARCHITECTURE_STAGE,
+            "reason": "A human marked panorama coverage as sufficiently complete, so the interview can move into architecture understanding.",
+            "gaps": architecture_gaps,
+        }
     if panorama_turns < 2 or panorama_gaps:
         return {
             "next_stage": PANORAMA_STAGE,
@@ -53,6 +61,12 @@ def decide_next_stage(
         }
 
     architecture_turns = stage_turn_counts.get(ARCHITECTURE_STAGE, 0)
+    if current_stage == ARCHITECTURE_STAGE and human_phase_ready and architecture_turns >= 2:
+        return {
+            "next_stage": CODE_DETAIL_STAGE,
+            "reason": "A human marked architecture coverage as sufficiently complete, so the interview can move into code detail.",
+            "gaps": code_detail_gaps,
+        }
     if architecture_turns < 3 or architecture_gaps:
         return {
             "next_stage": ARCHITECTURE_STAGE,
@@ -89,6 +103,12 @@ def decide_next_stage(
         }
 
     if code_detail_turns < target_code_detail_turns or code_detail_gaps:
+        if current_stage == CODE_DETAIL_STAGE and human_phase_ready and code_detail_turns >= max(6, max_turns // 5):
+            return {
+                "next_stage": USE_CASE_STAGE,
+                "reason": "A human marked the current code-detail phase as sufficiently complete, so the remaining turns should collect scenario evidence.",
+                "gaps": use_case_gaps,
+            }
         return {
             "next_stage": CODE_DETAIL_STAGE,
             "reason": (
@@ -105,7 +125,7 @@ def decide_next_stage(
             "gaps": use_case_gaps,
         }
 
-    if wrap_up_ready:
+    if wrap_up_ready or (current_stage == USE_CASE_STAGE and human_phase_ready and not use_case_gaps):
         return {
             "next_stage": WRAP_UP_STAGE,
             "reason": "Framework coverage is complete enough to move into final wrap-up.",
