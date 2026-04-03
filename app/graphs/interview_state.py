@@ -13,6 +13,12 @@ class InterviewGraphState(TypedDict, total=False):
     project_status: str
 
     history_text: str
+    coverage_state: dict
+    retrieved_context: str
+    coverage_priorities: str
+    selected_turn_ids: list[int]
+    selected_branch_ids: list[str]
+    prompt_metadata: dict
     latest_question: str
     generated_question: str
     question_usage_metrics: list[dict]

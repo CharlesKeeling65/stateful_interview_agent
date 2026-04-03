@@ -1,0 +1,25 @@
+id: answer_summary
+version: "1.0"
+description: Concise turn summarization prompt for future follow-up continuity.
+system_template: |
+  {system_prompt}
+user_template: |
+  Summarize this answered interview turn for future follow-up questioning.
+
+  Stage: {stage}
+  Question: {question_text}
+  Answer:
+  {answer_text}
+
+  Requirements:
+  1. Keep the summary concise.
+  2. Preserve key technical details and concrete facts.
+  3. Preserve project-understanding progress made in this answer.
+  4. Preserve unresolved points or ambiguities worth revisiting later.
+  5. Write for future interview continuity, not for end-user display.
+  6. Do not add facts that were not present in the answer.
+required_variables:
+  - system_prompt
+  - stage
+  - question_text
+  - answer_text

@@ -3,6 +3,7 @@ from sqlalchemy.orm import Session
 from app.core.config import settings
 from app.core.llm_client import get_openai_client
 from app.models.turn import InterviewTurn
+from app.prompts import get_prompt_manager
 from app.services.usage_service import create_usage_record, extract_usage_metrics
 
 
@@ -13,29 +14,19 @@ def summarize_answer(
     system_prompt: str,
 ):
     client = get_openai_client()
-    user_instruction = f"""
-Summarize this answered interview turn for future follow-up questioning.
-
-Stage: {turn.stage}
-Question: {turn.question_text}
-Answer:
-{turn.answer_text}
-
-Requirements:
-1. Keep the summary concise.
-2. Preserve key technical details and concrete facts.
-3. Preserve project-understanding progress made in this answer.
-4. Preserve unresolved points or ambiguities worth revisiting later.
-5. Write for future interview continuity, not for end-user display.
-6. Do not add facts that were not present in the answer.
-""".strip()
+    prompt = get_prompt_manager().render(
+        "answer_summary",
+        {
+            "system_prompt": system_prompt,
+            "stage": turn.stage,
+            "question_text": turn.question_text,
+            "answer_text": turn.answer_text,
+        },
+    )
 
     response = client.chat.completions.create(
         model=settings.openai_model,
-        messages=[
-            {"role": "system", "content": system_prompt},
-            {"role": "user", "content": user_instruction},
-        ],
+        messages=prompt.messages,
         temperature=0.2,
         stream=False,
     )
@@ -47,7 +38,7 @@ Requirements:
     cleaned = content.strip()
     usage_metrics = extract_usage_metrics(
         response,
-        prompt_text=user_instruction,
+        prompt_text="\n\n".join(message["content"] for message in prompt.messages),
         completion_text=cleaned,
     )
 

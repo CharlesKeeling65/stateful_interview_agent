@@ -1,0 +1,43 @@
+id: next_question
+version: "1.0"
+description: Stage-aware next-question generation prompt using selective retrieved context.
+system_template: |
+  {system_prompt}
+user_template: |
+  Continue the interview for software project understanding.
+
+  Current stage: {current_stage}
+  Stage objective: {stage_objective}
+  Next question number: Q{next_turn_no}
+  Closing guidance: {closing_guidance}
+
+  Recent context:
+  {recent_context}
+
+  Retrieved branch context:
+  {retrieved_context}
+
+  Coverage priorities:
+  {coverage_priorities}
+
+  Requirements:
+  1. Ask exactly one question only.
+  2. The question must be in English.
+  3. Label it as Q{next_turn_no}.
+  4. The question must follow naturally from the previous conversation.
+  5. Do not repeat earlier questions.
+  6. Prefer a specific follow-up question over a broad summary question.
+  7. Keep the question aligned with the current stage objective.
+  8. Prefer branches marked unresolved, shallow, or high-priority over fully covered branches.
+  9. Use only the retrieved context that is genuinely relevant; do not restate the whole interview.
+  10. Do not answer the question.
+  11. Do not provide explanations, bullet points, or multiple alternatives.
+required_variables:
+  - system_prompt
+  - current_stage
+  - stage_objective
+  - next_turn_no
+  - closing_guidance
+  - recent_context
+  - retrieved_context
+  - coverage_priorities

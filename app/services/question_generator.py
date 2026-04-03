@@ -1,6 +1,6 @@
 from app.core.config import settings
 from app.core.llm_client import get_openai_client
-from app.models.turn import InterviewTurn
+from app.prompts import get_prompt_manager
 from app.services.question_postprocessor import clean_generated_question
 from app.services.stage_manager import get_stage_instruction
 from app.services.usage_service import extract_usage_metrics
@@ -12,29 +12,19 @@ def generate_first_question(system_prompt: str) -> str:
 
 def generate_first_question_result(system_prompt: str) -> dict:
     client = get_openai_client()
-
-    user_instruction = """
-Start the interview for a software project understanding task.
-
-Current stage: Panorama Mapping
-Stage objective: Focus on the overall purpose, target users, project boundaries, major modules, and high-level workflow. Avoid deep implementation details.
-
-Requirements:
-1. Ask exactly one question only.
-2. The question must be in English.
-3. This is the first question, so label it as Q1.
-4. The question should establish the overall understanding of the project.
-5. Prefer a precise overview question over a generic introductory question.
-6. Do not answer the question.
-7. Do not provide multiple options or explanations.
-""".strip()
+    prompt = get_prompt_manager().render(
+        "first_question",
+        {
+            "system_prompt": system_prompt,
+            "current_stage": "Panorama Mapping",
+            "stage_objective": get_stage_instruction("Panorama Mapping"),
+        },
+    )
+    user_instruction = prompt.messages[1]["content"]
 
     response = client.chat.completions.create(
         model=settings.openai_model,
-        messages=[
-            {"role": "system", "content": system_prompt},
-            {"role": "user", "content": user_instruction},
-        ],
+        messages=prompt.messages,
         temperature=0.3,
         stream=False,
     )
@@ -51,40 +41,19 @@ Requirements:
         "question_text": cleaned,
         "usage_metrics": extract_usage_metrics(
             response,
-            prompt_text=user_instruction,
+            prompt_text="\n\n".join(message["content"] for message in prompt.messages),
             completion_text=cleaned,
         ),
+        "prompt_id": prompt.prompt_id,
+        "prompt_version": prompt.version,
     }
-
-
-def format_turn_history(turns: list[InterviewTurn]) -> str:
-    lines = []
-    for turn in turns:
-        lines.append(f"Turn {turn.turn_no}")
-        lines.append(f"Question: {turn.question_text}")
-        lines.append(f"Answer: {turn.answer_text or '[No answer yet]'}")
-        lines.append("")
-    return "\n".join(lines).strip()
-
-
-def generate_next_question(
-    system_prompt: str,
-    turns: list[InterviewTurn],
-    next_turn_no: int,
-    current_stage: str,
-) -> str:
-    history_text = format_turn_history(turns)
-    return generate_next_question_from_history(
-        system_prompt=system_prompt,
-        history_text=history_text,
-        next_turn_no=next_turn_no,
-        current_stage=current_stage,
-    )["question_text"]
 
 
 def generate_next_question_from_history(
     system_prompt: str,
-    history_text: str,
+    recent_context: str,
+    retrieved_context: str,
+    coverage_priorities: str,
     next_turn_no: int,
     current_stage: str,
 ) -> dict:
@@ -96,37 +65,25 @@ def generate_next_question_from_history(
         "The interview is now in its closing phase. Prefer questions that help complete coverage cleanly "
         "instead of opening entirely new broad topics."
         if is_near_end
-        else ""
+        else "The interview still has room to deepen partially explored branches."
     )
-    user_instruction = f"""
-Continue the interview for software project understanding.
-
-Current stage: {current_stage}
-Stage objective: {stage_instruction}
-Next question number: Q{next_turn_no}
-Closing guidance: {closing_instruction}
-
-Conversation history:
-{history_text}
-
-Requirements:
-1. Ask exactly one question only.
-2. The question must be in English.
-3. Label it as Q{next_turn_no}.
-4. The question must follow naturally from the previous conversation.
-5. Do not repeat earlier questions.
-6. Prefer a specific follow-up question over a broad summary question.
-7. Keep the question aligned with the current stage objective.
-8. Do not answer the question.
-9. Do not provide explanations, bullet points, or multiple alternatives.
-""".strip()
+    prompt = get_prompt_manager().render(
+        "next_question",
+        {
+            "system_prompt": system_prompt,
+            "current_stage": current_stage,
+            "stage_objective": stage_instruction,
+            "next_turn_no": next_turn_no,
+            "closing_guidance": closing_instruction,
+            "recent_context": recent_context,
+            "retrieved_context": retrieved_context,
+            "coverage_priorities": coverage_priorities,
+        },
+    )
 
     response = client.chat.completions.create(
         model=settings.openai_model,
-        messages=[
-            {"role": "system", "content": system_prompt},
-            {"role": "user", "content": user_instruction},
-        ],
+        messages=prompt.messages,
         temperature=0.4,
         stream=False,
     )
@@ -142,7 +99,9 @@ Requirements:
         "question_text": cleaned,
         "usage_metrics": extract_usage_metrics(
             response,
-            prompt_text=user_instruction,
+            prompt_text="\n\n".join(message["content"] for message in prompt.messages),
             completion_text=cleaned,
         ),
+        "prompt_id": prompt.prompt_id,
+        "prompt_version": prompt.version,
     }

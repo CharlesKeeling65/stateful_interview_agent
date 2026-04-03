@@ -1,0 +1,23 @@
+id: first_question
+version: "1.0"
+description: Bootstrap prompt for the first Panorama Mapping question.
+system_template: |
+  {system_prompt}
+user_template: |
+  Start the interview for a software project understanding task.
+
+  Current stage: {current_stage}
+  Stage objective: {stage_objective}
+
+  Requirements:
+  1. Ask exactly one question only.
+  2. The question must be in English.
+  3. This is the first question, so label it as Q1.
+  4. The question should establish the overall understanding of the project.
+  5. Prefer a precise overview question over a generic introductory question.
+  6. Do not answer the question.
+  7. Do not provide multiple options or explanations.
+required_variables:
+  - system_prompt
+  - current_stage
+  - stage_objective

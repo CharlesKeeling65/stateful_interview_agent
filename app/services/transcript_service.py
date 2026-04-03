@@ -1,5 +1,14 @@
 from app.models.turn import InterviewTurn
-from app.services.question_generator import format_turn_history
+
+
+def format_turn_history(turns: list[InterviewTurn]) -> str:
+    lines = []
+    for turn in turns:
+        lines.append(f"Turn {turn.turn_no}")
+        lines.append(f"Question: {turn.question_text}")
+        lines.append(f"Answer: {turn.answer_text or '[No answer yet]'}")
+        lines.append("")
+    return "\n".join(lines).strip()
 
 
 def build_project_transcript(turns: list[InterviewTurn]) -> str:
