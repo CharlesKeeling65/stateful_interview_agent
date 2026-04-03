@@ -41,3 +41,16 @@ def ensure_database_schema():
                 connection.execute(
                     text("ALTER TABLE interview_turns ADD COLUMN answer_summary TEXT")
                 )
+
+    if "project_sessions" in inspector.get_table_names():
+        existing_columns = {
+            column["name"] for column in inspector.get_columns("project_sessions")
+        }
+        with engine.begin() as connection:
+            if "coverage_state" not in existing_columns:
+                connection.execute(
+                    text(
+                        "ALTER TABLE project_sessions ADD COLUMN coverage_state TEXT DEFAULT "
+                        "'{\"version\": 1, \"branch_count\": 0, \"updated_through_turn_no\": 0, \"branches\": []}'"
+                    )
+                )

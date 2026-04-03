@@ -147,6 +147,11 @@ class ProjectApiFlowTests(unittest.TestCase):
         )
         self.assertGreater(status.json()["usage_summary"]["total_tokens"], 0)
 
+        coverage = self.client.get(f"/debug/projects/{project_id}/coverage")
+        self.assertEqual(coverage.status_code, 200)
+        self.assertGreaterEqual(coverage.json()["branch_count"], 1)
+        self.assertTrue(coverage.json()["branches"])
+
     def test_delete_project_removes_session_from_listing(self):
         created = self.client.post(
             "/projects",
