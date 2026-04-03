@@ -1,8 +1,11 @@
+import time
+
 from langgraph.graph import StateGraph, END
 from langgraph.checkpoint.memory import MemorySaver
 
 from app.graphs.interview_state import InterviewGraphState
 from app.core.database import SessionLocal
+from app.logging import emit_event, preview_payload
 from app.graphs.interview_nodes import (
     decide_progress,
     draft_next_question,
@@ -11,22 +14,66 @@ from app.graphs.interview_nodes import (
 )
 
 
+def _run_logged_node(node_name: str, state: InterviewGraphState, fn):
+    start_time = time.perf_counter()
+    emit_event(
+        "workflow",
+        "workflow.node.start",
+        f"Workflow node {node_name} started",
+        node=node_name,
+        project_id=state.get("project_id"),
+        turn_no=state.get("current_turn_no"),
+        stage=state.get("current_stage") or state.get("next_stage"),
+        input={"state_keys": sorted(state.keys())},
+    )
+    try:
+        result = fn()
+    except Exception as exc:
+        emit_event(
+            "workflow",
+            "workflow.node.error",
+            f"Workflow node {node_name} failed",
+            level=40,
+            node=node_name,
+            project_id=state.get("project_id"),
+            turn_no=state.get("current_turn_no"),
+            stage=state.get("current_stage") or state.get("next_stage"),
+            duration_ms=round((time.perf_counter() - start_time) * 1000, 2),
+            exc_info=exc,
+        )
+        raise
+
+    emit_event(
+        "workflow",
+        "workflow.node.complete",
+        f"Workflow node {node_name} completed",
+        node=node_name,
+        project_id=state.get("project_id"),
+        turn_no=result.get("next_turn_no") or state.get("current_turn_no"),
+        stage=result.get("next_stage") or state.get("current_stage") or state.get("next_stage"),
+        status="success",
+        duration_ms=round((time.perf_counter() - start_time) * 1000, 2),
+        output=preview_payload(result, artifact_category="workflow", artifact_name=f"{node_name}-result"),
+    )
+    return result
+
+
 def load_context_node(state: InterviewGraphState):
     db = SessionLocal()
     try:
-        return load_project_context(state, db)
+        return _run_logged_node("load_context", state, lambda: load_project_context(state, db))
     finally:
         db.close()
 
 
 def decide_progress_node(state: InterviewGraphState):
-    return decide_progress(state)
+    return _run_logged_node("decide_progress", state, lambda: decide_progress(state))
 
 
 def draft_question_node(state: InterviewGraphState):
     db = SessionLocal()
     try:
-        return draft_next_question(state, db)
+        return _run_logged_node("draft_question", state, lambda: draft_next_question(state, db))
     finally:
         db.close()
 
@@ -34,7 +81,7 @@ def draft_question_node(state: InterviewGraphState):
 def persist_node(state: InterviewGraphState):
     db = SessionLocal()
     try:
-        return persist_next_step(state, db)
+        return _run_logged_node("persist", state, lambda: persist_next_step(state, db))
     finally:
         db.close()
 

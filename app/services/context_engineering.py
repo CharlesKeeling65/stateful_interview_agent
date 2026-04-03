@@ -1,5 +1,6 @@
 from typing import Any
 
+from app.logging import emit_event, preview_payload
 from app.models.turn import InterviewTurn
 from app.services.coverage_service import default_coverage_state, extract_keywords
 from app.services.stage_manager import get_stage_instruction
@@ -18,6 +19,7 @@ def build_generation_context(
     current_stage: str,
     next_turn_no: int,
     coverage_state: dict[str, Any] | None,
+    project_id: int | None = None,
     latest_answer_override: str | None = None,
 ) -> dict[str, Any]:
     coverage = coverage_state or default_coverage_state()
@@ -38,6 +40,34 @@ def build_generation_context(
     selected_branch_ids = [branch["branch_id"] for branch in selected_branches]
     retrieved_context = build_retrieved_branch_context(selected_branches)
     coverage_priorities = build_coverage_priorities(selected_branches, current_stage)
+    emit_event(
+        "retrieval",
+        "retrieval.context.complete",
+        "Built selective generation context",
+        operation="build_generation_context",
+        project_id=project_id,
+        stage=current_stage,
+        turn_no=next_turn_no,
+        status="success",
+        output={
+            "selected_branch_ids": selected_branch_ids,
+            "selected_turn_ids": selected_turn_ids,
+            "branch_scores": {
+                branch["branch_id"]: branch["_score"] for branch in selected_branches
+            },
+            "context_preview": preview_payload(
+                "\n\n".join(
+                    [
+                        recent_context,
+                        retrieved_context,
+                        coverage_priorities,
+                    ]
+                ),
+                artifact_category="retrieval",
+                artifact_name=f"project-{project_id or 'unknown'}-q{next_turn_no}-context",
+            ),
+        },
+    )
 
     return {
         "current_stage": current_stage,

@@ -1,5 +1,6 @@
 from sqlalchemy.orm import Session
 
+from app.logging import bind_log_context, emit_event, preview_payload
 from app.models.project import ProjectSession
 from app.models.turn import InterviewTurn
 from app.services.context_engineering import build_generation_context
@@ -15,6 +16,7 @@ from app.services.usage_service import create_usage_record
 
 
 def load_project_context(state, db: Session):
+    bind_log_context(project_id=state.get("project_id"))
     project = (
         db.query(ProjectSession)
         .filter(ProjectSession.id == state["project_id"])
@@ -57,6 +59,7 @@ def load_project_context(state, db: Session):
 
 
 def decide_progress(state):
+    bind_log_context(project_id=state.get("project_id"))
     current_turn_no = state["current_turn_no"]
 
     if not can_continue_interview(current_turn_no):
@@ -77,6 +80,7 @@ def decide_progress(state):
 
 
 def draft_next_question(state, db: Session):
+    bind_log_context(project_id=state.get("project_id"))
     project = (
         db.query(ProjectSession)
         .filter(ProjectSession.id == state["project_id"])
@@ -109,17 +113,45 @@ def draft_next_question(state, db: Session):
         turns,
         latest_answer_override=state["answer_text"],
     )
+    emit_event(
+        "workflow",
+        "context.compaction.complete",
+        "Built compact interview history",
+        operation="build_compact_interview_context",
+        project_id=project.id,
+        turn_no=state["next_turn_no"],
+        stage=state["next_stage"],
+        output=preview_payload(
+            history_text,
+            artifact_category="workflow",
+            artifact_name=f"project-{project.id}-compact-history",
+        ),
+    )
     pending_turn = turns[-1]
     original_answer_text = pending_turn.answer_text
     pending_turn.answer_text = state["answer_text"]
     coverage_state = rebuild_coverage_state(turns)
     pending_turn.answer_text = original_answer_text
+    emit_event(
+        "workflow",
+        "coverage.refresh.complete",
+        "Rebuilt coverage state before next question generation",
+        operation="rebuild_coverage_state",
+        project_id=project.id,
+        turn_no=state["next_turn_no"],
+        stage=state["next_stage"],
+        output={
+            "branch_count": coverage_state.get("branch_count", 0),
+            "updated_through_turn_no": coverage_state.get("updated_through_turn_no", 0),
+        },
+    )
 
     context_payload = build_generation_context(
         turns=turns,
         current_stage=state["next_stage"],
         next_turn_no=state["next_turn_no"],
         coverage_state=coverage_state,
+        project_id=project.id,
         latest_answer_override=state["answer_text"],
     )
 
@@ -173,6 +205,7 @@ def draft_next_question(state, db: Session):
     }
 
 def persist_next_step(state, db: Session):
+    bind_log_context(project_id=state.get("project_id"))
     project = (
         db.query(ProjectSession)
         .filter(ProjectSession.id == state["project_id"])
@@ -195,12 +228,35 @@ def persist_next_step(state, db: Session):
     )
     refreshed_coverage_state = rebuild_coverage_state(all_turns)
     save_coverage_state(project, refreshed_coverage_state)
+    emit_event(
+        "persistence",
+        "coverage.persist.complete",
+        "Persisted refreshed coverage state",
+        operation="save_coverage_state",
+        project_id=project.id,
+        turn_no=latest_turn.turn_no,
+        stage=latest_turn.stage,
+        output={
+            "branch_count": refreshed_coverage_state.get("branch_count", 0),
+            "updated_through_turn_no": refreshed_coverage_state.get("updated_through_turn_no", 0),
+        },
+    )
 
     if state.get("interview_finished"):
         project.status = "finished"
         db.commit()
         db.refresh(project)
         db.refresh(latest_turn)
+        emit_event(
+            "persistence",
+            "workflow.persist.complete",
+            "Persisted final answered turn and finished project",
+            operation="persist_next_step",
+            project_id=project.id,
+            turn_no=latest_turn.turn_no,
+            stage=latest_turn.stage,
+            status="success",
+        )
         return {
             "message": "Interview finished. Maximum turn limit reached.",
             "minimum_goal_reached": is_minimum_goal_reached(latest_turn.turn_no),
@@ -234,6 +290,21 @@ def persist_next_step(state, db: Session):
     db.refresh(project)
     db.refresh(latest_turn)
     db.refresh(next_turn)
+    emit_event(
+        "persistence",
+        "workflow.persist.complete",
+        "Persisted answered turn and next question",
+        operation="persist_next_step",
+        project_id=project.id,
+        turn_no=next_turn.turn_no,
+        stage=next_turn.stage,
+        status="success",
+        output={
+            "latest_answer_turn": latest_turn.turn_no,
+            "next_turn_id": next_turn.id,
+            "selected_branch_ids": state.get("selected_branch_ids", []),
+        },
+    )
 
     return {
         "message": "Answer submitted and next question generated successfully.",

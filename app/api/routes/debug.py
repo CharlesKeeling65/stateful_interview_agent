@@ -81,6 +81,7 @@ def debug_next_context_preview(
         current_stage=next_stage,
         next_turn_no=next_turn_no,
         coverage_state=coverage_state,
+        project_id=project.id,
         latest_answer_override=payload.answer_text,
     )
 

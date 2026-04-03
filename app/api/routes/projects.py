@@ -4,6 +4,7 @@ from sqlalchemy.orm import Session
 from app.core.config import settings
 from app.core.database import get_db
 from app.graphs.interview_graph import interview_graph
+from app.logging import bind_log_context, emit_event, preview_payload
 from app.models.project import ProjectSession
 from app.models.turn import InterviewTurn
 from app.schemas.project import (
@@ -26,6 +27,13 @@ router = APIRouter(prefix="/projects", tags=["projects"])
 
 @router.post("", response_model=ProjectRead)
 def create_project(payload: ProjectCreate, db: Session = Depends(get_db)):
+    emit_event(
+        "persistence",
+        "project.create.start",
+        "Creating project session",
+        operation="create_project",
+        input=preview_payload(payload.model_dump(), artifact_category="requests", artifact_name="create-project"),
+    )
     project = ProjectSession(
         project_name=payload.project_name,
         system_prompt=payload.system_prompt,
@@ -33,6 +41,16 @@ def create_project(payload: ProjectCreate, db: Session = Depends(get_db)):
     db.add(project)
     db.commit()
     db.refresh(project)
+    bind_log_context(project_id=project.id)
+    emit_event(
+        "persistence",
+        "project.create.complete",
+        "Created project session",
+        operation="create_project",
+        status="success",
+        project_id=project.id,
+        output={"project_name": project.project_name},
+    )
     return project
 
 
@@ -47,6 +65,7 @@ def list_projects(db: Session = Depends(get_db)):
 
 @router.get("/{project_id}", response_model=ProjectRead)
 def get_project(project_id: int, db: Session = Depends(get_db)):
+    bind_log_context(project_id=project_id)
     project = db.query(ProjectSession).filter(ProjectSession.id == project_id).first()
     if not project:
         from fastapi import HTTPException
@@ -61,6 +80,7 @@ def update_project(
     payload: ProjectUpdate,
     db: Session = Depends(get_db),
 ):
+    bind_log_context(project_id=project_id)
     project = db.query(ProjectSession).filter(ProjectSession.id == project_id).first()
     if not project:
         raise HTTPException(status_code=404, detail="Project not found")
@@ -71,22 +91,41 @@ def update_project(
 
     db.commit()
     db.refresh(project)
+    emit_event(
+        "persistence",
+        "project.update.complete",
+        "Updated project session",
+        operation="update_project",
+        status="success",
+        project_id=project.id,
+        input=preview_payload(updates, artifact_category="requests", artifact_name="update-project"),
+    )
     return project
 
 
 @router.delete("/{project_id}", status_code=status.HTTP_204_NO_CONTENT)
 def delete_project(project_id: int, db: Session = Depends(get_db)):
+    bind_log_context(project_id=project_id)
     project = db.query(ProjectSession).filter(ProjectSession.id == project_id).first()
     if not project:
         raise HTTPException(status_code=404, detail="Project not found")
 
     db.delete(project)
     db.commit()
+    emit_event(
+        "persistence",
+        "project.delete.complete",
+        "Deleted project session",
+        operation="delete_project",
+        status="success",
+        project_id=project_id,
+    )
     return Response(status_code=status.HTTP_204_NO_CONTENT)
 
 
 @router.post("/{project_id}/start", response_model=ProjectStartResponse)
 def start_project_interview(project_id: int, db: Session = Depends(get_db)):
+    bind_log_context(project_id=project_id)
     project = db.query(ProjectSession).filter(ProjectSession.id == project_id).first()
     if not project:
         raise HTTPException(status_code=404, detail="Project not found")
@@ -122,6 +161,17 @@ def start_project_interview(project_id: int, db: Session = Depends(get_db)):
     db.commit()
     db.refresh(project)
     db.refresh(first_turn)
+    emit_event(
+        "persistence",
+        "project.start.complete",
+        "Started interview and persisted first turn",
+        operation="start_project_interview",
+        status="success",
+        project_id=project.id,
+        turn_no=first_turn.turn_no,
+        stage=first_turn.stage,
+        output={"question_text": preview_payload(first_turn.question_text, artifact_category="llm", artifact_name="first-question")},
+    )
 
     return {
         "project": project,
@@ -133,6 +183,7 @@ def start_project_interview(project_id: int, db: Session = Depends(get_db)):
 def submit_answer(
     project_id: int, payload: AnswerSubmitRequest, db: Session = Depends(get_db)
 ):
+    bind_log_context(project_id=project_id)
     project = db.query(ProjectSession).filter(ProjectSession.id == project_id).first()
     if not project:
         raise HTTPException(status_code=404, detail="Project not found")
@@ -152,6 +203,17 @@ def submit_answer(
     latest_turn.answer_text = payload.answer_text
     db.commit()
     db.refresh(latest_turn)
+    emit_event(
+        "persistence",
+        "turn.answer.persisted",
+        "Persisted answer to latest turn",
+        operation="submit_answer",
+        status="success",
+        project_id=project_id,
+        turn_no=latest_turn.turn_no,
+        stage=latest_turn.stage,
+        input=preview_payload(payload.answer_text, artifact_category="answers", artifact_name=f"project-{project_id}-turn-{latest_turn.turn_no}"),
+    )
 
     return {
         "project_id": project_id,
@@ -165,11 +227,20 @@ def submit_answer_and_generate_next(
     payload: AnswerSubmitRequest,
     db: Session = Depends(get_db),
 ):
+    bind_log_context(project_id=project_id)
     project = db.query(ProjectSession).filter(ProjectSession.id == project_id).first()
     if not project:
         raise HTTPException(status_code=404, detail="Project not found")
 
     try:
+        emit_event(
+            "workflow",
+            "workflow.invoke.start",
+            "Invoking interview workflow",
+            operation="submit_answer_and_generate_next",
+            project_id=project_id,
+            input=preview_payload(payload.answer_text, artifact_category="answers", artifact_name=f"workflow-input-project-{project_id}"),
+        )
         result = interview_graph.invoke(
             {
                 "project_id": project_id,
@@ -178,6 +249,15 @@ def submit_answer_and_generate_next(
             config={"configurable": {"thread_id": f"project-{project_id}"}},
         )
     except ValueError as e:
+        emit_event(
+            "workflow",
+            "workflow.invoke.error",
+            "Interview workflow failed",
+            level=40,
+            operation="submit_answer_and_generate_next",
+            project_id=project_id,
+            exc_info=e,
+        )
         raise HTTPException(status_code=400, detail=str(e))
 
     updated_project = (
@@ -212,6 +292,21 @@ def submit_answer_and_generate_next(
             )
             .first()
         )
+
+    emit_event(
+        "workflow",
+        "workflow.invoke.complete",
+        "Interview workflow completed",
+        operation="submit_answer_and_generate_next",
+        status="success",
+        project_id=project_id,
+        turn_no=latest_turn.turn_no if latest_turn else None,
+        stage=latest_turn.stage if latest_turn else None,
+        output={
+            "interview_finished": result.get("interview_finished", False),
+            "selected_branch_ids": result.get("selected_branch_ids", []),
+        },
+    )
 
     return {
         "project": updated_project,
