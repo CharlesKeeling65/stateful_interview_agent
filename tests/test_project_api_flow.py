@@ -141,6 +141,9 @@ class ProjectApiFlowTests(unittest.TestCase):
         )
         self.assertEqual(next_one.status_code, 200)
         self.assertEqual(next_one.json()["next_turn"]["turn_no"], 2)
+        self.assertEqual(next_one.json()["next_turn"]["current_question_version_no"], 1)
+        self.assertEqual(next_one.json()["next_turn"]["question_regeneration_count"], 0)
+        self.assertEqual(len(next_one.json()["next_turn"]["question_versions"]), 1)
 
         next_two = self.client.post(
             f"/projects/{project_id}/next",
@@ -151,6 +154,9 @@ class ProjectApiFlowTests(unittest.TestCase):
         self.assertEqual(next_two.status_code, 200)
         self.assertEqual(next_two.json()["next_turn"]["turn_no"], 3)
         self.assertGreater(next_two.json()["usage_summary"]["total_tokens"], 0)
+        self.assertEqual(next_two.json()["next_turn"]["current_question_version_no"], 1)
+        self.assertEqual(next_two.json()["next_turn"]["question_regeneration_count"], 0)
+        self.assertEqual(len(next_two.json()["next_turn"]["question_versions"]), 1)
 
         turns = self.client.get(f"/projects/{project_id}/turns")
         self.assertEqual(turns.status_code, 200)

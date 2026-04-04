@@ -657,6 +657,65 @@ class CoverageCountingTests(unittest.TestCase):
         self.assertEqual(decision["next_stage"], "Architecture Understanding")
         self.assertIn("architecture", decision["reason"].lower())
 
+    def test_stage_controller_does_not_regress_after_manual_stage_advance(self):
+        coverage_state = {
+            "framework": {
+                "panorama": {
+                    "purpose": False,
+                    "target_users": False,
+                    "boundaries": False,
+                    "major_modules": False,
+                    "high_level_workflow": False,
+                    "initial_module_relationships": False,
+                },
+                "architecture": {
+                    "architecture_style_or_organization": True,
+                    "module_responsibilities": True,
+                    "communication_mechanisms": True,
+                    "key_call_chains": True,
+                    "system_structure": True,
+                    "design_rationale_or_quality_attributes": True,
+                },
+                "code_detail": {
+                    "specific_files_count": 1,
+                    "specific_methods_count": 0,
+                    "execution_paths_count": 0,
+                    "error_handling_points_count": 0,
+                },
+                "use_cases": {},
+                "human_collaboration": {},
+                "stage_turn_counts": {
+                    "Architecture Understanding": 3,
+                    "Code Detail Completion": 1,
+                },
+                "gaps": {
+                    "panorama": [
+                        "purpose",
+                        "target_users",
+                        "major_modules",
+                        "high_level_workflow",
+                    ],
+                    "architecture": [],
+                    "code_detail": [
+                        "specific_methods_count",
+                        "execution_paths_count",
+                    ],
+                    "use_cases": [],
+                    "human_collaboration": [],
+                },
+                "wrap_up_ready": False,
+            }
+        }
+
+        decision = decide_next_stage(
+            next_turn_no=7,
+            coverage_state=coverage_state,
+            current_stage="Code Detail Completion",
+            max_turns=40,
+        )
+
+        self.assertEqual(decision["next_stage"], "Code Detail Completion")
+
 
 if __name__ == "__main__":
     unittest.main()

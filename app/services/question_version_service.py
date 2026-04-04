@@ -26,6 +26,22 @@ def normalize_question_versions(db: Session, turn: InterviewTurn) -> list[Interv
     if not versions:
         return []
 
+    deduplicated_versions: list[InterviewQuestionVersion] = []
+    for version in versions:
+        previous = deduplicated_versions[-1] if deduplicated_versions else None
+        is_duplicate_artifact = (
+            previous is not None
+            and version.question_text == previous.question_text
+            and not version.human_review
+            and not previous.human_review
+        )
+        if is_duplicate_artifact:
+            db.delete(version)
+            continue
+        deduplicated_versions.append(version)
+
+    versions = deduplicated_versions
+
     saw_initial = False
     for index, version in enumerate(versions, start=1):
         if version.version_no != index:
@@ -95,7 +111,10 @@ def append_question_version(
 ) -> InterviewQuestionVersion:
     existing_versions = normalize_question_versions(db, turn)
     if not existing_versions:
-        existing_versions = [ensure_initial_question_version(db, turn)]
+        initial_version = ensure_initial_question_version(db, turn)
+        if generation_kind == "initial":
+            return initial_version
+        existing_versions = [initial_version]
     summary = summarize_usage_metrics(usage_metrics_list)
     version = InterviewQuestionVersion(
         turn_id=turn.id,
