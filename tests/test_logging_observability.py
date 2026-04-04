@@ -100,9 +100,15 @@ class LoggingObservabilityTests(unittest.TestCase):
         started = self.client.post(f"/projects/{project_id}/start")
         self.assertEqual(started.status_code, 200)
 
+        saved = self.client.post(
+            f"/projects/{project_id}/answer",
+            json={"answer_text": "The answer describes auth, sessions, and orchestration."},
+        )
+        self.assertEqual(saved.status_code, 200)
+
         advanced = self.client.post(
             f"/projects/{project_id}/next",
-            json={"answer_text": "The answer describes auth, sessions, and orchestration."},
+            json={},
         )
         self.assertEqual(advanced.status_code, 200)
 

@@ -27,6 +27,7 @@ from app.schemas.turn import (
     AnswerSubmitResponse,
     CurrentQuestionRegenerateRequest,
     CurrentQuestionRegenerateResponse,
+    NextQuestionRequest,
     TurnRead,
 )
 from app.services.interview_lifecycle import is_minimum_goal_reached
@@ -259,10 +260,7 @@ def submit_answer(
     )
     if not latest_turn:
         raise HTTPException(status_code=400, detail="Project interview has not started")
-
-    if latest_turn.answer_text is not None:
-        raise HTTPException(status_code=400, detail="Latest turn already has an answer")
-
+    previous_answer = latest_turn.answer_text
     latest_turn.answer_text = payload.answer_text
     db.commit()
     db.refresh(latest_turn)
@@ -275,12 +273,15 @@ def submit_answer(
         project_id=project_id,
         turn_no=latest_turn.turn_no,
         stage=latest_turn.stage,
+        output={"answer_updated": previous_answer is not None},
         input=preview_payload(payload.answer_text, artifact_category="answers", artifact_name=f"project-{project_id}-turn-{latest_turn.turn_no}"),
     )
 
     return {
         "project_id": project_id,
         "updated_turn": latest_turn,
+        "can_generate_next": True,
+        "message": "Answer saved. You can now generate the next question separately.",
     }
 
 
@@ -492,7 +493,7 @@ def regenerate_current_question(
 @router.post("/{project_id}/next", response_model=ProjectNextResponse)
 def submit_answer_and_generate_next(
     project_id: int,
-    payload: AnswerSubmitRequest,
+    payload: NextQuestionRequest,
     db: Session = Depends(get_db),
 ):
     bind_log_context(project_id=project_id)
@@ -505,6 +506,13 @@ def submit_answer_and_generate_next(
         .order_by(InterviewTurn.turn_no.desc())
         .first()
     )
+    if not latest_turn:
+        raise HTTPException(status_code=400, detail="Project interview has not started")
+    if latest_turn.answer_text is None:
+        raise HTTPException(
+            status_code=400,
+            detail="Save an answer for the current question before generating the next one.",
+        )
     run = create_run(
         project_id=project_id,
         turn_no=(latest_turn.turn_no + 1) if latest_turn else None,
@@ -518,13 +526,13 @@ def submit_answer_and_generate_next(
             "Invoking interview workflow",
             operation="submit_answer_and_generate_next",
             project_id=project_id,
-            input=preview_payload(payload.answer_text, artifact_category="answers", artifact_name=f"workflow-input-project-{project_id}"),
+            input=preview_payload(latest_turn.answer_text, artifact_category="answers", artifact_name=f"workflow-input-project-{project_id}"),
         )
         result = interview_graph.invoke(
             {
                 "run_id": run.id,
                 "project_id": project_id,
-                "answer_text": payload.answer_text,
+                "answer_text": latest_turn.answer_text,
                 "human_review_signal": payload.human_review.model_dump() if payload.human_review else None,
             },
             config={"configurable": {"thread_id": f"project-{project_id}"}},
@@ -744,6 +752,9 @@ def get_project_status(project_id: int, db: Session = Depends(get_db)):
         "latest_turn_no": latest_turn.turn_no if latest_turn else None,
         "latest_turn_answered": (
             (latest_turn.answer_text is not None) if latest_turn else None
+        ),
+        "latest_turn_ready_for_next_generation": (
+            bool(latest_turn and latest_turn.answer_text is not None and project.status != "finished")
         ),
         "latest_question_text": latest_turn.question_text if latest_turn else None,
         "latest_question_text_for_copy": (

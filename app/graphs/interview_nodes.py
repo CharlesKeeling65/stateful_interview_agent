@@ -392,8 +392,8 @@ def load_project_context(state, db: Session):
         if project.status == "finished":
             raise ValueError("Project interview is already finished")
 
-        if latest_turn.answer_text is not None:
-            raise ValueError("Latest turn already has an answer")
+        if latest_turn.answer_text is None:
+            raise ValueError("Latest turn does not have a saved answer yet")
 
         turns = (
             db.query(InterviewTurn)
@@ -410,6 +410,7 @@ def load_project_context(state, db: Session):
             "coverage_state": project.coverage_state_data,
             "minimum_goal_reached": is_minimum_goal_reached(project.turn_count),
             "pending_turn_id": latest_turn.id,
+            "answer_text": latest_turn.answer_text,
             "human_review_signal": state.get("human_review_signal"),
             "next_turn_no": None,
             "next_stage": None,
@@ -523,10 +524,8 @@ def persist_next_step(state, db: Session):
         )
         if not pending_turn:
             raise ValueError("Pending turn no longer exists")
-        if pending_turn.answer_text is not None:
-            raise ValueError("Pending turn was already answered by another request")
-
-        pending_turn.answer_text = state["answer_text"]
+        if not pending_turn.answer_text:
+            pending_turn.answer_text = state["answer_text"]
         if state.get("human_review_signal"):
             pending_turn.human_review_json = json.dumps(
                 state["human_review_signal"],

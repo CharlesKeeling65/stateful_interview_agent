@@ -75,6 +75,12 @@ class AnswerSubmitRequest(BaseModel):
 class AnswerSubmitResponse(BaseModel):
     project_id: int
     updated_turn: TurnRead
+    can_generate_next: bool = False
+    message: str
+
+
+class NextQuestionRequest(BaseModel):
+    human_review: HumanReviewInput | None = None
 
 
 class QuestionVersionRead(BaseModel):

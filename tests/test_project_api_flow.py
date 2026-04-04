@@ -127,10 +127,18 @@ class ProjectApiFlowTests(unittest.TestCase):
         self.assertEqual(started.status_code, 200)
         self.assertEqual(started.json()["first_turn"]["question_text_for_copy"], "What is the project trying to achieve for its primary users?")
 
+        saved_one = self.client.post(
+            f"/projects/{project_id}/answer",
+            json={
+                "answer_text": "Long answer one with product goals, user roles, data flow, and module boundaries.",
+            },
+        )
+        self.assertEqual(saved_one.status_code, 200)
+        self.assertTrue(saved_one.json()["can_generate_next"])
+
         next_one = self.client.post(
             f"/projects/{project_id}/next",
             json={
-                "answer_text": "Long answer one with product goals, user roles, data flow, and module boundaries.",
                 "human_review": {
                     "verdict": "insufficient",
                     "direction": "redirect",
@@ -145,11 +153,18 @@ class ProjectApiFlowTests(unittest.TestCase):
         self.assertEqual(next_one.json()["next_turn"]["question_regeneration_count"], 0)
         self.assertEqual(len(next_one.json()["next_turn"]["question_versions"]), 1)
 
-        next_two = self.client.post(
-            f"/projects/{project_id}/next",
+        saved_two = self.client.post(
+            f"/projects/{project_id}/answer",
             json={
                 "answer_text": "Long answer two with service orchestration, event handling, and integration constraints.",
             },
+        )
+        self.assertEqual(saved_two.status_code, 200)
+        self.assertTrue(saved_two.json()["can_generate_next"])
+
+        next_two = self.client.post(
+            f"/projects/{project_id}/next",
+            json={},
         )
         self.assertEqual(next_two.status_code, 200)
         self.assertEqual(next_two.json()["next_turn"]["turn_no"], 3)
@@ -185,6 +200,7 @@ class ProjectApiFlowTests(unittest.TestCase):
             "Where are the main extension points or unresolved design tradeoffs?",
         )
         self.assertGreater(status.json()["usage_summary"]["total_tokens"], 0)
+        self.assertFalse(status.json()["latest_turn_ready_for_next_generation"])
 
         coverage = self.client.get(f"/debug/projects/{project_id}/coverage")
         self.assertEqual(coverage.status_code, 200)
@@ -426,11 +442,17 @@ class ProjectApiFlowTests(unittest.TestCase):
         started = self.client.post(f"/projects/{project_id}/start")
         self.assertEqual(started.status_code, 200)
 
-        next_one = self.client.post(
-            f"/projects/{project_id}/next",
+        saved = self.client.post(
+            f"/projects/{project_id}/answer",
             json={
                 "answer_text": "Answer that should drive regeneration.",
             },
+        )
+        self.assertEqual(saved.status_code, 200)
+
+        next_one = self.client.post(
+            f"/projects/{project_id}/next",
+            json={},
         )
         self.assertEqual(next_one.status_code, 200)
         current_turn = next_one.json()["next_turn"]

@@ -98,9 +98,15 @@ class RunTraceApiTests(unittest.TestCase):
         started = self.client.post(f"/projects/{project_id}/start")
         self.assertEqual(started.status_code, 200)
 
+        saved = self.client.post(
+            f"/projects/{project_id}/answer",
+            json={"answer_text": "Long answer about users, modules, and workflow."},
+        )
+        self.assertEqual(saved.status_code, 200)
+
         advanced = self.client.post(
             f"/projects/{project_id}/next",
-            json={"answer_text": "Long answer about users, modules, and workflow."},
+            json={},
         )
         self.assertEqual(advanced.status_code, 200)
 
@@ -144,6 +150,12 @@ class RunTraceApiTests(unittest.TestCase):
         started = self.client.post(f"/projects/{project_id}/start")
         self.assertEqual(started.status_code, 200)
 
+        saved = self.client.post(
+            f"/projects/{project_id}/answer",
+            json={"answer_text": "Long answer that will fail during next question generation."},
+        )
+        self.assertEqual(saved.status_code, 200)
+
         original_generate = interview_nodes_module.generate_next_question_from_history
 
         def failing_generate(*args, **kwargs):
@@ -154,7 +166,7 @@ class RunTraceApiTests(unittest.TestCase):
             failure_client = TestClient(app, raise_server_exceptions=False)
             failed = failure_client.post(
                 f"/projects/{project_id}/next",
-                json={"answer_text": "Long answer that will fail during next question generation."},
+                json={},
             )
         finally:
             interview_nodes_module.generate_next_question_from_history = original_generate
@@ -179,6 +191,12 @@ class RunTraceApiTests(unittest.TestCase):
         started = self.client.post(f"/projects/{project_id}/start")
         self.assertEqual(started.status_code, 200)
 
+        saved = self.client.post(
+            f"/projects/{project_id}/answer",
+            json={"answer_text": "Long answer that should still succeed even if trace bookkeeping fails."},
+        )
+        self.assertEqual(saved.status_code, 200)
+
         original_finish = run_trace_service._finish_step
         state = {"raised": False}
 
@@ -192,7 +210,7 @@ class RunTraceApiTests(unittest.TestCase):
         try:
             advanced = self.client.post(
                 f"/projects/{project_id}/next",
-                json={"answer_text": "Long answer that should still succeed even if trace bookkeeping fails."},
+                json={},
             )
         finally:
             run_trace_service._finish_step = original_finish

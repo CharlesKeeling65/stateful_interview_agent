@@ -82,6 +82,7 @@ class ProjectStatusResponse(BaseModel):
     max_turn_limit: int
     latest_turn_no: int | None
     latest_turn_answered: bool | None
+    latest_turn_ready_for_next_generation: bool = False
     latest_question_text: str | None
     latest_question_text_for_copy: str | None
     latest_turn_regeneration_count: int = 0
