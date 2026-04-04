@@ -1,20 +1,16 @@
+import { getBooleanLabel, getRuntimeStatusText, type Locale } from '../i18n'
 import type { ProjectRead, ProjectStatusResponse } from '../types/api'
 
 export function formatBooleanLabel(
   value: boolean | null | undefined,
+  locale: Locale = 'en',
   options?: {
     trueLabel?: string
     falseLabel?: string
     nullLabel?: string
   },
 ) {
-  if (value == null) {
-    return options?.nullLabel ?? 'Not available'
-  }
-
-  return value
-    ? options?.trueLabel ?? 'Yes'
-    : options?.falseLabel ?? 'No'
+  return getBooleanLabel(value, locale, options)
 }
 
 export function isProjectFinished(
@@ -31,16 +27,17 @@ export function hasInterviewStarted(project: ProjectRead | null) {
 export function getRuntimeStatusLabel(
   project: ProjectRead | null,
   status: ProjectStatusResponse | null,
+  locale: Locale = 'en',
 ) {
   const currentStatus = status?.status ?? project?.status
   if (currentStatus === 'finished') {
-    return 'Finished'
+    return getRuntimeStatusText('finished', locale)
   }
   if (project && project.turn_count > 0) {
-    return 'In progress'
+    return getRuntimeStatusText('in_progress', locale)
   }
   if (project) {
-    return 'Ready to start'
+    return getRuntimeStatusText('ready', locale)
   }
-  return 'No project selected'
+  return getRuntimeStatusText('empty', locale)
 }

@@ -1,3 +1,4 @@
+import type { Locale } from '../i18n'
 import type { ProjectRead, TokenUsageSummary, TurnRead } from '../types/api'
 
 export function estimateTokenCount(value: string) {
@@ -46,8 +47,8 @@ export function estimateNextOutputTokens(answerDraft: string) {
   return Math.max(48, Math.min(220, Math.ceil(answerTokens * 0.22) + 42))
 }
 
-export function formatTokenCount(value: number) {
-  return new Intl.NumberFormat().format(value)
+export function formatTokenCount(value: number, locale: Locale = 'en') {
+  return new Intl.NumberFormat(locale === 'zh-CN' ? 'zh-CN' : 'en-US').format(value)
 }
 
 export function summarizeOperationUsage(turn: TurnRead) {

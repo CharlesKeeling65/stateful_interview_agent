@@ -72,7 +72,7 @@ export function useProject() {
   const [loading, setLoading] = useState(false)
   const [busyAction, setBusyAction] = useState<BusyAction>(null)
   const [error, setError] = useState('')
-  const [lastMessage, setLastMessage] = useState('')
+  const [lastMessageKey, setLastMessageKey] = useState('')
 
   async function refreshProjects(preferredProjectId?: number) {
     const items = await listProjects()
@@ -118,7 +118,7 @@ export function useProject() {
         setTranscript(details.transcript)
         setRuns(details.runs)
         setActiveRun(details.runs.find((run) => run.status === 'running') ?? null)
-        setLastMessage('')
+        setLastMessageKey('')
       })
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Unable to load that project.')
@@ -159,7 +159,7 @@ export function useProject() {
     try {
       const created = await createProject(payload)
       startTransition(() => {
-        setLastMessage('Project created. Start the interview to generate the first question.')
+        setLastMessageKey('status.created')
       })
       await refreshProjects(created.id)
     } catch (err) {
@@ -199,7 +199,7 @@ export function useProject() {
       const result = await startProject(project.id)
       startTransition(() => {
         setProject(result.project)
-        setLastMessage('Interview started. The first question is ready.')
+        setLastMessageKey('status.started')
       })
       await refreshSelected(project.id)
     } catch (err) {
@@ -218,7 +218,7 @@ export function useProject() {
     setBusyAction('submitting')
     setLoading(true)
     setError('')
-    setLastMessage('Generating the next question...')
+    setLastMessageKey('status.generating')
 
     let settled = false
     let pollActiveRun: Promise<void> | null = null
@@ -262,7 +262,7 @@ export function useProject() {
       await pollActiveRun
       startTransition(() => {
         setProject(result.project)
-        setLastMessage(result.message)
+        setLastMessageKey(result.interview_finished ? 'status.finished' : 'status.generated')
       })
       await refreshSelected(project.id)
     } catch (err) {
@@ -290,7 +290,7 @@ export function useProject() {
       const updatedProject = await updateProject(projectId, payload)
       startTransition(() => {
         setProject(updatedProject)
-        setLastMessage('Project metadata updated.')
+        setLastMessageKey('status.updated')
       })
       await refreshSelected(projectId)
     } catch (err) {
@@ -318,7 +318,7 @@ export function useProject() {
       const remainingProjects = await listProjects()
       startTransition(() => {
         setProjects(remainingProjects)
-        setLastMessage('Project deleted.')
+        setLastMessageKey('status.deleted')
       })
 
       if (!deletingSelectedProject) {
@@ -367,7 +367,7 @@ export function useProject() {
   return {
     busyAction,
     error,
-    lastMessage,
+    lastMessageKey,
     loading,
     project,
     projects,
