@@ -11,6 +11,7 @@ from app.services.coverage_service import rebuild_coverage_state, save_coverage_
 from app.services.interview_lifecycle import can_continue_interview, is_minimum_goal_reached
 from app.services.question_planner import plan_next_question
 from app.services.question_generator import generate_next_question_from_history
+from app.services.question_version_service import append_question_version
 from app.services.question_validator import validate_question_for_stage
 from app.services.repetition_guard import build_question_signature, is_question_too_similar
 from app.services.run_trace_service import traced_run_step
@@ -18,6 +19,178 @@ from app.services.summarization_service import ensure_turn_summaries
 from app.services.stage_manager import decide_next_stage
 from app.services.transcript_service import build_compact_interview_context
 from app.services.usage_service import create_usage_record
+
+
+def build_question_plan_payload(state: dict) -> dict:
+    return {
+        "phase": state.get("planner_decision", {}).get("phase"),
+        "question_intent": state.get("planner_decision", {}).get("question_intent"),
+        "intent_mode": state.get("planner_decision", {}).get("intent_mode"),
+        "target_branch_id": state.get("planner_decision", {}).get("target_branch_id"),
+        "target_type": state.get("planner_decision", {}).get("target_type"),
+        "target_label": state.get("planner_decision", {}).get("target_label"),
+        "selected_framework_gap": state.get("planner_decision", {}).get("selected_framework_gap"),
+        "selected_branch_ids": state.get("planner_decision", {}).get("selected_branch_ids", []),
+        "selected_turn_ids": state.get("planner_decision", {}).get("selected_turn_ids", []),
+        "human_review_applied": state.get("planner_decision", {}).get("human_review_applied"),
+        "drift_detected": state.get("planner_decision", {}).get("drift_detected"),
+        "why_this_question": state.get("planner_decision", {}).get("why_this_question"),
+    }
+
+
+def build_question_plan_json(state: dict) -> str:
+    return json.dumps(
+        build_question_plan_payload(state),
+        ensure_ascii=True,
+        sort_keys=True,
+    )
+
+
+def generate_question_for_state(
+    *,
+    current_stage: str,
+    db: Session,
+    human_review_signal: dict | None,
+    latest_answer_override: str | None,
+    project: ProjectSession,
+    run_id: int | None,
+    turn_no: int,
+    turns: list[InterviewTurn],
+) -> dict:
+    coverage_state = rebuild_coverage_state(turns)
+    context_payload = build_generation_context(
+        turns=turns,
+        current_stage=current_stage,
+        next_turn_no=turn_no,
+        coverage_state=coverage_state,
+        project_id=project.id,
+        latest_answer_override=latest_answer_override,
+    )
+    planner_decision = plan_next_question(
+        turns=turns,
+        current_stage=current_stage,
+        next_turn_no=turn_no,
+        coverage_state=coverage_state,
+        human_review_signal=human_review_signal,
+    )
+    next_question_result = generate_next_question_from_history(
+        system_prompt=project.system_prompt,
+        recent_context=context_payload["recent_context"],
+        retrieved_context=context_payload["retrieved_context"],
+        coverage_priorities=context_payload["coverage_priorities"],
+        next_turn_no=turn_no,
+        current_stage=current_stage,
+        planner_decision=planner_decision,
+        project_id=project.id,
+        run_id=run_id,
+    )
+    next_question = next_question_result["question_text"]
+    question_usage_metrics = [next_question_result["usage_metrics"]]
+
+    old_questions = [turn.question_text for turn in turns[:-1]]
+    recent_question_signatures = coverage_state.get("question_history", [])[-8:]
+
+    if is_question_too_similar(next_question, old_questions):
+        blocked_branch_ids = {planner_decision.get("target_branch_id")} - {None}
+        blocked_target_signatures = {
+            build_question_signature(
+                stage=current_stage,
+                intent=planner_decision.get("question_intent"),
+                branch_id=planner_decision.get("target_branch_id"),
+                target_type=planner_decision.get("target_type"),
+                target_label=planner_decision.get("target_label"),
+            )
+        }
+        context_payload = build_generation_context(
+            turns=turns,
+            current_stage=current_stage,
+            next_turn_no=turn_no,
+            coverage_state=coverage_state,
+            project_id=project.id,
+            latest_answer_override=latest_answer_override,
+            excluded_branch_ids=blocked_branch_ids,
+        )
+        planner_decision = plan_next_question(
+            turns=turns,
+            current_stage=current_stage,
+            next_turn_no=turn_no,
+            coverage_state=coverage_state,
+            human_review_signal=human_review_signal,
+            excluded_branch_ids=blocked_branch_ids,
+            excluded_target_signatures=blocked_target_signatures,
+        )
+        retried_question_result = generate_next_question_from_history(
+            system_prompt=project.system_prompt,
+            recent_context=context_payload["recent_context"],
+            retrieved_context=context_payload["retrieved_context"],
+            coverage_priorities=context_payload["coverage_priorities"],
+            next_turn_no=turn_no,
+            current_stage=current_stage,
+            planner_decision=planner_decision,
+            project_id=project.id,
+            run_id=run_id,
+        )
+        next_question = retried_question_result["question_text"]
+        question_usage_metrics.append(retried_question_result["usage_metrics"])
+
+    validation = validate_question_for_stage(
+        text=next_question,
+        expected_turn_no=turn_no,
+        current_stage=current_stage,
+        intent_mode=planner_decision.get("intent_mode", "understand_current_code"),
+        recent_question_signatures=recent_question_signatures,
+        branch_id=planner_decision.get("target_branch_id"),
+    )
+
+    if not validation["is_valid"]:
+        retry_prompt = (
+            project.system_prompt
+            + "\n\nThe previous draft did not satisfy the stage-specific validator. "
+            + "Fix these issues and regenerate one better question: "
+            + "; ".join(validation["reasons"])
+        )
+        retried_question_result = generate_next_question_from_history(
+            system_prompt=retry_prompt,
+            recent_context=context_payload["recent_context"],
+            retrieved_context=context_payload["retrieved_context"],
+            coverage_priorities=context_payload["coverage_priorities"],
+            next_turn_no=turn_no,
+            current_stage=current_stage,
+            planner_decision=planner_decision,
+            project_id=project.id,
+            run_id=run_id,
+        )
+        next_question = retried_question_result["question_text"]
+        question_usage_metrics.append(retried_question_result["usage_metrics"])
+        validation = validate_question_for_stage(
+            text=next_question,
+            expected_turn_no=turn_no,
+            current_stage=current_stage,
+            intent_mode=planner_decision.get("intent_mode", "understand_current_code"),
+            recent_question_signatures=recent_question_signatures,
+            branch_id=planner_decision.get("target_branch_id"),
+        )
+        if not validation["is_valid"]:
+            raise ValueError(
+                "Generated question failed stage-specific validation: "
+                + "; ".join(validation["reasons"])
+            )
+
+    return {
+        "generated_question": next_question,
+        "coverage_state": coverage_state,
+        "retrieved_context": context_payload["retrieved_context"],
+        "coverage_priorities": context_payload["coverage_priorities"],
+        "selected_turn_ids": context_payload["selected_turn_ids"],
+        "selected_branch_ids": context_payload["selected_branch_ids"],
+        "planner_decision": planner_decision,
+        "validation_result": validation,
+        "prompt_metadata": {
+            "prompt_id": next_question_result.get("prompt_id"),
+            "prompt_version": next_question_result.get("prompt_version"),
+        },
+        "question_usage_metrics": question_usage_metrics,
+    }
 
 
 def load_project_context(state, db: Session):
@@ -196,7 +369,6 @@ def draft_next_question(state, db: Session):
         coverage_state = rebuild_coverage_state(turns)
         if coverage_step:
             coverage_step.set_meta(branch_count=coverage_state.get("branch_count", 0))
-    pending_turn.answer_text = original_answer_text
     emit_event(
         "workflow",
         "coverage.refresh.complete",
@@ -211,185 +383,30 @@ def draft_next_question(state, db: Session):
         },
     )
 
-    with traced_run_step(
-        run_id=state.get("run_id"),
-        project_id=project.id,
-        turn_no=state["next_turn_no"],
-        step_key="retrieve_relevant_branches",
-        description="Select the highest-value branch evidence and compact retrieval context.",
-        next_step_hint="Render prompt",
-    ) as retrieval_step:
-        context_payload = build_generation_context(
-            turns=turns,
-            current_stage=state["next_stage"],
-            next_turn_no=state["next_turn_no"],
-            coverage_state=coverage_state,
-            project_id=project.id,
-            latest_answer_override=state["answer_text"],
-        )
-        if retrieval_step:
-            retrieval_step.set_meta(
-                selected_branch_ids=context_payload["selected_branch_ids"],
-                selected_turn_ids=context_payload["selected_turn_ids"],
-            )
-    planner_decision = plan_next_question(
-        turns=turns,
+    generation_payload = generate_question_for_state(
         current_stage=state["next_stage"],
-        next_turn_no=state["next_turn_no"],
-        coverage_state=coverage_state,
+        db=db,
         human_review_signal=state.get("human_review_signal"),
-    )
-    emit_event(
-        "workflow",
-        "planner.decision.complete",
-        "Built planner decision for next question",
-        operation="plan_next_question",
-        project_id=project.id,
-        turn_no=state["next_turn_no"],
-        stage=state["next_stage"],
-        output=planner_decision,
-    )
-
-    next_question_result = generate_next_question_from_history(
-        system_prompt=project.system_prompt,
-        recent_context=context_payload["recent_context"],
-        retrieved_context=context_payload["retrieved_context"],
-        coverage_priorities=context_payload["coverage_priorities"],
-        next_turn_no=state["next_turn_no"],
-        current_stage=state["next_stage"],
-        planner_decision=planner_decision,
-        project_id=project.id,
+        latest_answer_override=state["answer_text"],
+        project=project,
         run_id=state.get("run_id"),
-    )
-    next_question = next_question_result["question_text"]
-    question_usage_metrics = [next_question_result["usage_metrics"]]
-
-    old_questions = [turn.question_text for turn in turns]
-    recent_question_signatures = coverage_state.get("question_history", [])[-8:]
-
-    if is_question_too_similar(next_question, old_questions):
-        blocked_branch_ids = {
-            planner_decision.get("target_branch_id")
-        } - {None}
-        blocked_target_signatures = {
-            build_question_signature(
-                stage=state["next_stage"],
-                intent=planner_decision.get("question_intent"),
-                branch_id=planner_decision.get("target_branch_id"),
-                target_type=planner_decision.get("target_type"),
-                target_label=planner_decision.get("target_label"),
-            )
-        }
-        context_payload = build_generation_context(
-            turns=turns,
-            current_stage=state["next_stage"],
-            next_turn_no=state["next_turn_no"],
-            coverage_state=coverage_state,
-            project_id=project.id,
-            latest_answer_override=state["answer_text"],
-            excluded_branch_ids=blocked_branch_ids,
-        )
-        planner_decision = plan_next_question(
-            turns=turns,
-            current_stage=state["next_stage"],
-            next_turn_no=state["next_turn_no"],
-            coverage_state=coverage_state,
-            human_review_signal=state.get("human_review_signal"),
-            excluded_branch_ids=blocked_branch_ids,
-            excluded_target_signatures=blocked_target_signatures,
-        )
-        retried_question_result = generate_next_question_from_history(
-            system_prompt=project.system_prompt,
-            recent_context=context_payload["recent_context"],
-            retrieved_context=context_payload["retrieved_context"],
-            coverage_priorities=context_payload["coverage_priorities"],
-            next_turn_no=state["next_turn_no"],
-            current_stage=state["next_stage"],
-            planner_decision=planner_decision,
-            project_id=project.id,
-            run_id=state.get("run_id"),
-        )
-        next_question = retried_question_result["question_text"]
-        question_usage_metrics.append(retried_question_result["usage_metrics"])
-
-    with traced_run_step(
-        run_id=state.get("run_id"),
-        project_id=project.id,
         turn_no=state["next_turn_no"],
-        step_key="validate_question",
-        description="Validate the generated question against stage-specific rules.",
-        next_step_hint="Persist result",
-    ) as validation_step:
-        validation = validate_question_for_stage(
-            text=next_question,
-            expected_turn_no=state["next_turn_no"],
-            current_stage=state["next_stage"],
-            intent_mode=planner_decision.get("intent_mode", "understand_current_code"),
-            recent_question_signatures=recent_question_signatures,
-            branch_id=planner_decision.get("target_branch_id"),
-        )
-        if validation_step:
-            validation_step.set_meta(reasons=validation["reasons"])
-
-    if not validation["is_valid"]:
-        retry_prompt = (
-            project.system_prompt
-            + "\n\nThe previous draft did not satisfy the stage-specific validator. "
-            + "Fix these issues and regenerate one better question: "
-            + "; ".join(validation["reasons"])
-        )
-        emit_event(
-            "workflow",
-            "question.validation.retry",
-            "Regenerating because the question failed stage validation",
-            operation="validate_question_for_stage",
-            project_id=project.id,
-            turn_no=state["next_turn_no"],
-            stage=state["next_stage"],
-            output={"reasons": validation["reasons"]},
-        )
-        retried_question_result = generate_next_question_from_history(
-            system_prompt=retry_prompt,
-            recent_context=context_payload["recent_context"],
-            retrieved_context=context_payload["retrieved_context"],
-            coverage_priorities=context_payload["coverage_priorities"],
-            next_turn_no=state["next_turn_no"],
-            current_stage=state["next_stage"],
-            planner_decision=planner_decision,
-            project_id=project.id,
-            run_id=state.get("run_id"),
-        )
-        next_question = retried_question_result["question_text"]
-        question_usage_metrics.append(retried_question_result["usage_metrics"])
-        validation = validate_question_for_stage(
-            text=next_question,
-            expected_turn_no=state["next_turn_no"],
-            current_stage=state["next_stage"],
-            intent_mode=planner_decision.get("intent_mode", "understand_current_code"),
-            recent_question_signatures=recent_question_signatures,
-            branch_id=planner_decision.get("target_branch_id"),
-        )
-        if not validation["is_valid"]:
-            raise ValueError(
-                "Generated question failed stage-specific validation: "
-                + "; ".join(validation["reasons"])
-            )
+        turns=turns,
+    )
+    pending_turn.answer_text = original_answer_text
 
     return {
-        "generated_question": next_question,
+        "generated_question": generation_payload["generated_question"],
         "history_text": history_text,
         "coverage_state": coverage_state,
-        "retrieved_context": context_payload["retrieved_context"],
-        "coverage_priorities": context_payload["coverage_priorities"],
-        "selected_turn_ids": context_payload["selected_turn_ids"],
-        "selected_branch_ids": context_payload["selected_branch_ids"],
-        "planner_decision": planner_decision,
-        "validation_result": validation,
-        "prompt_metadata": {
-            "prompt_id": next_question_result.get("prompt_id"),
-            "prompt_version": next_question_result.get("prompt_version"),
-        },
-        "question_usage_metrics": question_usage_metrics,
+        "retrieved_context": generation_payload["retrieved_context"],
+        "coverage_priorities": generation_payload["coverage_priorities"],
+        "selected_turn_ids": generation_payload["selected_turn_ids"],
+        "selected_branch_ids": generation_payload["selected_branch_ids"],
+        "planner_decision": generation_payload["planner_decision"],
+        "validation_result": generation_payload["validation_result"],
+        "prompt_metadata": generation_payload["prompt_metadata"],
+        "question_usage_metrics": generation_payload["question_usage_metrics"],
     }
 
 def persist_next_step(state, db: Session):
@@ -477,24 +494,7 @@ def persist_next_step(state, db: Session):
             turn_no=safe_next_turn_no,
             stage=state["next_stage"],
             question_text=state["generated_question"],
-            question_plan_json=json.dumps(
-                {
-                    "phase": state.get("planner_decision", {}).get("phase"),
-                    "question_intent": state.get("planner_decision", {}).get("question_intent"),
-                    "intent_mode": state.get("planner_decision", {}).get("intent_mode"),
-                    "target_branch_id": state.get("planner_decision", {}).get("target_branch_id"),
-                    "target_type": state.get("planner_decision", {}).get("target_type"),
-                    "target_label": state.get("planner_decision", {}).get("target_label"),
-                    "selected_framework_gap": state.get("planner_decision", {}).get("selected_framework_gap"),
-                    "selected_branch_ids": state.get("planner_decision", {}).get("selected_branch_ids", []),
-                    "selected_turn_ids": state.get("planner_decision", {}).get("selected_turn_ids", []),
-                    "human_review_applied": state.get("planner_decision", {}).get("human_review_applied"),
-                    "drift_detected": state.get("planner_decision", {}).get("drift_detected"),
-                    "why_this_question": state.get("planner_decision", {}).get("why_this_question"),
-                },
-                ensure_ascii=True,
-                sort_keys=True,
-            ),
+            question_plan_json=build_question_plan_json(state),
             answer_text=None,
         )
         db.add(next_turn)
@@ -509,6 +509,15 @@ def persist_next_step(state, db: Session):
                     usage_metrics=usage_metrics,
                 )
             )
+        append_question_version(
+            db=db,
+            turn=next_turn,
+            generation_kind="initial",
+            human_review_signal=None,
+            question_plan_json=next_turn.question_plan_json,
+            question_text=next_turn.question_text,
+            usage_metrics_list=state.get("question_usage_metrics", []),
+        )
 
         project.turn_count = next_turn.turn_no
         project.current_stage = state["next_stage"]

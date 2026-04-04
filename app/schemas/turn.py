@@ -4,6 +4,7 @@ from typing import Literal
 from pydantic import BaseModel, Field
 
 from app.schemas.usage import LLMUsageRead
+from app.schemas.usage import TokenUsageSummary
 
 
 class HumanReviewInput(BaseModel):
@@ -40,6 +41,17 @@ class TurnRead(BaseModel):
     answer_summary: str | None
     human_review: HumanReviewInput | None = None
     question_plan: QuestionPlanRead | None = None
+    current_question_version_no: int = 1
+    question_regeneration_count: int = 0
+    human_intervention_regeneration_usage_summary: TokenUsageSummary = Field(
+        default_factory=lambda: TokenUsageSummary(
+            prompt_tokens=0,
+            completion_tokens=0,
+            total_tokens=0,
+            estimated_total_tokens=0,
+        )
+    )
+    question_versions: list["QuestionVersionRead"] = Field(default_factory=list)
     prompt_tokens: int
     completion_tokens: int
     total_tokens: int
@@ -57,3 +69,34 @@ class AnswerSubmitRequest(BaseModel):
 class AnswerSubmitResponse(BaseModel):
     project_id: int
     updated_turn: TurnRead
+
+
+class QuestionVersionRead(BaseModel):
+    id: int
+    version_no: int
+    generation_kind: str
+    question_text: str
+    question_plan: QuestionPlanRead | None = None
+    human_review: HumanReviewInput | None = None
+    prompt_tokens: int
+    completion_tokens: int
+    total_tokens: int
+    is_estimated: bool
+    created_at: datetime
+
+    model_config = {"from_attributes": True}
+
+
+class CurrentQuestionRegenerateRequest(BaseModel):
+    human_review: HumanReviewInput | None = None
+
+
+class CurrentQuestionRegenerateResponse(BaseModel):
+    project_id: int
+    turn: TurnRead
+    run_id: int | None = None
+    usage_summary: TokenUsageSummary
+    message: str
+
+
+TurnRead.model_rebuild()

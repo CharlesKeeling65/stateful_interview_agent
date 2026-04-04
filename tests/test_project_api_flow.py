@@ -185,6 +185,67 @@ class ProjectApiFlowTests(unittest.TestCase):
         self.assertEqual(listed.status_code, 200)
         self.assertEqual(listed.json(), [])
 
+    def test_regenerate_current_question_tracks_versions_and_usage(self):
+        created = self.client.post(
+            "/projects",
+            json={
+                "project_name": "Regeneration Session",
+                "system_prompt": "You are a stateful interview agent.",
+            },
+        )
+        self.assertEqual(created.status_code, 200)
+        project_id = created.json()["id"]
+
+        started = self.client.post(f"/projects/{project_id}/start")
+        self.assertEqual(started.status_code, 200)
+        current_turn = started.json()["first_turn"]
+        self.assertEqual(current_turn["turn_no"], 1)
+        self.assertEqual(current_turn["question_regeneration_count"], 0)
+        self.assertEqual(current_turn["current_question_version_no"], 1)
+        self.assertEqual(len(current_turn["question_versions"]), 1)
+
+        regenerated = self.client.post(
+            f"/projects/{project_id}/turns/{current_turn['id']}/regenerate-question",
+            json={
+                "human_review": {
+                    "verdict": "insufficient",
+                    "direction": "redirect",
+                    "preferred_next_focus": "architecture",
+                    "note": "The current question is too broad. Ask about the coordinating modules instead.",
+                    "phase_ready": False,
+                }
+            },
+        )
+        self.assertEqual(regenerated.status_code, 200)
+        payload = regenerated.json()
+        self.assertEqual(payload["turn"]["turn_no"], 1)
+        self.assertEqual(payload["turn"]["current_question_version_no"], 2)
+        self.assertEqual(payload["turn"]["question_regeneration_count"], 1)
+        self.assertEqual(len(payload["turn"]["question_versions"]), 2)
+        self.assertEqual(payload["turn"]["question_versions"][0]["version_no"], 1)
+        self.assertEqual(payload["turn"]["question_versions"][1]["version_no"], 2)
+        self.assertEqual(
+            payload["turn"]["question_versions"][1]["human_review"]["verdict"],
+            "insufficient",
+        )
+        self.assertGreater(
+            payload["turn"]["human_intervention_regeneration_usage_summary"]["total_tokens"],
+            0,
+        )
+        self.assertGreater(payload["usage_summary"]["total_tokens"], 0)
+
+        turns = self.client.get(f"/projects/{project_id}/turns")
+        self.assertEqual(turns.status_code, 200)
+        turns_payload = turns.json()
+        self.assertEqual(len(turns_payload), 1)
+        self.assertEqual(turns_payload[0]["current_question_version_no"], 2)
+        self.assertEqual(turns_payload[0]["question_regeneration_count"], 1)
+        self.assertEqual(len(turns_payload[0]["question_versions"]), 2)
+        self.assertGreater(
+            turns_payload[0]["human_intervention_regeneration_usage_summary"]["total_tokens"],
+            0,
+        )
+
 
 if __name__ == "__main__":
     unittest.main()

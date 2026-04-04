@@ -50,6 +50,9 @@ def ensure_database_schema():
                     text("ALTER TABLE interview_turns ADD COLUMN human_review_json TEXT")
                 )
 
+    if "interview_question_versions" not in inspector.get_table_names():
+        Base.metadata.tables["interview_question_versions"].create(bind=engine)
+
     if "project_sessions" in inspector.get_table_names():
         existing_columns = {
             column["name"] for column in inspector.get_columns("project_sessions")

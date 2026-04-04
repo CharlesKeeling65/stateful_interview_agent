@@ -4,6 +4,7 @@ from sqlalchemy.orm import Session
 from app.core.config import settings
 from app.core.database import get_db
 from app.graphs.interview_graph import interview_graph
+from app.graphs.interview_nodes import build_question_plan_json, generate_question_for_state
 from app.logging import bind_log_context, emit_event, preview_payload
 from app.models.agent_run import AgentRun
 from app.models.project import ProjectSession
@@ -18,9 +19,20 @@ from app.schemas.project import (
     TranscriptResponse,
 )
 from app.schemas.run_trace import RunRead
-from app.schemas.turn import AnswerSubmitRequest, AnswerSubmitResponse, TurnRead
+from app.schemas.turn import (
+    AnswerSubmitRequest,
+    AnswerSubmitResponse,
+    CurrentQuestionRegenerateRequest,
+    CurrentQuestionRegenerateResponse,
+    TurnRead,
+)
 from app.services.interview_lifecycle import is_minimum_goal_reached
 from app.services.question_generator import generate_first_question_result
+from app.services.question_version_service import (
+    append_question_version,
+    ensure_initial_question_version,
+    summarize_usage_metrics,
+)
 from app.services.run_trace_service import create_run, finalize_run, serialize_run
 from app.services.transcript_service import build_project_transcript
 from app.services.usage_service import aggregate_project_usage, create_usage_record
@@ -157,6 +169,8 @@ def start_project_interview(project_id: int, db: Session = Depends(get_db)):
             usage_metrics=first_question_result["usage_metrics"],
         )
     )
+    db.flush()
+    ensure_initial_question_version(db, first_turn)
 
     project.current_stage = "Panorama Mapping"
     project.turn_count = 1
@@ -221,6 +235,115 @@ def submit_answer(
     return {
         "project_id": project_id,
         "updated_turn": latest_turn,
+    }
+
+
+@router.post(
+    "/{project_id}/turns/{turn_id}/regenerate-question",
+    response_model=CurrentQuestionRegenerateResponse,
+)
+def regenerate_current_question(
+    project_id: int,
+    turn_id: int,
+    payload: CurrentQuestionRegenerateRequest,
+    db: Session = Depends(get_db),
+):
+    bind_log_context(project_id=project_id)
+    project = db.query(ProjectSession).filter(ProjectSession.id == project_id).first()
+    if not project:
+        raise HTTPException(status_code=404, detail="Project not found")
+
+    latest_turn = (
+        db.query(InterviewTurn)
+        .filter(InterviewTurn.project_id == project_id)
+        .order_by(InterviewTurn.turn_no.desc())
+        .first()
+    )
+    if not latest_turn:
+        raise HTTPException(status_code=400, detail="Project interview has not started")
+    if latest_turn.id != turn_id:
+        raise HTTPException(status_code=400, detail="Only the latest turn can be regenerated")
+    if latest_turn.answer_text is not None:
+        raise HTTPException(status_code=400, detail="Cannot regenerate a turn that already has an answer")
+
+    run = create_run(project_id=project_id, turn_no=latest_turn.turn_no)
+    bind_log_context(run_id=run.id)
+
+    try:
+        turns = (
+            db.query(InterviewTurn)
+            .filter(InterviewTurn.project_id == project_id)
+            .order_by(InterviewTurn.turn_no.asc())
+            .all()
+        )
+        generation_payload = generate_question_for_state(
+            current_stage=latest_turn.stage,
+            db=db,
+            human_review_signal=payload.human_review.model_dump() if payload.human_review else None,
+            latest_answer_override=None,
+            project=project,
+            run_id=run.id,
+            turn_no=latest_turn.turn_no,
+            turns=turns,
+        )
+
+        ensure_initial_question_version(db, latest_turn)
+        latest_turn.question_text = generation_payload["generated_question"]
+        latest_turn.question_plan_json = build_question_plan_json(generation_payload)
+
+        for usage_metrics in generation_payload["question_usage_metrics"]:
+            db.add(
+                create_usage_record(
+                    project_id=project.id,
+                    turn_id=latest_turn.id,
+                    operation_type="question_regeneration",
+                    usage_metrics=usage_metrics,
+                )
+            )
+
+        usage_summary = summarize_usage_metrics(generation_payload["question_usage_metrics"])
+        append_question_version(
+            db=db,
+            turn=latest_turn,
+            generation_kind="human_regeneration",
+            human_review_signal=payload.human_review.model_dump() if payload.human_review else None,
+            question_plan_json=latest_turn.question_plan_json,
+            question_text=latest_turn.question_text,
+            usage_metrics_list=generation_payload["question_usage_metrics"],
+        )
+
+        db.commit()
+        db.refresh(latest_turn)
+    except HTTPException:
+        finalize_run(run_id=run.id, status="failed")
+        raise
+    except Exception as exc:
+        finalize_run(run_id=run.id, status="failed")
+        emit_event(
+            "workflow",
+            "turn.regenerate.error",
+            "Current question regeneration failed",
+            level=40,
+            operation="regenerate_current_question",
+            project_id=project_id,
+            turn_no=latest_turn.turn_no,
+            exc_info=exc,
+        )
+        raise
+
+    finalize_run(run_id=run.id, status="completed", turn_no=latest_turn.turn_no)
+
+    return {
+        "project_id": project_id,
+        "turn": latest_turn,
+        "run_id": run.id,
+        "usage_summary": {
+            "prompt_tokens": usage_summary["prompt_tokens"],
+            "completion_tokens": usage_summary["completion_tokens"],
+            "total_tokens": usage_summary["total_tokens"],
+            "estimated_total_tokens": usage_summary["total_tokens"] if usage_summary["is_estimated"] else 0,
+        },
+        "message": "Current question regenerated successfully.",
     }
 
 
@@ -463,6 +586,14 @@ def get_project_status(project_id: int, db: Session = Depends(get_db)):
         "latest_question_text": latest_turn.question_text if latest_turn else None,
         "latest_question_text_for_copy": (
             latest_turn.question_text_for_copy if latest_turn else None
+        ),
+        "latest_turn_regeneration_count": (
+            latest_turn.question_regeneration_count if latest_turn else 0
+        ),
+        "latest_human_intervention_regeneration_usage_summary": (
+            latest_turn.human_intervention_regeneration_usage_summary
+            if latest_turn
+            else aggregate_project_usage([])
         ),
         "cumulative_generation_time_ms": project.cumulative_generation_time_ms,
         "run_count": project.run_count,

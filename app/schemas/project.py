@@ -61,6 +61,15 @@ class ProjectStatusResponse(BaseModel):
     latest_turn_answered: bool | None
     latest_question_text: str | None
     latest_question_text_for_copy: str | None
+    latest_turn_regeneration_count: int = 0
+    latest_human_intervention_regeneration_usage_summary: TokenUsageSummary = Field(
+        default_factory=lambda: TokenUsageSummary(
+            prompt_tokens=0,
+            completion_tokens=0,
+            total_tokens=0,
+            estimated_total_tokens=0,
+        )
+    )
     cumulative_generation_time_ms: int = 0
     run_count: int = 0
     average_run_duration_ms: int = 0

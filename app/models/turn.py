@@ -31,6 +31,12 @@ class InterviewTurn(Base):
     llm_usages = relationship(
         "LLMUsage", back_populates="turn", cascade="all, delete-orphan"
     )
+    question_versions = relationship(
+        "InterviewQuestionVersion",
+        back_populates="turn",
+        cascade="all, delete-orphan",
+        order_by="InterviewQuestionVersion.version_no",
+    )
 
     @property
     def prompt_tokens(self) -> int:
@@ -67,3 +73,29 @@ class InterviewTurn(Base):
         except json.JSONDecodeError:
             return None
         return parsed if isinstance(parsed, dict) else None
+
+    @property
+    def current_question_version_no(self) -> int:
+        if self.question_versions:
+            return self.question_versions[-1].version_no
+        return 1
+
+    @property
+    def question_regeneration_count(self) -> int:
+        return max(0, self.current_question_version_no - 1)
+
+    @property
+    def human_intervention_regeneration_usage_summary(self) -> dict[str, int]:
+        versions = [
+            version
+            for version in self.question_versions
+            if version.generation_kind == "human_regeneration"
+        ]
+        return {
+            "prompt_tokens": sum(version.prompt_tokens for version in versions),
+            "completion_tokens": sum(version.completion_tokens for version in versions),
+            "total_tokens": sum(version.total_tokens for version in versions),
+            "estimated_total_tokens": sum(
+                version.total_tokens for version in versions if getattr(version, "is_estimated", False)
+            ),
+        }
