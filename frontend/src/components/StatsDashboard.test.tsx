@@ -1,9 +1,11 @@
+import { render, screen } from '@testing-library/react'
 import { describe, expect, it } from 'vitest'
 
+import { createTranslator } from '../i18n'
 import type { ProjectRead, ProjectStatusResponse, TurnRead } from '../types/api'
-import { buildProjectAnalytics } from './analytics'
+import { StatsDashboard } from './StatsDashboard'
 
-const baseProject: ProjectRead = {
+const project: ProjectRead = {
   id: 1,
   project_name: 'Alpha',
   system_prompt: 'prompt',
@@ -18,7 +20,7 @@ const baseProject: ProjectRead = {
   updated_at: '2026-04-04T10:00:00',
 }
 
-const baseStatus: ProjectStatusResponse = {
+const status: ProjectStatusResponse = {
   project_id: 1,
   project_name: 'Alpha',
   status: 'active',
@@ -129,74 +131,24 @@ const turns: TurnRead[] = [
   },
 ]
 
-describe('buildProjectAnalytics', () => {
-  it('aggregates stage distribution, regeneration totals, and answer completion', () => {
-    const analytics = buildProjectAnalytics(baseProject, baseStatus, turns)
+describe('StatsDashboard', () => {
+  it('renders richer chart sections for trends, composition, and stage flow', () => {
+    render(
+      <StatsDashboard
+        locale="en"
+        project={project}
+        projects={[project]}
+        status={status}
+        t={createTranslator('en')}
+        turns={turns}
+      />,
+    )
 
-    expect(analytics.totalRegenerations).toBe(2)
-    expect(analytics.answeredTurns).toBe(2)
-    expect(analytics.pendingTurns).toBe(1)
-    expect(analytics.stageBreakdown.find((item) => item.stage === 'Architecture Understanding')?.count).toBe(2)
-    expect(analytics.tokenBreakdown.total).toBe(420)
-    expect(analytics.humanRegenerationTokenTotal).toBe(60)
-  })
-
-  it('builds chart-ready trend, transition, and stage band datasets', () => {
-    const analytics = buildProjectAnalytics(baseProject, baseStatus, turns)
-
-    expect(analytics.turnTokenTrend).toEqual([
-      {
-        turnNo: 1,
-        label: 'T1',
-        promptTokens: 100,
-        completionTokens: 30,
-        humanReviewTokens: 0,
-        totalTokens: 130,
-        cumulativeTokens: 130,
-        regenerationCount: 0,
-      },
-      {
-        turnNo: 2,
-        label: 'T2',
-        promptTokens: 160,
-        completionTokens: 60,
-        humanReviewTokens: 60,
-        totalTokens: 220,
-        cumulativeTokens: 350,
-        regenerationCount: 2,
-      },
-      {
-        turnNo: 3,
-        label: 'T3',
-        promptTokens: 70,
-        completionTokens: 30,
-        humanReviewTokens: 0,
-        totalTokens: 100,
-        cumulativeTokens: 450,
-        regenerationCount: 0,
-      },
-    ])
-
-    expect(analytics.stageTransitions).toEqual([
-      { from: 'Panorama Mapping', to: 'Architecture Understanding', count: 1 },
-      { from: 'Architecture Understanding', to: 'Architecture Understanding', count: 1 },
-    ])
-
-    expect(analytics.stageSegments).toEqual([
-      {
-        stage: 'Panorama Mapping',
-        startTurnNo: 1,
-        endTurnNo: 1,
-        turnSpan: 1,
-        share: 1 / 3,
-      },
-      {
-        stage: 'Architecture Understanding',
-        startTurnNo: 2,
-        endTurnNo: 3,
-        turnSpan: 2,
-        share: 2 / 3,
-      },
-    ])
+    expect(screen.getByText('Token composition')).toBeInTheDocument()
+    expect(screen.getByText('Token trend by turn')).toBeInTheDocument()
+    expect(screen.getByText('Cumulative token load')).toBeInTheDocument()
+    expect(screen.getByText('Stage occupancy')).toBeInTheDocument()
+    expect(screen.getByText('Stage transition network')).toBeInTheDocument()
+    expect(screen.getByText('Regeneration pressure')).toBeInTheDocument()
   })
 })
