@@ -23,12 +23,15 @@ The default flow stays in `understand_current_code` mode, so later turns are con
 - Persistent project/session management backed by SQLite.
 - Stateful multi-turn interview progression with LangGraph orchestration.
 - Stage-aware question generation with explicit planner and validator layers.
+- Bilingual operator console with Chinese/English switching built into the top navigation.
 - Older-turn summarization plus retrieval-oriented compact context assembly.
 - Framework-aware coverage tracking across panorama, architecture, code detail, use cases, and human collaboration.
-- Real human review input that can redirect the next question and is preserved in the transcript.
+- Real human review input that can redirect the next question, rewrite the current question, and is preserved in the transcript.
+- Current-question regeneration that replays the same planning/generation logic as `/next`, but overwrites the current question instead of advancing the turn.
+- Per-turn question version history, diff views, regeneration counts, and human-intervention token accounting.
 - Token usage tracking for generation and summarization operations.
-- Structured JSONL logging and UI-oriented run traces for each `/next` execution.
-- Local operator console for transcript review, run-trace inspection, export, and project management.
+- Structured JSONL logging and UI-oriented run traces for both `/next` generation and current-question regeneration.
+- Local operator console for transcript review, run-trace inspection, analytics, export, and project management.
 
 ## Project Innovations
 
@@ -47,10 +50,19 @@ This project is not just a CRUD wrapper around an LLM. Its main innovations are 
   The default main flow is constrained to explain the current implementation. Planner, validator, and prompt assets explicitly resist drifting into "what should be changed" style questions.
 
 - Real human-in-the-loop review as orchestration input  
-  Human review is not only UI decoration. Verdicts, redirection, preferred focus, notes, and phase-readiness signals are stored, surfaced in the transcript, and consumed by planning logic.
+  Human review is not only UI decoration. Verdicts, redirection, preferred focus, notes, stage correction, and phase-readiness signals are stored, surfaced in the transcript, and consumed by planning logic.
+
+- Regeneration as a first-class replay of the main workflow  
+  Rewriting the current question is not a side prompt. The system replays the same planner/validator chain used by `/next`, grounded on the previous answered turn, then persists the result as a new question version on the current turn.
+
+- Versioned question history with inspectable diffs  
+  Each turn can keep multiple generated question versions. The UI shows version history, textual diffs, regeneration counts, and human-intervention token cost so operators can understand exactly what changed after a review intervention.
+
+- Stage correction with non-regression guardrails  
+  Human stage corrections now update both project and turn state, and later automatic planning is clamped so it does not silently fall back to an earlier stage unless a human explicitly moves it again.
 
 - Execution-trace UX built on a dedicated run model  
-  Each `/next` call becomes a first-class run with step timing, status, and method metadata, so the operator can inspect active and historical orchestration behavior without reading raw logs.
+  Each `/next` call and current-question rewrite becomes a first-class run with step timing, status, and method metadata, so the operator can inspect active and historical orchestration behavior without reading raw logs.
 
 - Layered observability  
   The project keeps both structured backend logging for engineering inspection and a separate UI-oriented run-trace abstraction for operator-facing execution visibility.
@@ -68,6 +80,7 @@ This project is not just a CRUD wrapper around an LLM. Its main innovations are 
 
 - `coverage_state` persists branch/topic evidence and framework coverage.
 - `question_plan_json` stores why a question was selected, including phase, intent, framework gap, branch selection, and whether human review was applied.
+- `question_versions` preserve every version of a question, including regeneration kind, review metadata, and usage attribution.
 - `agent_runs` and `agent_run_steps` store UI-facing execution traces per generation run.
 - Structured logs are written as JSONL under `logs/`, separate from the run-trace API contract.
 
@@ -80,7 +93,9 @@ This project is not just a CRUD wrapper around an LLM. Its main innovations are 
 - Interview orchestration
   - Start an interview and generate the first question.
   - Submit an answer and generate one next question at a time.
+  - Rewrite the current question from the previous answered turn without advancing the turn number.
   - Enforce stage-aware, understanding-oriented question generation.
+  - Prevent silent stage regression after a human has moved the interview forward.
 
 - Coverage and memory
   - Summarize older answered turns.
@@ -89,12 +104,17 @@ This project is not just a CRUD wrapper around an LLM. Its main innovations are 
 
 - Human collaboration
   - Collect human review signals from the UI.
-  - Make redirection and prioritization visible in transcript history.
+  - Support stage correction, verdict redirection, preferred focus, and note-driven question rewrites.
+  - Keep question version history, diffs, regeneration counts, and applied-change summaries visible in transcript history.
 
 - Trace and observability
   - Track per-run execution steps and durations.
   - Expose cumulative generation time and run counts.
   - Emit structured JSONL logs for backend observability.
+
+- Operator experience
+  - Provide a bilingual workspace with stable top navigation.
+  - Offer a dedicated analytics page with token, runtime, regeneration, and stage-movement visualizations.
 
 ## Tech Stack
 
@@ -145,30 +165,14 @@ stateful_interview_agent/
 └─ README_zh.md
 ```
 
-## Learning Docs
+## Reference Docs
 
-The repository now includes a dedicated learning-doc set under [`detai_doc/`](detai_doc/) for two different goals:
+The repository currently keeps local reference material under [`.ref_docs/`](.ref_docs/). The most concrete checked-in example is:
 
-- Harness Engineering curriculum for AI beginners
-  - explains how to think about state, planning, validation, human-in-the-loop design, execution traces, and agent productization
-- deep code-reading guides for key implementation files
-  - explains concrete functions, flow paths, modification entry points, and why specific engineering choices exist
+- [`.ref_docs/问题.md`](.ref_docs/%E9%97%AE%E9%A2%98.md)  
+  A structured interview-question reference that now also notes the newer workflow features: bilingual UI, current-question regeneration, question version history, diff inspection, and analytics-oriented operator feedback.
 
-Recommended reading path:
-
-1. [`detai_doc/00_学习索引.md`](detai_doc/00_学习索引.md)
-2. [`detai_doc/04_Harness_Engineering_学习总览.md`](detai_doc/04_Harness_Engineering_学习总览.md)
-3. [`detai_doc/05_Harness_Engineering_后端骨架与主链路.md`](detai_doc/05_Harness_Engineering_后端骨架与主链路.md)
-4. [`detai_doc/06_Harness_Engineering_状态_规划_校验三件套.md`](detai_doc/06_Harness_Engineering_状态_规划_校验三件套.md)
-5. [`detai_doc/07_Harness_Engineering_人机协作与前端闭环.md`](detai_doc/07_Harness_Engineering_人机协作与前端闭环.md)
-6. [`detai_doc/10_Harness_Engineering_如何实操修改一个Agent.md`](detai_doc/10_Harness_Engineering_如何实操修改一个Agent.md)
-7. [`detai_doc/11_Harness_Engineering_从零搭建一个最小可用Agent.md`](detai_doc/11_Harness_Engineering_从零搭建一个最小可用Agent.md)
-
-If you want to study concrete implementation details after that, continue with:
-
-- [`detai_doc/01_question_planner_py_逐函数拆解.md`](detai_doc/01_question_planner_py_逐函数拆解.md)
-- [`detai_doc/02_coverage_service_py_逐函数拆解.md`](detai_doc/02_coverage_service_py_逐函数拆解.md)
-- [`detai_doc/03_run_trace_service_py_逐函数拆解.md`](detai_doc/03_run_trace_service_py_逐函数拆解.md)
+Additional implementation notes for recent product iterations are stored under [`docs/plans/`](docs/plans/) as change-focused planning records.
 
 ## Setup
 
@@ -264,10 +268,16 @@ Defined in [app/core/config.py](app/core/config.py).
    - continue / redirect
    - preferred next focus
    - note
+   - stage correction
    - phase ready
 5. Submit the answer and watch the execution trace update live.
-6. Review the generated next question, transcript state, status panel, and run trace.
-7. Continue until the interview reaches wrap-up readiness.
+6. If the newly drafted current question is still not right, rewrite it from the previous answer without advancing the turn:
+   - store the review on the current turn
+   - optionally correct the stage
+   - generate a new question version
+   - inspect the applied-change summary and version diff
+7. Review the generated question, transcript state, analytics panel, status panel, and run trace.
+8. Continue until the interview reaches wrap-up readiness.
 
 ## API Overview
 
@@ -299,8 +309,11 @@ Defined in [app/core/config.py](app/core/config.py).
 - `POST /projects/{id}/next`  
   Persist an answer and generate the next question.
 
+- `POST /projects/{id}/turns/{turn_id}/regenerate-question`  
+  Replay next-question generation from the previous answered turn, overwrite the current question as a new version, and return `applied_changes` describing what actually took effect.
+
 - `GET /projects/{id}/turns`  
-  Fetch ordered turn history.
+  Fetch ordered turn history, including question-version metadata, regeneration counters, and human-intervention token summaries.
 
 - `GET /projects/{id}/transcript`  
   Fetch reconstructed transcript text.
@@ -314,7 +327,7 @@ Defined in [app/core/config.py](app/core/config.py).
 - `GET /projects/{id}/runs/latest`
 - `GET /projects/{id}/runs/{run_id}`
 
-These endpoints expose UI-oriented execution traces for each generation run.
+These endpoints expose UI-oriented execution traces for each generation run, including both `/next` and current-question regeneration.
 
 ### Debug endpoints
 
@@ -352,3 +365,4 @@ If you want real product screenshots later, a good convention is `docs/screensho
 - The default system is optimized for local operator use; authentication and multi-user isolation are intentionally out of scope.
 - Run-trace updates currently use polling rather than SSE/WebSocket streaming.
 - The framework coverage model is rubric-oriented and inspectable, but still partly heuristic rather than fully learned.
+- Historical records created before the latest regeneration fixes may still need normalization when read back from the database; the API now repairs common versioning artifacts, but the legacy data model remains visible in older projects.

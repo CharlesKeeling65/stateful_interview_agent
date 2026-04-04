@@ -23,12 +23,15 @@ Stateful Interview Agent 是一个本地全栈应用，用于针对目标仓库�
 - 基于 SQLite 的持久化项目/会话管理。
 - 基于 LangGraph 的多轮状态化访谈编排。
 - 带 planner 和 validator 的阶段感知问题生成。
+- 内置中英文切换的双语 operator console。
 - 长访谈下的历史摘要与检索式上下文压缩。
 - 面向 rubric 的 coverage state，覆盖 panorama / architecture / code detail / use cases / human collaboration。
 - 真正进入工作流的人类评审输入，而不是只停留在 UI 层的装饰信息。
+- 支持“基于上一轮回答重写当前问题”，而不是只能一路推进到下一问。
+- 每个 turn 支持问题版本历史、版本差异对比、重生成次数和人工介入 token 统计。
 - 对提问、摘要等 LLM 调用的 token 使用统计。
-- 针对每次 `/next` 生成的 run trace / execution trace。
-- 本地 operator console，用于检查 transcript、状态、执行轨迹和导出结果。
+- 针对 `/next` 和“重写当前问题”两类流程的 run trace / execution trace。
+- 本地 operator console，用于检查 transcript、状态、统计页、执行轨迹和导出结果。
 
 ## 项目创新点
 
@@ -47,10 +50,19 @@ Stateful Interview Agent 是一个本地全栈应用，用于针对目标仓库�
   默认主流程严格保持在 `understand_current_code` 模式。planner、validator 和 prompt 资产都明确限制问题不要滑向“应该改什么、怎么重构、怎么改测试”。
 
 - 将 human-in-the-loop 变成真实工作流输入  
-  用户在前端输入的 sufficiency、redirect、preferred focus、note、phase ready 等信号会被持久化、展示，并直接影响下一问的规划。
+  用户在前端输入的 sufficiency、redirect、preferred focus、note、stage correction、phase ready 等信号会被持久化、展示，并直接影响问题规划。
+
+- 将“重生成当前问题”改造成主流程回放  
+  当前问题的重写不再是旁路 prompt，而是基于“上一轮已回答内容”重新跑一遍 `/next` 的规划与校验链路，只是不新增 turn，而是把结果写成当前 turn 的新版本。
+
+- 版本化问题历史与差异检查  
+  每一问都可以保留多个问题版本。前端可以查看版本历史、前后 diff、重生成次数，以及人工介入带来的 token 成本，便于追溯人工纠偏是否真正生效。
+
+- 阶段纠偏与防回退约束  
+  人工纠正阶段后，项目与 turn 的阶段状态会同步更新，后续自动规划也不会再悄悄回退到更早阶段，除非再次进行人工纠偏。
 
 - 面向 UI 的运行轨迹模型  
-  每次 `/next` 都被建模为一个独立 run，包含 step、状态、耗时、method/tool 信息，让操作者可以像看 agent trace 一样理解系统正在做什么。
+  每次 `/next` 和“重写当前问题”都会被建模为一个独立 run，包含 step、状态、耗时、method/tool 信息，让操作者可以像看 agent trace 一样理解系统正在做什么。
 
 - 双层可观测性  
   后端保留结构化 JSONL 日志，便于工程排查；同时又提供独立的 run-trace API，专门服务前端执行态展示，而不是把原始日志直接暴露给 UI。
@@ -68,6 +80,7 @@ Stateful Interview Agent 是一个本地全栈应用，用于针对目标仓库�
 
 - `coverage_state` 同时保存 branch/topic evidence 和 rubric-oriented framework coverage。
 - `question_plan_json` 会保存“为什么选这题”，包括 phase、intent、framework gap、branch 选择和 human review 是否生效。
+- `question_versions` 会保留问题版本历史，包括版本来源、人工评审、token 使用和差异对比基础数据。
 - `agent_runs` / `agent_run_steps` 为每次 `/next` 生成提供 UI 友好的执行轨迹。
 - 后端结构化日志写入 `logs/`，与 run-trace API 分层，不直接拿日志当 UI 协议。
 
@@ -80,7 +93,9 @@ Stateful Interview Agent 是一个本地全栈应用，用于针对目标仓库�
 - 访谈编排
   - 启动访谈并生成第一问。
   - 提交回答并按轮生成下一问。
+  - 基于上一轮回答重写当前问题，但不推进 turn 编号。
   - 按阶段约束提问，并保持在“理解当前代码”模式。
+  - 人工推进到更后阶段后，自动流程不会静默回退。
 
 - 记忆与覆盖
   - 对旧回答生成摘要。
@@ -89,12 +104,17 @@ Stateful Interview Agent 是一个本地全栈应用，用于针对目标仓库�
 
 - 人机协作
   - 前端收集 human review signal。
-  - transcript 中可见 human redirect / prioritization 痕迹。
+  - 支持阶段纠偏、方向重定向、焦点控制和 note 驱动的问题重写。
+  - transcript 中可见版本历史、diff、人工介入摘要和实际生效项。
 
 - 轨迹与可观测性
   - 展示每次 run 的步骤与耗时。
   - 展示累计生成耗时与 run 次数。
   - 输出结构化 JSONL backend logs。
+
+- 操作台体验
+  - 顶部导航统一承载页面切换和语言切换。
+  - 新增 analytics 页，以图表方式展示 token、耗时、重生成压力和阶段迁移。
 
 ## 技术栈
 
@@ -145,30 +165,14 @@ stateful_interview_agent/
 └─ README_zh.md
 ```
 
-## 学习文档
+## 参考文档
 
-仓库现在额外提供了一整套放在 [`detai_doc/`](detai_doc/) 下的学习文档，目标有两类：
+当前仓库里真实存在的本地参考资料位于 [`.ref_docs/`](.ref_docs/) 下。与当前产品能力最直接相关的是：
 
-- 面向 AI 初学者的 Harness Engineering 学习手册
-  - 重点讲状态、规划、校验、人机协作、运行轨迹和 agent 工程化思路
-- 面向开发者的关键源码深拆文档
-  - 重点讲核心文件中的关键函数、流转路径、修改切入点和工程取舍
+- [`.ref_docs/问题.md`](.ref_docs/%E9%97%AE%E9%A2%98.md)  
+  一个结构化访谈问题样例文档，现已补充说明双语 UI、当前问题重写、版本历史、diff 检查和 analytics 视角等新能力。
 
-推荐先按这个顺序阅读：
-
-1. [`detai_doc/00_学习索引.md`](detai_doc/00_学习索引.md)
-2. [`detai_doc/04_Harness_Engineering_学习总览.md`](detai_doc/04_Harness_Engineering_学习总览.md)
-3. [`detai_doc/05_Harness_Engineering_后端骨架与主链路.md`](detai_doc/05_Harness_Engineering_后端骨架与主链路.md)
-4. [`detai_doc/06_Harness_Engineering_状态_规划_校验三件套.md`](detai_doc/06_Harness_Engineering_状态_规划_校验三件套.md)
-5. [`detai_doc/07_Harness_Engineering_人机协作与前端闭环.md`](detai_doc/07_Harness_Engineering_人机协作与前端闭环.md)
-6. [`detai_doc/10_Harness_Engineering_如何实操修改一个Agent.md`](detai_doc/10_Harness_Engineering_如何实操修改一个Agent.md)
-7. [`detai_doc/11_Harness_Engineering_从零搭建一个最小可用Agent.md`](detai_doc/11_Harness_Engineering_从零搭建一个最小可用Agent.md)
-
-如果你已经建立了整体工程观，再继续读源码深拆：
-
-- [`detai_doc/01_question_planner_py_逐函数拆解.md`](detai_doc/01_question_planner_py_逐函数拆解.md)
-- [`detai_doc/02_coverage_service_py_逐函数拆解.md`](detai_doc/02_coverage_service_py_逐函数拆解.md)
-- [`detai_doc/03_run_trace_service_py_逐函数拆解.md`](detai_doc/03_run_trace_service_py_逐函数拆解.md)
+最近几轮功能迭代的实现思路与改造计划则记录在 [`docs/plans/`](docs/plans/) 中。
 
 ## 安装与启动
 
@@ -264,10 +268,16 @@ http://127.0.0.1:5173
    - continue / redirect
    - preferred next focus
    - note
+   - stage correction
    - phase ready
 5. 提交答案，观察 execution trace 实时更新。
-6. 检查生成的下一问、transcript、status panel 和 run trace。
-7. 持续推进，直到系统进入 wrap-up readiness。
+6. 如果当前生成的问题仍然不合适，可以基于上一轮回答重写当前问题，而不推进 turn：
+   - 保存本轮人工评审
+   - 可选纠正阶段
+   - 生成当前问题的新版本
+   - 检查实际生效项和版本 diff
+7. 检查当前问题、transcript、analytics、status panel 和 run trace。
+8. 持续推进，直到系统进入 wrap-up readiness。
 
 ## API 概览
 
@@ -299,8 +309,11 @@ http://127.0.0.1:5173
 - `POST /projects/{id}/next`  
   保存回答并生成下一问。
 
+- `POST /projects/{id}/turns/{turn_id}/regenerate-question`  
+  基于上一轮已回答内容重跑问题生成流程，覆盖当前问题并追加一个新版本，同时返回 `applied_changes` 说明哪些人工纠偏真正生效。
+
 - `GET /projects/{id}/turns`  
-  获取 turn 历史。
+  获取 turn 历史，包括问题版本信息、重生成计数和人工介入 token 汇总。
 
 - `GET /projects/{id}/transcript`  
   获取 transcript 文本。
@@ -314,7 +327,7 @@ http://127.0.0.1:5173
 - `GET /projects/{id}/runs/latest`
 - `GET /projects/{id}/runs/{run_id}`
 
-这些接口服务于前端 execution trace 展示。
+这些接口服务于前端 execution trace 展示，覆盖 `/next` 和“重写当前问题”两类运行。
 
 ### Debug 接口
 
@@ -352,3 +365,4 @@ http://127.0.0.1:5173
 - 默认目标是本地 operator workflow，因此没有做认证和多用户隔离。
 - active run 目前使用 polling，而不是 SSE / WebSocket。
 - framework coverage 模型已经明显更贴近 rubric，但仍然部分依赖启发式，而非完全 learned planner。
+- 对于旧项目中在早期版本产生的脏历史数据，API 已经会在读取时自动做一部分归一化修复，但底层存量数据仍可能保留早期版本痕迹。
