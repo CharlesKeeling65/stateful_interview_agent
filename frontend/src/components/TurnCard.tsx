@@ -5,6 +5,7 @@ import {
   getOperationTypeLabel,
   getQuestionIntentLabel,
   getReviewDirectionLabel,
+  getReviewFocusLabel,
   getReviewVerdictLabel,
   type Locale,
   type Translator,
@@ -471,7 +472,7 @@ export const TurnCard = memo(function TurnCard({
               </span>
               {turn.human_review.preferred_next_focus ? (
                 <span className="rounded-full bg-white/80 px-3 py-1">
-                  {locale === 'zh-CN' ? '焦点' : 'Focus'}: {turn.human_review.preferred_next_focus}
+                  {locale === 'zh-CN' ? '焦点' : 'Focus'}: {getReviewFocusLabel(turn.human_review.preferred_next_focus, locale)}
                 </span>
               ) : null}
               {turn.human_review.phase ? (

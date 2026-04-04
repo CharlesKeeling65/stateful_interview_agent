@@ -45,6 +45,25 @@ class _FakeClient:
         self.chat = SimpleNamespace(completions=_FakeChatCompletions())
 
 
+class _RegenerationFromPreviousAnswerChatCompletions:
+    def create(self, *, messages, **_kwargs):
+        user_content = messages[-1]["content"]
+        if "Latest turn answer: Answer that should drive regeneration." in user_content:
+            content = "Q2: Regenerated from previous answer context?"
+        else:
+            content = "Q2: Wrong regeneration context?"
+
+        return SimpleNamespace(
+            choices=[SimpleNamespace(message=SimpleNamespace(content=content))],
+            usage=SimpleNamespace(prompt_tokens=90, completion_tokens=20, total_tokens=110),
+        )
+
+
+class _RegenerationFromPreviousAnswerClient:
+    def __init__(self):
+        self.chat = SimpleNamespace(completions=_RegenerationFromPreviousAnswerChatCompletions())
+
+
 class ProjectApiFlowTests(unittest.TestCase):
     def setUp(self):
         self.temp_dir = tempfile.TemporaryDirectory()
@@ -356,6 +375,49 @@ class ProjectApiFlowTests(unittest.TestCase):
         self.assertEqual(generation_kinds.count("initial"), 1)
         self.assertEqual(payload["turn"]["current_question_version_no"], 3)
         self.assertEqual(payload["turn"]["question_regeneration_count"], 2)
+
+    def test_regenerate_current_question_replays_generation_from_previous_answer(self):
+        created = self.client.post(
+            "/projects",
+            json={
+                "project_name": "Replay Regeneration Session",
+                "system_prompt": "You are a stateful interview agent.",
+            },
+        )
+        self.assertEqual(created.status_code, 200)
+        project_id = created.json()["id"]
+
+        started = self.client.post(f"/projects/{project_id}/start")
+        self.assertEqual(started.status_code, 200)
+
+        next_one = self.client.post(
+            f"/projects/{project_id}/next",
+            json={
+                "answer_text": "Answer that should drive regeneration.",
+            },
+        )
+        self.assertEqual(next_one.status_code, 200)
+        current_turn = next_one.json()["next_turn"]
+
+        original_question_client = question_generator.get_openai_client
+        try:
+            question_generator.get_openai_client = lambda: _RegenerationFromPreviousAnswerClient()
+            regenerated = self.client.post(
+                f"/projects/{project_id}/turns/{current_turn['id']}/regenerate-question",
+                json={
+                    "human_review": {
+                        "direction": "redirect",
+                        "preferred_next_focus": "architecture",
+                    }
+                },
+            )
+        finally:
+            question_generator.get_openai_client = original_question_client
+
+        self.assertEqual(regenerated.status_code, 200)
+        payload = regenerated.json()
+        self.assertEqual(payload["turn"]["question_text"], "Q2: Regenerated from previous answer context?")
+        self.assertTrue(payload["applied_changes"]["question_changed"])
 
     def test_regenerate_current_question_returns_bad_request_for_validation_failure(self):
         created = self.client.post(

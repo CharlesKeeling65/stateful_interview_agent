@@ -70,9 +70,9 @@ describe('ActiveRunPanel', () => {
       />,
     )
 
-    expect(screen.getByText('Regenerating the current question')).toBeInTheDocument()
+    expect(screen.getByText('Re-drafting the current question')).toBeInTheDocument()
     expect(
-      screen.getByText('The agent is revising this same turn and refreshing the execution steps below while regeneration is in progress.'),
+      screen.getByText('The agent is replaying the same next-question workflow from the previous answered turn and overwriting this current question when the run completes.'),
     ).toBeInTheDocument()
   })
 })

@@ -7,6 +7,7 @@ from app.core.config import settings
 from app.core.database import get_db
 from app.graphs.interview_graph import interview_graph
 from app.graphs.interview_nodes import build_question_plan_json, generate_question_for_state
+from app.graphs.interview_nodes import draft_question_from_answered_history
 from app.logging import bind_log_context, emit_event, preview_payload
 from app.models.agent_run import AgentRun
 from app.models.project import ProjectSession
@@ -37,7 +38,8 @@ from app.services.question_version_service import (
     summarize_usage_metrics,
 )
 from app.services.run_trace_service import create_run, finalize_run, serialize_run
-from app.services.stage_manager import normalize_stage_name
+from app.services.stage_manager import decide_next_stage, normalize_stage_name
+from app.services.coverage_service import rebuild_coverage_state
 from app.services.transcript_service import build_project_transcript
 from app.services.usage_service import aggregate_project_usage, create_usage_record
 
@@ -280,27 +282,55 @@ def regenerate_current_question(
         previous_version_no = latest_turn.current_question_version_no
         previous_regeneration_count = latest_turn.question_regeneration_count
         corrected_stage = normalize_stage_name((human_review_signal or {}).get("phase")) if human_review_signal else None
-        effective_stage = corrected_stage or latest_turn.stage
         if human_review_signal and human_review_signal.get("phase") and not corrected_stage:
             raise HTTPException(status_code=400, detail="Invalid stage correction for current question regeneration")
 
-        latest_turn.stage = effective_stage
         turns = (
             db.query(InterviewTurn)
             .filter(InterviewTurn.project_id == project_id)
             .order_by(InterviewTurn.turn_no.asc())
             .all()
         )
-        generation_payload = generate_question_for_state(
-            current_stage=effective_stage,
-            db=db,
-            human_review_signal=human_review_signal,
-            latest_answer_override=None,
-            project=project,
-            run_id=run.id,
-            turn_no=latest_turn.turn_no,
-            turns=turns,
-        )
+        if latest_turn.turn_no == 1:
+            effective_stage = corrected_stage or latest_turn.stage
+            generation_payload = generate_question_for_state(
+                current_stage=effective_stage,
+                db=db,
+                human_review_signal=human_review_signal,
+                latest_answer_override=None,
+                project=project,
+                run_id=run.id,
+                turn_no=latest_turn.turn_no,
+                turns=turns,
+            )
+        else:
+            source_turns = turns[:-1]
+            if not source_turns or source_turns[-1].answer_text is None:
+                raise HTTPException(
+                    status_code=400,
+                    detail="Current question can only be regenerated from the previous answered turn.",
+                )
+            source_turn = source_turns[-1]
+            source_coverage_state = rebuild_coverage_state(source_turns)
+            stage_decision = decide_next_stage(
+                next_turn_no=latest_turn.turn_no,
+                coverage_state=source_coverage_state,
+                current_stage=source_turn.stage,
+                max_turns=settings.interview_max_turns,
+                human_review_signal=human_review_signal,
+            )
+            effective_stage = corrected_stage or stage_decision["next_stage"]
+            generation_payload = draft_question_from_answered_history(
+                db=db,
+                project=project,
+                turns=source_turns,
+                latest_answer_text=source_turn.answer_text,
+                next_turn_no=latest_turn.turn_no,
+                next_stage=effective_stage,
+                human_review_signal=human_review_signal,
+                run_id=run.id,
+                include_latest_answer_in_coverage=False,
+            )
 
         ensure_initial_question_version(db, latest_turn)
         latest_turn.stage = effective_stage
@@ -415,7 +445,7 @@ def regenerate_current_question(
             "regeneration_count_before": previous_regeneration_count,
             "regeneration_count_after": latest_turn.question_regeneration_count,
         },
-        "message": "Current question regenerated successfully.",
+        "message": "Current question refreshed from the previous answer successfully.",
     }
 
 

@@ -193,6 +193,130 @@ def generate_question_for_state(
     }
 
 
+def draft_question_from_answered_history(
+    *,
+    db: Session,
+    project: ProjectSession,
+    turns: list[InterviewTurn],
+    latest_answer_text: str,
+    next_turn_no: int,
+    next_stage: str,
+    human_review_signal: dict | None,
+    run_id: int | None,
+    include_latest_answer_in_coverage: bool = False,
+) -> dict:
+    answered_turns = [turn for turn in turns if turn.answer_text]
+    with traced_run_step(
+        run_id=run_id,
+        project_id=project.id,
+        turn_no=next_turn_no,
+        step_key="refresh_summaries",
+        description="Ensure older answered turns have compact summaries available.",
+        next_step_hint="Build compact context",
+    ) as summary_step:
+        summarized_count = ensure_turn_summaries(
+            db=db,
+            project_id=project.id,
+            system_prompt=project.system_prompt,
+            turns_to_summarize=answered_turns,
+        )
+        if summarized_count:
+            db.commit()
+            turns = (
+                db.query(InterviewTurn)
+                .filter(InterviewTurn.project_id == project.id)
+                .filter(InterviewTurn.turn_no <= turns[-1].turn_no)
+                .order_by(InterviewTurn.turn_no.asc())
+                .all()
+            )
+            answered_turns = [turn for turn in turns if turn.answer_text]
+        if summary_step:
+            summary_step.set_meta(summarized_count=summarized_count)
+
+    with traced_run_step(
+        run_id=run_id,
+        project_id=project.id,
+        turn_no=next_turn_no,
+        step_key="build_compact_context",
+        description="Build compact recent-history context for the next question.",
+        next_step_hint="Refresh coverage",
+    ):
+        history_text = build_compact_interview_context(
+            turns,
+            latest_answer_override=latest_answer_text,
+        )
+    emit_event(
+        "workflow",
+        "context.compaction.complete",
+        "Built compact interview history",
+        operation="build_compact_interview_context",
+        project_id=project.id,
+        turn_no=next_turn_no,
+        stage=next_stage,
+        output=preview_payload(
+            history_text,
+            artifact_category="workflow",
+            artifact_name=f"project-{project.id}-compact-history",
+        ),
+    )
+
+    with traced_run_step(
+        run_id=run_id,
+        project_id=project.id,
+        turn_no=next_turn_no,
+        step_key="refresh_coverage",
+        description="Refresh framework coverage and branch state from answered turns.",
+        next_step_hint="Retrieve relevant context",
+    ) as coverage_step:
+        original_answer_text = None
+        if include_latest_answer_in_coverage and turns and not turns[-1].answer_text:
+            original_answer_text = turns[-1].answer_text
+            turns[-1].answer_text = latest_answer_text
+        coverage_state = rebuild_coverage_state(turns)
+        if include_latest_answer_in_coverage and turns and not original_answer_text:
+            turns[-1].answer_text = original_answer_text
+        if coverage_step:
+            coverage_step.set_meta(branch_count=coverage_state.get("branch_count", 0))
+    emit_event(
+        "workflow",
+        "coverage.refresh.complete",
+        "Rebuilt coverage state before next question generation",
+        operation="rebuild_coverage_state",
+        project_id=project.id,
+        turn_no=next_turn_no,
+        stage=next_stage,
+        output={
+            "branch_count": coverage_state.get("branch_count", 0),
+            "updated_through_turn_no": coverage_state.get("updated_through_turn_no", 0),
+        },
+    )
+
+    generation_payload = generate_question_for_state(
+        current_stage=next_stage,
+        db=db,
+        human_review_signal=human_review_signal,
+        latest_answer_override=latest_answer_text,
+        project=project,
+        run_id=run_id,
+        turn_no=next_turn_no,
+        turns=turns,
+    )
+
+    return {
+        "generated_question": generation_payload["generated_question"],
+        "history_text": history_text,
+        "coverage_state": coverage_state,
+        "retrieved_context": generation_payload["retrieved_context"],
+        "coverage_priorities": generation_payload["coverage_priorities"],
+        "selected_turn_ids": generation_payload["selected_turn_ids"],
+        "selected_branch_ids": generation_payload["selected_branch_ids"],
+        "planner_decision": generation_payload["planner_decision"],
+        "validation_result": generation_payload["validation_result"],
+        "prompt_metadata": generation_payload["prompt_metadata"],
+        "question_usage_metrics": generation_payload["question_usage_metrics"],
+    }
+
+
 def load_project_context(state, db: Session):
     bind_log_context(project_id=state.get("project_id"))
     with traced_run_step(
@@ -302,103 +426,22 @@ def draft_next_question(state, db: Session):
         .all()
     )
 
-    answered_turns = [turn for turn in turns if turn.answer_text]
-    with traced_run_step(
-        run_id=state.get("run_id"),
-        project_id=project.id,
-        turn_no=state["next_turn_no"],
-        step_key="refresh_summaries",
-        description="Ensure older answered turns have compact summaries available.",
-        next_step_hint="Refresh coverage",
-    ) as summary_step:
-        summarized_count = ensure_turn_summaries(
-            db=db,
-            project_id=project.id,
-            system_prompt=project.system_prompt,
-            turns_to_summarize=answered_turns,
-        )
-        if summarized_count:
-            # Release the main SQLite write lock before run-trace bookkeeping commits its own session.
-            db.commit()
-            turns = (
-                db.query(InterviewTurn)
-                .filter(InterviewTurn.project_id == state["project_id"])
-                .order_by(InterviewTurn.turn_no.asc())
-                .all()
-            )
-        if summary_step:
-            summary_step.set_meta(summarized_count=summarized_count)
-
-    with traced_run_step(
-        run_id=state.get("run_id"),
-        project_id=project.id,
-        turn_no=state["next_turn_no"],
-        step_key="build_compact_context",
-        description="Build compact recent-history context for the next question.",
-        next_step_hint="Refresh coverage",
-    ):
-        history_text = build_compact_interview_context(
-            turns,
-            latest_answer_override=state["answer_text"],
-        )
-    emit_event(
-        "workflow",
-        "context.compaction.complete",
-        "Built compact interview history",
-        operation="build_compact_interview_context",
-        project_id=project.id,
-        turn_no=state["next_turn_no"],
-        stage=state["next_stage"],
-        output=preview_payload(
-            history_text,
-            artifact_category="workflow",
-            artifact_name=f"project-{project.id}-compact-history",
-        ),
-    )
-    pending_turn = turns[-1]
-    original_answer_text = pending_turn.answer_text
-    pending_turn.answer_text = state["answer_text"]
-    with traced_run_step(
-        run_id=state.get("run_id"),
-        project_id=project.id,
-        turn_no=state["next_turn_no"],
-        step_key="refresh_coverage",
-        description="Refresh framework coverage and branch state from answered turns.",
-        next_step_hint="Retrieve relevant context",
-    ) as coverage_step:
-        coverage_state = rebuild_coverage_state(turns)
-        if coverage_step:
-            coverage_step.set_meta(branch_count=coverage_state.get("branch_count", 0))
-    emit_event(
-        "workflow",
-        "coverage.refresh.complete",
-        "Rebuilt coverage state before next question generation",
-        operation="rebuild_coverage_state",
-        project_id=project.id,
-        turn_no=state["next_turn_no"],
-        stage=state["next_stage"],
-        output={
-            "branch_count": coverage_state.get("branch_count", 0),
-            "updated_through_turn_no": coverage_state.get("updated_through_turn_no", 0),
-        },
-    )
-
-    generation_payload = generate_question_for_state(
-        current_stage=state["next_stage"],
+    generation_payload = draft_question_from_answered_history(
         db=db,
-        human_review_signal=state.get("human_review_signal"),
-        latest_answer_override=state["answer_text"],
         project=project,
-        run_id=state.get("run_id"),
-        turn_no=state["next_turn_no"],
         turns=turns,
+        latest_answer_text=state["answer_text"],
+        next_turn_no=state["next_turn_no"],
+        next_stage=state["next_stage"],
+        human_review_signal=state.get("human_review_signal"),
+        run_id=state.get("run_id"),
+        include_latest_answer_in_coverage=True,
     )
-    pending_turn.answer_text = original_answer_text
 
     return {
         "generated_question": generation_payload["generated_question"],
-        "history_text": history_text,
-        "coverage_state": coverage_state,
+        "history_text": generation_payload["history_text"],
+        "coverage_state": generation_payload["coverage_state"],
         "retrieved_context": generation_payload["retrieved_context"],
         "coverage_priorities": generation_payload["coverage_priorities"],
         "selected_turn_ids": generation_payload["selected_turn_ids"],
