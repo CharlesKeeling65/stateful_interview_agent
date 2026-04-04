@@ -183,13 +183,18 @@ export const ExecutionTraceSection = memo(function ExecutionTraceSection({
 
 type ActiveRunPanelProps = {
   run: RunRead
+  variant?: 'next' | 'regenerate'
 }
 
 export const ActiveRunPanel = memo(function ActiveRunPanel({
   locale = 'en',
   run,
   t,
+  variant = 'next',
 }: ActiveRunPanelProps & { locale?: Locale; t: Translator }) {
+  const title = variant === 'regenerate' ? t('trace.regeneratingTitle') : t('trace.activeTitle')
+  const copy = variant === 'regenerate' ? t('trace.regeneratingCopy') : t('trace.activeCopy')
+
   return (
     <div className="rounded-[1.75rem] border border-amber-200 bg-[linear-gradient(180deg,rgba(255,251,235,0.96),rgba(255,255,255,0.98))] p-5 shadow-[0_18px_40px_rgba(251,191,36,0.12)]">
       <div className="flex flex-wrap items-start justify-between gap-4">
@@ -197,9 +202,9 @@ export const ActiveRunPanel = memo(function ActiveRunPanel({
           <p className="text-[0.68rem] font-semibold uppercase tracking-[0.28em] text-amber-700">
             {t('trace.active')}
           </p>
-          <h3 className="mt-3 font-serif text-2xl text-slate-950">{t('trace.activeTitle')}</h3>
+          <h3 className="mt-3 font-serif text-2xl text-slate-950">{title}</h3>
           <p className="mt-2 text-sm leading-7 text-slate-700">
-            {t('trace.activeCopy')}
+            {copy}
           </p>
         </div>
         <span className="inline-flex items-center gap-2 rounded-full bg-amber-100 px-3 py-1 text-xs font-semibold uppercase tracking-[0.18em] text-amber-800">

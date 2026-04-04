@@ -237,7 +237,12 @@ function App() {
           {page === 'workspace' ? (
             <div className="flex min-h-[70vh] flex-col gap-4">
               {activeRun ? (
-                <ActiveRunPanel locale={locale} run={activeRun} t={t} />
+                <ActiveRunPanel
+                  locale={locale}
+                  run={activeRun}
+                  t={t}
+                  variant={busyAction === 'regenerating' ? 'regenerate' : 'next'}
+                />
               ) : null}
 
               <div className="grid gap-4 xl:grid-cols-[minmax(0,1.45fr)_minmax(22rem,0.95fr)]">
