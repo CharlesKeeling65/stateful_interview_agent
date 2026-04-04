@@ -1,87 +1,191 @@
 # Stateful Interview Agent
 
-Stateful Interview Agent is a local full-stack application for running long-form, structured project interviews against a target codebase or system. Instead of generating disconnected follow-up prompts, it persists interview state across turns, advances through predefined stages, and produces one next question at a time from cumulative context.
+[中文说明 / Chinese README](README_zh.md)
 
-## Project Overview
+Stateful Interview Agent is a local full-stack application for running structured, long-form project interviews against a target repository or system. Instead of treating each prompt as an isolated turn, it maintains durable interview state, plans the next question against explicit coverage goals, records human review signals, and exposes execution traces for each generation run.
 
-This project exists to solve a common orchestration problem: multi-turn technical interviews become repetitive, lose context, or drift away from a clear methodology when they are handled as plain prompt chaining. Here, each interview is stored as a durable project session with explicit turn history, stage tracking, transcript reconstruction, and status inspection.
+## Overview
 
-Core capabilities:
+The project is designed for a "Code Understand" style deliverable: the goal is not to propose changes first, but to build a high-quality understanding transcript of an existing project through progressive questioning.
 
-- Create and manage persistent interview projects.
-- Start a session and generate the first question.
-- Submit each answer and generate the next stage-aware question.
-- Persist turns and rebuild transcript/status at any time.
-- Inspect the live runtime session through a local web UI.
+The current system is built around a rubric-aligned interview trajectory:
+
+1. Panorama Mapping
+2. Architecture Understanding
+3. Code Detail Completion
+4. Use Cases & Scenarios
+5. Final Wrap-up
+
+The default flow stays in `understand_current_code` mode, so later turns are constrained to explain the current implementation rather than drifting into redesign or refactor planning.
+
+## Core Capabilities
+
+- Persistent project/session management backed by SQLite.
+- Stateful multi-turn interview progression with LangGraph orchestration.
+- Stage-aware question generation with explicit planner and validator layers.
+- Older-turn summarization plus retrieval-oriented compact context assembly.
+- Framework-aware coverage tracking across panorama, architecture, code detail, use cases, and human collaboration.
+- Real human review input that can redirect the next question and is preserved in the transcript.
+- Token usage tracking for generation and summarization operations.
+- Structured JSONL logging and UI-oriented run traces for each `/next` execution.
+- Local operator console for transcript review, run-trace inspection, export, and project management.
+
+## Project Innovations
+
+This project is not just a CRUD wrapper around an LLM. Its main innovations are in orchestration and inspectability:
+
+- Rubric-aware interview planning  
+  The interview is driven by an explicit understanding framework rather than plain prompt chaining. Coverage state, stage gates, planner decisions, and validators work together to keep the transcript aligned with a Code Understand deliverable.
+
+- Durable LangGraph session semantics mapped to project sessions  
+  LangGraph thread identity is bound to `project-{project_id}`, which lets workflow state, turn history, and session continuity line up cleanly with persistent project records.
+
+- Retrieval-oriented question generation for long interviews  
+  The system does not simply dump all previous turns back into the model. Older turns are summarized, branch/topic coverage is tracked, and only high-value context is retrieved for the next question.
+
+- Hard separation between understanding mode and change-proposal drift  
+  The default main flow is constrained to explain the current implementation. Planner, validator, and prompt assets explicitly resist drifting into "what should be changed" style questions.
+
+- Real human-in-the-loop review as orchestration input  
+  Human review is not only UI decoration. Verdicts, redirection, preferred focus, notes, and phase-readiness signals are stored, surfaced in the transcript, and consumed by planning logic.
+
+- Execution-trace UX built on a dedicated run model  
+  Each `/next` call becomes a first-class run with step timing, status, and method metadata, so the operator can inspect active and historical orchestration behavior without reading raw logs.
+
+- Layered observability  
+  The project keeps both structured backend logging for engineering inspection and a separate UI-oriented run-trace abstraction for operator-facing execution visibility.
 
 ## High-Level Architecture
 
-- FastAPI exposes the project/session API.
-- SQLAlchemy persists projects and interview turns in SQLite.
-- LangGraph orchestrates the interview lifecycle using explicit state, nodes, and conditional edges.
-- Vite + React + TypeScript + Tailwind CSS provide a local operator console for managing the interview loop.
+- FastAPI exposes project, turn, status, transcript, run-trace, and debug endpoints.
+- SQLAlchemy models persist project sessions, turns, LLM usage, and generation runs in SQLite.
+- LangGraph orchestrates `/next` generation via explicit state, nodes, and conditional control flow.
+- Prompt assets are stored as typed YAML definitions and rendered through a prompt manager.
+- Service-layer components handle planning, validation, coverage rebuilding, summarization, retrieval/context engineering, run tracing, and usage accounting.
+- Vite + React + TypeScript + Tailwind CSS provide the local operator UI.
 
-The LangGraph thread identity is mapped to the project session via `thread_id = project-{project_id}`, which lets the orchestration semantics align with your durable project state.
+## Current Architecture Highlights
+
+- `coverage_state` persists branch/topic evidence and framework coverage.
+- `question_plan_json` stores why a question was selected, including phase, intent, framework gap, branch selection, and whether human review was applied.
+- `agent_runs` and `agent_run_steps` store UI-facing execution traces per generation run.
+- Structured logs are written as JSONL under `logs/`, separate from the run-trace API contract.
 
 ## Feature Summary
 
-- Project session management: create, list, select, and inspect saved project sessions.
-- Stateful interview progression: each next question is generated from the full accumulated Q&A history.
-- Stage-based question generation: interview flow advances across Panorama Mapping, Architecture Understanding, Code Detail Completion, and Use Cases & Scenarios.
-- LangGraph orchestration: workflow logic is modeled as state + nodes + conditional edges.
-- Runtime transcript/status UI: the frontend shows turn history, transcript preview, current stage, and progress indicators.
+- Project/session management
+  - Create, list, select, rename, update, and delete interview projects.
+  - Persist selected project context in the frontend.
+
+- Interview orchestration
+  - Start an interview and generate the first question.
+  - Submit an answer and generate one next question at a time.
+  - Enforce stage-aware, understanding-oriented question generation.
+
+- Coverage and memory
+  - Summarize older answered turns.
+  - Track framework gaps and branch evidence.
+  - Reduce duplicate or semantically redundant questioning.
+
+- Human collaboration
+  - Collect human review signals from the UI.
+  - Make redirection and prioritization visible in transcript history.
+
+- Trace and observability
+  - Track per-run execution steps and durations.
+  - Expose cumulative generation time and run counts.
+  - Emit structured JSONL logs for backend observability.
 
 ## Tech Stack
 
-- Backend: FastAPI, SQLAlchemy, Pydantic Settings
-- Frontend: Vite, React, TypeScript, Tailwind CSS v4
-- LLM integration style: OpenAI-compatible API configuration through environment variables
-- Persistence layer: SQLite
-- Workflow/orchestration layer: LangGraph
+- Backend
+  - FastAPI
+  - SQLAlchemy
+  - Pydantic / Pydantic Settings
+  - SQLite
+
+- Workflow / orchestration
+  - LangGraph
+
+- LLM integration
+  - OpenAI-compatible Chat Completions API
+  - Optional embedding-based duplicate checking
+
+- Frontend
+  - Vite
+  - React
+  - TypeScript
+  - Tailwind CSS v4
 
 ## Project Structure
 
 ```text
 stateful_interview_agent/
 ├─ app/
-│  ├─ api/routes/              # FastAPI endpoints
-│  ├─ core/                    # config, DB setup, LLM client wiring
-│  ├─ graphs/                  # LangGraph state, nodes, graph composition
-│  ├─ models/                  # SQLAlchemy persistence models
+│  ├─ api/routes/              # FastAPI routes
+│  ├─ core/                    # config, DB, LLM client, app wiring
+│  ├─ graphs/                  # LangGraph state, nodes, graph assembly
+│  ├─ logging/                 # structured JSONL logging subsystem
+│  ├─ models/                  # SQLAlchemy models
+│  ├─ prompts/                 # typed prompt assets and renderer
 │  ├─ schemas/                 # request/response schemas
-│  └─ services/                # question generation, transcript, lifecycle helpers
+│  └─ services/                # planner, validator, coverage, retrieval, run trace, usage
 ├─ frontend/
-│  ├─ src/api/                 # typed frontend API layer
-│  ├─ src/components/          # UI panels and form components
-│  ├─ src/hooks/               # project/session orchestration hook
-│  ├─ src/types/               # frontend API types
-│  ├─ src/utils/               # display normalization, export, formatting helpers
-│  └─ src/assets/              # local frontend assets
-├─ src/stateful_interview_agent/
-│  └─ __init__.py              # package entry stub
-├─ pyproject.toml              # backend dependency and project config
-├─ uv.lock                     # backend lockfile
-└─ README.md
+│  ├─ src/api/                 # typed frontend API client
+│  ├─ src/components/          # UI panels, transcript cards, trace sections
+│  ├─ src/hooks/               # session orchestration hooks
+│  ├─ src/types/               # frontend API contracts
+│  └─ src/utils/               # formatting, exports, normalization
+├─ tests/                      # backend tests
+├─ .ref_docs/                  # local reference material
+├─ logs/                       # runtime logs (gitignored)
+├─ pyproject.toml
+├─ uv.lock
+├─ README.md
+└─ README_zh.md
 ```
 
-## Setup Instructions
+## Learning Docs
 
-### 1. Backend install
+The repository now includes a dedicated learning-doc set under [`detai_doc/`](detai_doc/) for two different goals:
 
-From the repository root:
+- Harness Engineering curriculum for AI beginners
+  - explains how to think about state, planning, validation, human-in-the-loop design, execution traces, and agent productization
+- deep code-reading guides for key implementation files
+  - explains concrete functions, flow paths, modification entry points, and why specific engineering choices exist
+
+Recommended reading path:
+
+1. [`detai_doc/00_学习索引.md`](detai_doc/00_学习索引.md)
+2. [`detai_doc/04_Harness_Engineering_学习总览.md`](detai_doc/04_Harness_Engineering_学习总览.md)
+3. [`detai_doc/05_Harness_Engineering_后端骨架与主链路.md`](detai_doc/05_Harness_Engineering_后端骨架与主链路.md)
+4. [`detai_doc/06_Harness_Engineering_状态_规划_校验三件套.md`](detai_doc/06_Harness_Engineering_状态_规划_校验三件套.md)
+5. [`detai_doc/07_Harness_Engineering_人机协作与前端闭环.md`](detai_doc/07_Harness_Engineering_人机协作与前端闭环.md)
+6. [`detai_doc/10_Harness_Engineering_如何实操修改一个Agent.md`](detai_doc/10_Harness_Engineering_如何实操修改一个Agent.md)
+7. [`detai_doc/11_Harness_Engineering_从零搭建一个最小可用Agent.md`](detai_doc/11_Harness_Engineering_从零搭建一个最小可用Agent.md)
+
+If you want to study concrete implementation details after that, continue with:
+
+- [`detai_doc/01_question_planner_py_逐函数拆解.md`](detai_doc/01_question_planner_py_逐函数拆解.md)
+- [`detai_doc/02_coverage_service_py_逐函数拆解.md`](detai_doc/02_coverage_service_py_逐函数拆解.md)
+- [`detai_doc/03_run_trace_service_py_逐函数拆解.md`](detai_doc/03_run_trace_service_py_逐函数拆解.md)
+
+## Setup
+
+### 1. Install backend dependencies
 
 ```bash
 uv sync
 ```
 
-### 2. Frontend install
+### 2. Install frontend dependencies
 
 ```bash
 cd frontend
 npm install
 ```
 
-### 3. Environment variables
+### 3. Configure environment variables
 
 Create a root `.env` file:
 
@@ -89,11 +193,20 @@ Create a root `.env` file:
 OPENAI_API_KEY=your_api_key_here
 OPENAI_BASE_URL=https://api.scnet.cn/api/llm/v1
 OPENAI_MODEL=MiniMax-M2.5
+OPENAI_EMBEDDING_MODEL=
+DUPLICATE_GUARD_USE_EMBEDDINGS=false
+DUPLICATE_GUARD_EMBEDDING_THRESHOLD=0.9
 APP_NAME=Stateful Interview Agent
 APP_ENV=dev
 INTERVIEW_MIN_TURNS=35
 INTERVIEW_MAX_TURNS=40
 DATABASE_URL=sqlite:///./data/app.db
+LOG_LEVEL=INFO
+LOG_DIR=./logs
+LOG_LLM_PAYLOADS=true
+LOG_ARTIFACTS_ENABLED=false
+LOG_PRETTY_JSON=false
+LOG_TEXT_PREVIEW_CHARS=240
 ```
 
 ### 4. Start the backend
@@ -102,7 +215,7 @@ DATABASE_URL=sqlite:///./data/app.db
 uv run uvicorn app.main:app --reload
 ```
 
-Backend default address:
+Backend default URL:
 
 ```text
 http://127.0.0.1:8000
@@ -115,7 +228,7 @@ cd frontend
 npm run dev
 ```
 
-Frontend default address:
+Frontend default URL:
 
 ```text
 http://127.0.0.1:5173
@@ -123,53 +236,119 @@ http://127.0.0.1:5173
 
 ## Environment Variables
 
-Current settings are defined in [app/core/config.py](/Users/wyb/File/Programming/Git_Code/stateful_interview_agent/app/core/config.py).
+Defined in [app/core/config.py](app/core/config.py).
 
-- `OPENAI_API_KEY`: required; API key for the configured model provider.
-- `OPENAI_BASE_URL`: optional; OpenAI-compatible base URL.
-- `OPENAI_MODEL`: optional; model name for question generation.
-- `APP_NAME`: optional; FastAPI title.
-- `APP_ENV`: optional; environment label returned by `/health`.
-- `INTERVIEW_MIN_TURNS`: optional; minimum target threshold before the goal is considered reached.
-- `INTERVIEW_MAX_TURNS`: optional; hard cap for the interview.
-- `DATABASE_URL`: optional; SQLAlchemy database URL. Defaults to local SQLite.
+- `OPENAI_API_KEY`: required API key.
+- `OPENAI_BASE_URL`: OpenAI-compatible API base URL.
+- `OPENAI_MODEL`: chat completions model used for question generation and summarization.
+- `OPENAI_EMBEDDING_MODEL`: optional embedding model for semantic duplicate checks.
+- `DUPLICATE_GUARD_USE_EMBEDDINGS`: enable optional embedding-assisted duplicate detection.
+- `DUPLICATE_GUARD_EMBEDDING_THRESHOLD`: cosine-similarity threshold for embedding duplicate checks.
+- `INTERVIEW_MIN_TURNS`: minimum interview target before the goal is considered reached.
+- `INTERVIEW_MAX_TURNS`: hard upper bound for interview turns.
+- `DATABASE_URL`: SQLAlchemy database URL.
+- `LOG_LEVEL`: backend log level.
+- `LOG_DIR`: log root directory.
+- `LOG_LLM_PAYLOADS`: whether to log LLM payload previews.
+- `LOG_ARTIFACTS_ENABLED`: whether to dump larger prompt/context artifacts.
+- `LOG_PRETTY_JSON`: JSON formatting option for local debugging.
+- `LOG_TEXT_PREVIEW_CHARS`: text preview length stored in logs.
 
-## Usage Walkthrough
+## Typical Workflow
 
-1. Open the frontend in the browser.
-2. Create a new project and provide the system prompt.
-3. Click `Start Interview` to generate the first question.
-4. Paste the latest answer into the composer.
-5. Click `Submit Answer & Generate Next`.
-6. Watch the turn cards, transcript preview, and runtime snapshot update.
-7. Continue until the session reaches the finish condition.
+1. Create a project with a meaningful title and system prompt.
+2. Start the interview to generate `Q1`.
+3. Paste the latest answer into the composer.
+4. Optionally provide a human review signal:
+   - sufficient / insufficient / drifted
+   - continue / redirect
+   - preferred next focus
+   - note
+   - phase ready
+5. Submit the answer and watch the execution trace update live.
+6. Review the generated next question, transcript state, status panel, and run trace.
+7. Continue until the interview reaches wrap-up readiness.
 
 ## API Overview
 
-Main endpoints:
+### Main project/session endpoints
 
-- `POST /projects`: create a project session.
-- `GET /projects`: list recent project sessions.
-- `GET /projects/{id}`: fetch a single project.
-- `POST /projects/{id}/start`: generate the first interview question.
-- `POST /projects/{id}/next`: submit an answer and generate the next question.
-- `GET /projects/{id}/status`: fetch current interview runtime status.
-- `GET /projects/{id}/turns`: fetch ordered turns for the project.
-- `GET /projects/{id}/transcript`: fetch reconstructed transcript text.
-- `GET /health`: backend health check.
+- `POST /projects`  
+  Create a project session.
+
+- `GET /projects`  
+  List recent projects.
+
+- `GET /projects/{id}`  
+  Fetch a project.
+
+- `PATCH /projects/{id}`  
+  Update project metadata such as title or system prompt.
+
+- `DELETE /projects/{id}`  
+  Delete a project session.
+
+### Interview flow endpoints
+
+- `POST /projects/{id}/start`  
+  Generate the first question.
+
+- `POST /projects/{id}/answer`  
+  Persist an answer only.
+
+- `POST /projects/{id}/next`  
+  Persist an answer and generate the next question.
+
+- `GET /projects/{id}/turns`  
+  Fetch ordered turn history.
+
+- `GET /projects/{id}/transcript`  
+  Fetch reconstructed transcript text.
+
+- `GET /projects/{id}/status`  
+  Fetch runtime/session status, usage summary, and cumulative generation timing.
+
+### Run trace endpoints
+
+- `GET /projects/{id}/runs`
+- `GET /projects/{id}/runs/latest`
+- `GET /projects/{id}/runs/{run_id}`
+
+These endpoints expose UI-oriented execution traces for each generation run.
+
+### Debug endpoints
+
+- `GET /debug/llm`
+- `GET /debug/projects/{id}/coverage`
+- `POST /debug/projects/{id}/next-context`
+
+These are useful for inspecting coverage state, planner decisions, prompt rendering, and context assembly.
+
+## Logs and Runtime Inspection
+
+Structured backend logs are written under `logs/` as JSONL files. Typical categories include:
+
+- `logs/requests/`
+- `logs/workflow/`
+- `logs/llm/`
+- `logs/retrieval/`
+- `logs/persistence/`
+- `logs/errors/`
+
+Use logs for engineering inspection. Use the run-trace API/UI for operator-facing execution progress.
 
 ## Screenshots
 
-The repo currently includes a general frontend asset:
+The repository currently contains a general frontend asset:
 
-- [frontend/src/assets/hero.png](/Users/wyb/File/Programming/Git_Code/stateful_interview_agent/frontend/src/assets/hero.png)
+- [frontend/src/assets/hero.png](frontend/src/assets/hero.png)
 
-If you want real application screenshots later, a good convention is to store them under `docs/screenshots/` and link them from this section.
+If you want real product screenshots later, a good convention is `docs/screenshots/`.
 
 ## Known Limitations / Future Work
 
-- Transcript/question cleanup is currently frontend display normalization only; upstream generator formatting could still be improved.
-- Transcript export is client-side only and does not create backend artifacts.
-- Project selection persistence is lightweight browser storage only.
-- There is no authentication or multi-user separation because the current target is a local operator workflow.
-- LangGraph checkpoint persistence is in-memory; a durable external checkpointer would be a natural next improvement.
+- SQLite keeps the setup simple, but a more durable production deployment would benefit from a stronger database and migration story.
+- Duplicate-question suppression is much stronger than before, but still relies on a hybrid of structural rules and optional embeddings rather than full semantic planning.
+- The default system is optimized for local operator use; authentication and multi-user isolation are intentionally out of scope.
+- Run-trace updates currently use polling rather than SSE/WebSocket streaming.
+- The framework coverage model is rubric-oriented and inspectable, but still partly heuristic rather than fully learned.
