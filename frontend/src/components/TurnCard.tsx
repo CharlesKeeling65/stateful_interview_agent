@@ -11,7 +11,7 @@ import {
 } from '../i18n'
 import type { RunRead, TurnRead } from '../types/api'
 import { formatDurationMs, formatTimestamp } from '../utils/format'
-import { normalizeAnswerText, normalizeQuestionText } from '../utils/text'
+import { buildQuestionVersionDiff, normalizeAnswerText, normalizeQuestionText } from '../utils/text'
 import { formatTokenCount, summarizeOperationUsage } from '../utils/tokens'
 import { ActionButton } from './ActionButton'
 import { CheckIcon, ChevronDownIcon, ClockIcon, CopyIcon } from './Icons'
@@ -272,6 +272,52 @@ export const TurnCard = memo(function TurnCard({
                     <p className="mt-3 whitespace-pre-wrap break-words text-sm leading-7 text-slate-800">
                       {version.question_text}
                     </p>
+                    {version.version_no > 1 ? (() => {
+                      const previousVersion = turn.question_versions.find((item) => item.version_no === version.version_no - 1)
+                      if (!previousVersion) {
+                        return null
+                      }
+                      const diff = buildQuestionVersionDiff(previousVersion.question_text, version.question_text)
+                      if (!diff.hasChanges) {
+                        return null
+                      }
+
+                      return (
+                        <div className="mt-4 rounded-2xl border border-slate-200 bg-slate-50/80 p-4">
+                          <p className="text-[0.64rem] font-semibold uppercase tracking-[0.22em] text-slate-500">
+                            {t('transcript.versionDiff')}
+                          </p>
+                          {diff.sharedPrefix || diff.sharedSuffix ? (
+                            <div className="mt-3 rounded-xl bg-white px-3 py-2">
+                              <p className="text-[0.64rem] font-semibold uppercase tracking-[0.18em] text-slate-500">
+                                {t('transcript.diffShared')}
+                              </p>
+                              <p className="mt-1 whitespace-pre-wrap break-words text-xs leading-6 text-slate-600">
+                                {[diff.sharedPrefix, diff.sharedSuffix].filter(Boolean).join(' ... ')}
+                              </p>
+                            </div>
+                          ) : null}
+                          <div className="mt-3 grid gap-3 md:grid-cols-2">
+                            <div className="rounded-xl border border-rose-200 bg-rose-50/70 px-3 py-3">
+                              <p className="text-[0.64rem] font-semibold uppercase tracking-[0.18em] text-rose-700">
+                                {t('transcript.diffBefore')}
+                              </p>
+                              <p className="mt-1 whitespace-pre-wrap break-words text-xs leading-6 text-rose-950">
+                                {diff.before || (locale === 'zh-CN' ? '无' : 'None')}
+                              </p>
+                            </div>
+                            <div className="rounded-xl border border-emerald-200 bg-emerald-50/70 px-3 py-3">
+                              <p className="text-[0.64rem] font-semibold uppercase tracking-[0.18em] text-emerald-700">
+                                {t('transcript.diffAfter')}
+                              </p>
+                              <p className="mt-1 whitespace-pre-wrap break-words text-xs leading-6 text-emerald-950">
+                                {diff.after || (locale === 'zh-CN' ? '无' : 'None')}
+                              </p>
+                            </div>
+                          </div>
+                        </div>
+                      )
+                    })() : null}
                     {version.human_review?.note ? (
                       <p className="mt-2 text-xs leading-6 text-slate-500">{version.human_review.note}</p>
                     ) : null}

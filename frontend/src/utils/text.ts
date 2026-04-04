@@ -62,3 +62,45 @@ export function normalizeAnswerText(value: string | null | undefined) {
 
   return trimParagraphSpacing(stripMarkdownArtifacts(normalizeLineEndings(value)))
 }
+
+export function buildQuestionVersionDiff(previousText: string, nextText: string) {
+  const previous = normalizeQuestionText(previousText)
+  const next = normalizeQuestionText(nextText)
+  const previousTokens = previous.split(/(\s+)/)
+  const nextTokens = next.split(/(\s+)/)
+
+  let prefixLength = 0
+  while (
+    prefixLength < previousTokens.length &&
+    prefixLength < nextTokens.length &&
+    previousTokens[prefixLength] === nextTokens[prefixLength]
+  ) {
+    prefixLength += 1
+  }
+
+  let previousSuffixIndex = previousTokens.length - 1
+  let nextSuffixIndex = nextTokens.length - 1
+  while (
+    previousSuffixIndex >= prefixLength &&
+    nextSuffixIndex >= prefixLength &&
+    previousTokens[previousSuffixIndex] === nextTokens[nextSuffixIndex]
+  ) {
+    previousSuffixIndex -= 1
+    nextSuffixIndex -= 1
+  }
+
+  const sharedPrefix = previousTokens.slice(0, prefixLength).join('')
+  const sharedSuffix =
+    previousSuffixIndex + 1 < previousTokens.length ? previousTokens.slice(previousSuffixIndex + 1).join('') : ''
+  const before = previousTokens.slice(prefixLength, previousSuffixIndex + 1).join('')
+  const after = nextTokens.slice(prefixLength, nextSuffixIndex + 1).join('')
+
+  return {
+    shared: `${sharedPrefix}${sharedSuffix}`,
+    sharedPrefix,
+    sharedSuffix,
+    before,
+    after,
+    hasChanges: before !== after,
+  }
+}
