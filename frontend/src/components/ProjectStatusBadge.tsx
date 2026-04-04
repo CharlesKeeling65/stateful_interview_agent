@@ -1,16 +1,22 @@
+import type { Locale } from '../i18n'
 import type { ProjectRead, ProjectStatusResponse } from '../types/api'
 import { getRuntimeStatusLabel, hasInterviewStarted, isProjectFinished } from '../utils/status'
 import { CheckIcon, ClockIcon, SparkIcon } from './Icons'
 
 type ProjectStatusBadgeProps = {
+  locale?: Locale
   project: ProjectRead | null
   status?: ProjectStatusResponse | null
 }
 
-export function ProjectStatusBadge({ project, status = null }: ProjectStatusBadgeProps) {
+export function ProjectStatusBadge({
+  locale = 'en',
+  project,
+  status = null,
+}: ProjectStatusBadgeProps) {
   const finished = isProjectFinished(project, status)
   const started = hasInterviewStarted(project)
-  const label = getRuntimeStatusLabel(project, status)
+  const label = getRuntimeStatusLabel(project, status, locale)
   const toneClassName = finished
     ? 'border-emerald-200 bg-emerald-50 text-emerald-800'
     : started

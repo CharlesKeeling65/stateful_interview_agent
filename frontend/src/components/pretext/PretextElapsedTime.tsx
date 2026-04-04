@@ -1,17 +1,20 @@
 import { useEffect, useMemo, useState } from 'react'
 
+import type { Locale } from '../../i18n'
 import { formatDurationMs, parseApiDateMs } from '../../utils/format'
 import { PretextLiveText } from './PretextLiveText'
 
 type PretextElapsedTimeProps = {
   className?: string
   endedAt?: string | null
+  locale?: Locale
   startedAt: string
 }
 
 export function PretextElapsedTime({
   className,
   endedAt,
+  locale = 'en',
   startedAt,
 }: PretextElapsedTimeProps) {
   const startedAtMs = useMemo(() => parseApiDateMs(startedAt), [startedAt])
@@ -19,11 +22,10 @@ export function PretextElapsedTime({
     () => (endedAt ? parseApiDateMs(endedAt) : null),
     [endedAt],
   )
-  const [now, setNow] = useState(() => Date.now())
+  const [now, setNow] = useState(() => endedAtMs ?? Date.now())
 
   useEffect(() => {
     if (endedAtMs) {
-      setNow(endedAtMs)
       return
     }
 
@@ -37,7 +39,7 @@ export function PretextElapsedTime({
   return (
     <PretextLiveText
       className={className}
-      text={formatDurationMs(Math.max(0, (endedAtMs ?? now) - startedAtMs))}
+      text={formatDurationMs(Math.max(0, (endedAtMs ?? now) - startedAtMs), locale)}
     />
   )
 }

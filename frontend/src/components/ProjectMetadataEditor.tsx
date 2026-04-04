@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react'
 
+import type { Translator } from '../i18n'
 import { ActionButton } from './ActionButton'
 import { CheckIcon, PencilIcon } from './Icons'
 
@@ -7,12 +8,14 @@ type ProjectMetadataEditorProps = {
   disabled?: boolean
   initialTitle: string
   onSave: (nextTitle: string) => Promise<void> | void
+  t: Translator
 }
 
 export function ProjectMetadataEditor({
   disabled = false,
   initialTitle,
   onSave,
+  t,
 }: ProjectMetadataEditorProps) {
   const [editing, setEditing] = useState(false)
   const [draftTitle, setDraftTitle] = useState(initialTitle)
@@ -35,12 +38,12 @@ export function ProjectMetadataEditor({
   if (!editing) {
     return (
       <ActionButton
-        aria-label="Edit project title"
+        aria-label={t('sidebar.editProjectTitle')}
         disabled={disabled}
         icon={<PencilIcon />}
-        label="Rename"
+        label={t('sidebar.rename')}
         onClick={() => setEditing(true)}
-        title="Edit project title"
+        title={t('sidebar.editProjectTitle')}
         type="button"
       />
     )
@@ -57,7 +60,7 @@ export function ProjectMetadataEditor({
       <ActionButton
         disabled={disabled || !draftTitle.trim()}
         icon={<CheckIcon />}
-        label="Save"
+        label={t('sidebar.save')}
         onClick={() => void handleSave()}
         type="button"
         variant="primary"
@@ -68,7 +71,7 @@ export function ProjectMetadataEditor({
           setDraftTitle(initialTitle)
         }}
         disabled={disabled}
-        label="Cancel"
+        label={t('sidebar.cancel')}
         type="button"
       />
     </div>

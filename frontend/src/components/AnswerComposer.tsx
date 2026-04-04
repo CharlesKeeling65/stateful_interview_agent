@@ -1,5 +1,6 @@
 import { useState } from 'react'
 
+import type { Locale, Translator } from '../i18n'
 import type { HumanReviewInput } from '../types/api'
 import { formatTokenCount } from '../utils/tokens'
 import { ChevronDownIcon } from './Icons'
@@ -14,7 +15,9 @@ type AnswerComposerProps = {
   projectFinished?: boolean
   projectStarted?: boolean
   workingLabel?: string | null
+  locale?: Locale
   onSubmit: (answerText: string, humanReview?: HumanReviewInput | null) => Promise<void> | void
+  t: Translator
 }
 
 export function AnswerComposer({
@@ -23,7 +26,9 @@ export function AnswerComposer({
   projectFinished = false,
   projectStarted = false,
   workingLabel = null,
+  locale = 'en',
   onSubmit,
+  t,
 }: AnswerComposerProps) {
   const [answer, setAnswer] = useState('')
   const [reviewExpanded, setReviewExpanded] = useState(false)
@@ -69,10 +74,10 @@ export function AnswerComposer({
       <div className="flex flex-wrap items-end justify-between gap-4">
         <div>
           <p className="text-[0.68rem] font-semibold uppercase tracking-[0.28em] text-slate-500">
-            Answer Composer
+            {t('composer.section')}
           </p>
           <h2 className="mt-3 font-serif text-2xl text-slate-950">
-            Paste the latest opencode answer and advance one turn.
+            {t('composer.title')}
           </h2>
         </div>
         <button
@@ -81,7 +86,7 @@ export function AnswerComposer({
           onClick={() => void handleSubmit()}
           disabled={disabled || !answer.trim()}
         >
-          {workingLabel ?? 'Submit Answer & Generate Next'}
+          {workingLabel ?? t('composer.submit')}
         </button>
       </div>
 
@@ -89,10 +94,10 @@ export function AnswerComposer({
         className="mt-5 min-h-48 w-full rounded-[1.75rem] border border-slate-200 bg-slate-50 px-4 py-4 text-sm leading-7 text-slate-950 outline-none transition focus:border-amber-500 focus:ring-2 focus:ring-amber-200"
         placeholder={
           projectFinished
-            ? 'This interview is finished.'
+            ? t('composer.placeholder.finished')
             : !projectStarted
-              ? 'Start the interview to receive the first question.'
-              : 'Paste the latest opencode answer here...'
+              ? t('composer.placeholder.notStarted')
+              : t('composer.placeholder.ready')
         }
         value={answer}
         onChange={(event) => setAnswer(event.target.value)}
@@ -106,10 +111,10 @@ export function AnswerComposer({
         >
           <div>
             <p className="text-[0.64rem] font-semibold uppercase tracking-[0.22em] text-slate-500">
-              Human Review Signal
+              {t('composer.review')}
             </p>
             <p className="mt-1 text-sm text-slate-600">
-              Optional. Use this to mark the answer as sufficient, redirect the next question, or prioritize the next focus.
+              {t('composer.reviewHint')}
             </p>
           </div>
           <ChevronDownIcon className={`size-4 text-slate-500 transition ${reviewExpanded ? 'rotate-180' : ''}`} />
@@ -119,7 +124,7 @@ export function AnswerComposer({
           <div className="grid gap-4 border-t border-slate-200 px-4 py-4 md:grid-cols-2">
             <label className="text-sm text-slate-700">
               <span className="text-[0.64rem] font-semibold uppercase tracking-[0.18em] text-slate-500">
-                Verdict
+                {t('composer.verdict')}
               </span>
               <select
                 className="mt-2 w-full rounded-2xl border border-slate-200 bg-slate-50 px-3 py-2.5 outline-none focus:border-amber-500 focus:ring-2 focus:ring-amber-200"
@@ -128,43 +133,43 @@ export function AnswerComposer({
                   setReviewVerdict(event.target.value as '' | 'sufficient' | 'insufficient' | 'drifted')
                 }
               >
-                <option value="">No explicit review</option>
-                <option value="sufficient">Sufficient</option>
-                <option value="insufficient">Insufficient</option>
-                <option value="drifted">Drifted</option>
+                <option value="">{t('composer.noExplicitReview')}</option>
+                <option value="sufficient">{locale === 'zh-CN' ? '信息充分' : 'Sufficient'}</option>
+                <option value="insufficient">{locale === 'zh-CN' ? '信息不足' : 'Insufficient'}</option>
+                <option value="drifted">{locale === 'zh-CN' ? '已跑偏' : 'Drifted'}</option>
               </select>
             </label>
 
             <label className="text-sm text-slate-700">
               <span className="text-[0.64rem] font-semibold uppercase tracking-[0.18em] text-slate-500">
-                Direction
+                {t('composer.direction')}
               </span>
               <select
                 className="mt-2 w-full rounded-2xl border border-slate-200 bg-slate-50 px-3 py-2.5 outline-none focus:border-amber-500 focus:ring-2 focus:ring-amber-200"
                 value={reviewDirection}
                 onChange={(event) => setReviewDirection(event.target.value as HumanReviewInput['direction'])}
               >
-                <option value="continue">Continue current branch</option>
-                <option value="redirect">Redirect next question</option>
+                <option value="continue">{locale === 'zh-CN' ? '继续当前分支' : 'Continue current branch'}</option>
+                <option value="redirect">{locale === 'zh-CN' ? '调整下一问方向' : 'Redirect next question'}</option>
               </select>
             </label>
 
             <label className="text-sm text-slate-700">
               <span className="text-[0.64rem] font-semibold uppercase tracking-[0.18em] text-slate-500">
-                Preferred next focus
+                {t('composer.focus')}
               </span>
               <select
                 className="mt-2 w-full rounded-2xl border border-slate-200 bg-slate-50 px-3 py-2.5 outline-none focus:border-amber-500 focus:ring-2 focus:ring-amber-200"
                 value={preferredNextFocus}
                 onChange={(event) => setPreferredNextFocus(event.target.value)}
               >
-                <option value="">No explicit focus</option>
-                <option value="panorama">Panorama</option>
-                <option value="architecture">Architecture</option>
-                <option value="code_detail">Code detail</option>
-                <option value="code path">Code path</option>
-                <option value="scenario">Scenario</option>
-                <option value="use_case">Use case</option>
+                <option value="">{t('composer.noExplicitFocus')}</option>
+                <option value="panorama">{locale === 'zh-CN' ? '全景' : 'Panorama'}</option>
+                <option value="architecture">{locale === 'zh-CN' ? '架构' : 'Architecture'}</option>
+                <option value="code_detail">{locale === 'zh-CN' ? '代码细节' : 'Code detail'}</option>
+                <option value="code path">{locale === 'zh-CN' ? '代码路径' : 'Code path'}</option>
+                <option value="scenario">{locale === 'zh-CN' ? '场景' : 'Scenario'}</option>
+                <option value="use_case">{locale === 'zh-CN' ? '用例' : 'Use case'}</option>
               </select>
             </label>
 
@@ -175,16 +180,16 @@ export function AnswerComposer({
                 onChange={(event) => setPhaseReady(event.target.checked)}
                 type="checkbox"
               />
-              Mark the current phase as sufficiently complete
+              {t('composer.phaseReady')}
             </label>
 
             <label className="md:col-span-2 text-sm text-slate-700">
               <span className="text-[0.64rem] font-semibold uppercase tracking-[0.18em] text-slate-500">
-                Human note
+                {t('composer.note')}
               </span>
               <textarea
                 className="mt-2 min-h-24 w-full rounded-[1.25rem] border border-slate-200 bg-slate-50 px-3 py-3 outline-none focus:border-amber-500 focus:ring-2 focus:ring-amber-200"
-                placeholder="Optional note: what is still unclear, where the interview drifted, or which branch matters most."
+                placeholder={t('composer.noteHint')}
                 value={reviewNote}
                 onChange={(event) => setReviewNote(event.target.value)}
               />
@@ -194,38 +199,38 @@ export function AnswerComposer({
       </div>
       <div className="mt-4 rounded-[1.5rem] border border-slate-200 bg-slate-50/80 px-4 py-4">
         <p className="text-[0.64rem] font-semibold uppercase tracking-[0.22em] text-slate-500">
-          Estimated Next Call
+          {t('composer.estimate')}
         </p>
         <div className="mt-3 grid gap-3 sm:grid-cols-3">
           <div>
-            <p className="text-[0.64rem] uppercase tracking-[0.18em] text-slate-500">Answer input</p>
+            <p className="text-[0.64rem] uppercase tracking-[0.18em] text-slate-500">{t('composer.answerInput')}</p>
             <p className="mt-1 text-sm font-semibold text-slate-950">
-              {formatTokenCount(estimate.estimatedAnswerInputTokens)}
+              {formatTokenCount(estimate.estimatedAnswerInputTokens, locale)}
             </p>
           </div>
           <div>
-            <p className="text-[0.64rem] uppercase tracking-[0.18em] text-slate-500">Next prompt</p>
+            <p className="text-[0.64rem] uppercase tracking-[0.18em] text-slate-500">{t('composer.nextPrompt')}</p>
             <p className="mt-1 text-sm font-semibold text-slate-950">
-              {formatTokenCount(estimate.estimatedNextPromptTokens)}
+              {formatTokenCount(estimate.estimatedNextPromptTokens, locale)}
             </p>
           </div>
           <div>
-            <p className="text-[0.64rem] uppercase tracking-[0.18em] text-slate-500">Next output</p>
+            <p className="text-[0.64rem] uppercase tracking-[0.18em] text-slate-500">{t('composer.nextOutput')}</p>
             <p className="mt-1 text-sm font-semibold text-slate-950">
-              {formatTokenCount(estimate.estimatedNextOutputTokens)}
+              {formatTokenCount(estimate.estimatedNextOutputTokens, locale)}
             </p>
           </div>
         </div>
         <p className="mt-3 text-xs leading-6 text-slate-500">
-          Estimates only. Actual usage comes from the backend after generation.
+          {t('composer.estimateHint')}
         </p>
       </div>
       <p className="mt-3 text-sm text-slate-500">
         {projectFinished
-          ? 'No more turns can be submitted after the session finishes.'
+          ? t('composer.finishedHint')
           : !projectStarted
-            ? 'The composer unlocks after the first question is generated.'
-            : 'Long answers are preserved as-is. Optional human review signals help keep the next question aligned with understanding the current code.'}
+            ? t('composer.lockedHint')
+            : t('composer.readyHint')}
       </p>
     </section>
   )

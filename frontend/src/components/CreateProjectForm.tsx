@@ -1,5 +1,6 @@
 import { useState } from 'react'
 
+import type { Translator } from '../i18n'
 import type { CreateProjectPayload } from '../types/api'
 
 type CreateProjectFormProps = {
@@ -7,6 +8,7 @@ type CreateProjectFormProps = {
   workingLabel?: string | null
   onCreate: (payload: CreateProjectPayload) => Promise<void> | void
   onCreateDemo: () => Promise<void> | void
+  t: Translator
 }
 
 const DEFAULT_PROMPT =
@@ -17,6 +19,7 @@ export function CreateProjectForm({
   workingLabel = null,
   onCreate,
   onCreateDemo,
+  t,
 }: CreateProjectFormProps) {
   const [projectName, setProjectName] = useState('')
   const [systemPrompt, setSystemPrompt] = useState(DEFAULT_PROMPT)
@@ -38,27 +41,27 @@ export function CreateProjectForm({
     <form className="space-y-3 rounded-[1.75rem] border border-white/60 bg-white/75 p-4 shadow-[0_20px_45px_rgba(148,163,184,0.18)] backdrop-blur" onSubmit={handleSubmit}>
       <div>
         <p className="text-[0.68rem] font-semibold uppercase tracking-[0.28em] text-slate-500">
-          New Project
+          {t('sidebar.newProject')}
         </p>
-        <h2 className="mt-2 font-serif text-xl text-slate-950">Seed a local interview session</h2>
+        <h2 className="mt-2 font-serif text-xl text-slate-950">{t('sidebar.seedSession')}</h2>
       </div>
 
       <label className="block space-y-2">
         <span className="text-xs font-medium uppercase tracking-[0.2em] text-slate-500">
-          Project Name
+          {t('sidebar.projectName')}
         </span>
         <input
           className="w-full rounded-2xl border border-slate-200 bg-white px-4 py-3 text-sm text-slate-950 outline-none transition focus:border-amber-500 focus:ring-2 focus:ring-amber-200"
           value={projectName}
           onChange={(event) => setProjectName(event.target.value)}
-          placeholder="Stateful Interview Demo"
+          placeholder={t('sidebar.demoPlaceholder')}
           disabled={disabled}
         />
       </label>
 
       <label className="block space-y-2">
         <span className="text-xs font-medium uppercase tracking-[0.2em] text-slate-500">
-          System Prompt
+          {t('sidebar.systemPrompt')}
         </span>
         <textarea
           className="min-h-36 w-full rounded-2xl border border-slate-200 bg-white px-4 py-3 text-sm text-slate-950 outline-none transition focus:border-amber-500 focus:ring-2 focus:ring-amber-200"
@@ -74,7 +77,7 @@ export function CreateProjectForm({
           className="rounded-full bg-slate-950 px-4 py-2 text-sm font-medium text-white transition hover:bg-slate-800 disabled:cursor-not-allowed disabled:bg-slate-400"
           disabled={disabled || !projectName.trim() || !systemPrompt.trim()}
         >
-          {workingLabel ?? 'Create Project'}
+          {workingLabel ?? t('sidebar.createProject')}
         </button>
         <button
           type="button"
@@ -82,7 +85,7 @@ export function CreateProjectForm({
           onClick={() => void onCreateDemo()}
           disabled={disabled}
         >
-          {workingLabel ? 'Please wait...' : 'Quick Demo'}
+          {workingLabel ? t('sidebar.pleaseWait') : t('sidebar.quickDemo')}
         </button>
       </div>
     </form>

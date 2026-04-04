@@ -1,4 +1,6 @@
+import type { Locale, Translator } from '../i18n'
 import type { ProjectRead, ProjectStatusResponse, TranscriptResponse } from '../types/api'
+import { getDisplayStageLabel } from '../i18n'
 import { formatDurationMs } from '../utils/format'
 import {
   formatBooleanLabel,
@@ -14,12 +16,14 @@ type StatusPanelProps = {
   errorMessage: string
   exportLabel?: string | null
   infoMessage: string
+  locale?: Locale
   onCopyTranscript: () => Promise<void> | void
   onExportMarkdown: () => void
   onExportText: () => void
   onStart: () => Promise<void> | void
   project: ProjectRead | null
   status: ProjectStatusResponse | null
+  t: Translator
   transcript: TranscriptResponse | null
   working?: boolean
   workingLabel?: string | null
@@ -38,12 +42,14 @@ export function StatusPanel({
   errorMessage,
   exportLabel = null,
   infoMessage,
+  locale = 'en',
   onCopyTranscript,
   onExportMarkdown,
   onExportText,
   onStart,
   project,
   status,
+  t,
   transcript,
   working = false,
   workingLabel = null,
@@ -57,14 +63,14 @@ export function StatusPanel({
         <div className="flex items-center justify-between gap-3">
           <div>
             <p className="text-[0.68rem] font-semibold uppercase tracking-[0.28em] text-slate-500">
-              Project Status
+              {t('status.projectStatus')}
             </p>
-            <h2 className="mt-3 font-serif text-2xl text-slate-950">Runtime snapshot</h2>
+            <h2 className="mt-3 font-serif text-2xl text-slate-950">{t('status.snapshot')}</h2>
           </div>
           <ActionButton
             disabled={!project || started || projectFinished || working}
             icon={<PlayIcon />}
-            label={workingLabel === 'Starting...' ? 'Starting...' : 'Start'}
+            label={workingLabel ?? t('status.start')}
             onClick={() => void onStart()}
             type="button"
             variant="primary"
@@ -73,45 +79,48 @@ export function StatusPanel({
 
         {project ? (
           <div className="mt-5 grid gap-3 sm:grid-cols-2 xl:grid-cols-1">
-            <StatusItem label="Project ID" value={`#${project.id}`} />
+            <StatusItem label={t('status.projectId')} value={`#${project.id}`} />
             <div className="rounded-2xl border border-slate-200 bg-white px-4 py-3">
               <p className="text-[0.64rem] font-semibold uppercase tracking-[0.22em] text-slate-500">
-                Status
+                {t('status.projectStatus')}
               </p>
               <div className="mt-2">
-                <ProjectStatusBadge project={project} status={status} />
+                <ProjectStatusBadge locale={locale} project={project} status={status} />
               </div>
             </div>
-            <StatusItem label="Current Stage" value={status?.current_stage ?? project.current_stage} />
-            <StatusItem label="Turns" value={String(status?.turn_count ?? project.turn_count)} />
-            <StatusItem label="Runs" value={String(status?.run_count ?? 0)} />
             <StatusItem
-              label="Total Generation"
-              value={formatDurationMs(status?.cumulative_generation_time_ms ?? 0)}
+              label={t('status.currentStage')}
+              value={getDisplayStageLabel(status?.current_stage ?? project.current_stage, locale)}
+            />
+            <StatusItem label={t('app.turns')} value={String(status?.turn_count ?? project.turn_count)} />
+            <StatusItem label={t('status.runs')} value={String(status?.run_count ?? 0)} />
+            <StatusItem
+              label={t('status.totalGeneration')}
+              value={formatDurationMs(status?.cumulative_generation_time_ms ?? 0, locale)}
             />
             <StatusItem
-              label="Average Run"
-              value={formatDurationMs(status?.average_run_duration_ms ?? 0)}
+              label={t('status.averageRun')}
+              value={formatDurationMs(status?.average_run_duration_ms ?? 0, locale)}
             />
             <StatusItem
-              label="Minimum Goal"
-              value={formatBooleanLabel(status?.minimum_goal_reached, {
-                trueLabel: 'Reached',
-                falseLabel: 'Not yet',
+              label={t('status.minimumGoal')}
+              value={formatBooleanLabel(status?.minimum_goal_reached, locale, {
+                trueLabel: t('status.reached'),
+                falseLabel: t('status.notYet'),
               })}
             />
             <StatusItem
-              label="Latest Answered"
-              value={formatBooleanLabel(status?.latest_turn_answered, {
-                trueLabel: 'Yes',
-                falseLabel: 'Waiting',
-                nullLabel: 'No turns yet',
+              label={t('status.latestAnswered')}
+              value={formatBooleanLabel(status?.latest_turn_answered, locale, {
+                trueLabel: locale === 'zh-CN' ? '已回答' : 'Answered',
+                falseLabel: t('status.waiting'),
+                nullLabel: t('status.noTurns'),
               })}
             />
           </div>
         ) : (
           <p className="mt-5 text-sm leading-7 text-slate-600">
-            No active project. Pick one from the left column or create a new session.
+            {t('status.noProject')}
           </p>
         )}
 
@@ -129,7 +138,12 @@ export function StatusPanel({
 
         {status?.usage_summary ? (
           <div className="mt-5">
-            <TokenUsagePanel label="Session Token Usage" summary={status.usage_summary} />
+            <TokenUsagePanel
+              label={locale === 'zh-CN' ? '会话 Token 使用' : 'Session token usage'}
+              locale={locale}
+              summary={status.usage_summary}
+              t={t}
+            />
           </div>
         ) : null}
       </section>
@@ -138,36 +152,40 @@ export function StatusPanel({
         <div className="flex items-center justify-between gap-3">
           <div>
             <p className="text-[0.68rem] font-semibold uppercase tracking-[0.28em] text-slate-500">
-              Transcript Export
+              {t('status.export')}
             </p>
-            <h2 className="mt-3 font-serif text-2xl text-slate-950">Export actions</h2>
+            <h2 className="mt-3 font-serif text-2xl text-slate-950">{t('status.sessionHealth')}</h2>
           </div>
         </div>
 
         <div className="mt-5 rounded-[1.75rem] border border-slate-200 bg-slate-50/80 p-4">
           <p className="text-sm leading-7 text-slate-600">
-            Copy the full transcript or export it as a plain text or Markdown file. The transcript body stays hidden here to keep the runtime panel compact.
+            {t('status.exportHint')}
           </p>
 
           <div className="mt-4 flex flex-wrap gap-2">
             <ActionButton
               disabled={!transcript?.transcript}
               icon={<CopyIcon />}
-              label={exportLabel === 'Copying...' || exportLabel === 'Copied' ? exportLabel : 'Copy'}
+              label={
+                exportLabel === 'Copying...' ? `${t('status.copyTranscript')}...`
+                  : exportLabel === 'Copied' ? t('transcript.copied')
+                    : t('status.copyTranscript')
+              }
               onClick={() => void onCopyTranscript()}
               type="button"
             />
             <ActionButton
               disabled={!transcript?.transcript}
               icon={<DownloadIcon />}
-              label={exportLabel === 'Exporting .txt...' ? '.txt...' : '.txt'}
+              label={exportLabel === 'Exporting .txt...' ? `${t('status.exportTxt')}...` : t('status.exportTxt')}
               onClick={onExportText}
               type="button"
             />
             <ActionButton
               disabled={!transcript?.transcript}
               icon={<DownloadIcon />}
-              label={exportLabel === 'Exporting .md...' ? '.md...' : '.md'}
+              label={exportLabel === 'Exporting .md...' ? `${t('status.exportMd')}...` : t('status.exportMd')}
               onClick={onExportMarkdown}
               type="button"
             />
@@ -175,8 +193,8 @@ export function StatusPanel({
         </div>
         <p className="mt-3 text-xs leading-6 text-slate-500">
           {transcript?.transcript
-            ? 'Exports are generated client-side from the latest backend transcript.'
-            : 'Transcript actions unlock after the interview has generated at least one turn.'}
+            ? t('status.exportReady')
+            : t('status.exportLocked')}
         </p>
       </section>
     </aside>

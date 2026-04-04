@@ -1,3 +1,4 @@
+import type { Translator } from '../i18n'
 import { ActionButton } from './ActionButton'
 import { ChevronLeftIcon, ChevronRightIcon } from './Icons'
 
@@ -7,6 +8,7 @@ type TranscriptPaginationProps = {
   onPageSizeChange: (pageSize: number) => void
   pageSize: number
   pageSizes?: number[]
+  t: Translator
   totalItems: number
   totalPages: number
 }
@@ -17,6 +19,7 @@ export function TranscriptPagination({
   onPageSizeChange,
   pageSize,
   pageSizes = [5, 10],
+  t,
   totalItems,
   totalPages,
 }: TranscriptPaginationProps) {
@@ -35,7 +38,7 @@ export function TranscriptPagination({
     <div className="flex flex-wrap items-center justify-between gap-3 rounded-[1.5rem] border border-slate-200 bg-slate-50/80 px-4 py-3">
       <div>
         <p className="text-xs font-medium text-slate-600">
-          Showing turns {start}-{end} of {totalItems}
+          {t('transcript.showingTurns')} {start}-{end} {t('transcript.of')} {totalItems}
         </p>
       </div>
 
@@ -55,30 +58,30 @@ export function TranscriptPagination({
                 onClick={() => onPageSizeChange(size)}
                 aria-pressed={active}
               >
-                {size}/page
+                {size}/{t('transcript.perPage')}
               </button>
             )
           })}
         </div>
 
         <ActionButton
-          aria-label="Previous transcript page"
+          aria-label={`${t('transcript.page')} ${currentPage - 1}`}
           disabled={currentPage <= 1}
           icon={<ChevronLeftIcon />}
           onClick={() => onPageChange(currentPage - 1)}
-          title="Previous page"
+          title={`${t('transcript.page')} ${currentPage - 1}`}
           type="button"
           variant="secondary"
         />
         <span className="min-w-20 text-center text-xs font-semibold uppercase tracking-[0.16em] text-slate-500">
-          Page {currentPage}/{totalPages}
+          {t('transcript.page')} {currentPage}/{totalPages}
         </span>
         <ActionButton
-          aria-label="Next transcript page"
+          aria-label={`${t('transcript.page')} ${currentPage + 1}`}
           disabled={currentPage >= totalPages}
           icon={<ChevronRightIcon />}
           onClick={() => onPageChange(currentPage + 1)}
-          title="Next page"
+          title={`${t('transcript.page')} ${currentPage + 1}`}
           type="button"
           variant="secondary"
         />

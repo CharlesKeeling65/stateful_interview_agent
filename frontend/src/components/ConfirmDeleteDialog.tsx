@@ -1,3 +1,4 @@
+import type { Translator } from '../i18n'
 import type { ProjectRead } from '../types/api'
 import { ActionButton } from './ActionButton'
 import { AlertTriangleIcon, TrashIcon } from './Icons'
@@ -7,6 +8,7 @@ type ConfirmDeleteDialogProps = {
   onCancel: () => void
   onConfirm: (projectId: number) => Promise<void> | void
   project: ProjectRead | null
+  t: Translator
 }
 
 export function ConfirmDeleteDialog({
@@ -14,6 +16,7 @@ export function ConfirmDeleteDialog({
   onCancel,
   onConfirm,
   project,
+  t,
 }: ConfirmDeleteDialogProps) {
   if (!project) {
     return null
@@ -28,22 +31,22 @@ export function ConfirmDeleteDialog({
           </span>
           <div>
             <p className="text-[0.68rem] font-semibold uppercase tracking-[0.28em] text-rose-500">
-              Delete Project
+              {t('delete.title')}
             </p>
             <h2 className="mt-2 font-serif text-2xl text-slate-950">{project.project_name}</h2>
             <p className="mt-3 text-sm leading-7 text-slate-600">
-              This permanently removes the project, its turns, summaries, transcript, and recorded token usage.
+              {t('delete.copy')}
             </p>
           </div>
         </div>
 
         <div className="mt-5 rounded-[1.5rem] border border-rose-200 bg-rose-50 px-4 py-3 text-sm leading-6 text-rose-900">
-          This action cannot be undone.
+          {t('delete.warning')}
         </div>
 
         <div className="mt-6 flex flex-wrap justify-end gap-2">
           <ActionButton
-            label="Cancel"
+            label={t('sidebar.cancel')}
             onClick={onCancel}
             disabled={busy}
             type="button"
@@ -51,7 +54,7 @@ export function ConfirmDeleteDialog({
           />
           <ActionButton
             icon={<TrashIcon />}
-            label={busy ? 'Deleting...' : 'Delete'}
+            label={busy ? `${t('sidebar.delete')}...` : t('sidebar.delete')}
             onClick={() => void onConfirm(project.id)}
             disabled={busy}
             type="button"
