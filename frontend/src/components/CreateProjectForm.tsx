@@ -23,6 +23,10 @@ export function CreateProjectForm({
 }: CreateProjectFormProps) {
   const [projectName, setProjectName] = useState('')
   const [systemPrompt, setSystemPrompt] = useState(DEFAULT_PROMPT)
+  const [repoSourceType, setRepoSourceType] = useState<'none' | 'local_path' | 'git_url'>('none')
+  const [repoLocalPath, setRepoLocalPath] = useState('')
+  const [repoGitUrl, setRepoGitUrl] = useState('')
+  const [repoGitRef, setRepoGitRef] = useState('')
 
   function handleSubmit(event: React.FormEvent<HTMLFormElement>) {
     event.preventDefault()
@@ -34,6 +38,12 @@ export function CreateProjectForm({
     void onCreate({
       project_name: projectName.trim(),
       system_prompt: systemPrompt.trim(),
+      repository: {
+        source_type: repoSourceType,
+        local_path: repoSourceType === 'local_path' ? repoLocalPath.trim() || null : null,
+        git_url: repoSourceType === 'git_url' ? repoGitUrl.trim() || null : null,
+        git_ref: repoSourceType === 'git_url' ? repoGitRef.trim() || null : null,
+      },
     })
   }
 
@@ -70,6 +80,72 @@ export function CreateProjectForm({
           disabled={disabled}
         />
       </label>
+
+      <div className="grid gap-3">
+        <label className="block space-y-2">
+          <span className="text-xs font-medium uppercase tracking-[0.2em] text-slate-500">
+            {t('sidebar.repositorySource')}
+          </span>
+          <select
+            className="w-full rounded-2xl border border-slate-200 bg-white px-4 py-3 text-sm text-slate-950 outline-none transition focus:border-amber-500 focus:ring-2 focus:ring-amber-200"
+            value={repoSourceType}
+            onChange={(event) => setRepoSourceType(event.target.value as 'none' | 'local_path' | 'git_url')}
+            disabled={disabled}
+          >
+            <option value="none">{t('sidebar.repositoryNone')}</option>
+            <option value="local_path">{t('sidebar.repositoryLocal')}</option>
+            <option value="git_url">{t('sidebar.repositoryGit')}</option>
+          </select>
+        </label>
+
+        {repoSourceType === 'local_path' ? (
+          <label className="block space-y-2">
+            <span className="text-xs font-medium uppercase tracking-[0.2em] text-slate-500">
+              {t('sidebar.repositoryPath')}
+            </span>
+            <input
+              className="w-full rounded-2xl border border-slate-200 bg-white px-4 py-3 text-sm text-slate-950 outline-none transition focus:border-amber-500 focus:ring-2 focus:ring-amber-200"
+              value={repoLocalPath}
+              onChange={(event) => setRepoLocalPath(event.target.value)}
+              placeholder="/absolute/path/to/repository"
+              disabled={disabled}
+            />
+          </label>
+        ) : null}
+
+        {repoSourceType === 'git_url' ? (
+          <>
+            <label className="block space-y-2">
+              <span className="text-xs font-medium uppercase tracking-[0.2em] text-slate-500">
+                {t('sidebar.repositoryUrl')}
+              </span>
+              <input
+                className="w-full rounded-2xl border border-slate-200 bg-white px-4 py-3 text-sm text-slate-950 outline-none transition focus:border-amber-500 focus:ring-2 focus:ring-amber-200"
+                value={repoGitUrl}
+                onChange={(event) => setRepoGitUrl(event.target.value)}
+                placeholder="https://github.com/org/repo.git"
+                disabled={disabled}
+              />
+            </label>
+            <label className="block space-y-2">
+              <span className="text-xs font-medium uppercase tracking-[0.2em] text-slate-500">
+                {t('sidebar.repositoryRef')}
+              </span>
+              <input
+                className="w-full rounded-2xl border border-slate-200 bg-white px-4 py-3 text-sm text-slate-950 outline-none transition focus:border-amber-500 focus:ring-2 focus:ring-amber-200"
+                value={repoGitRef}
+                onChange={(event) => setRepoGitRef(event.target.value)}
+                placeholder={t('sidebar.repositoryRefPlaceholder')}
+                disabled={disabled}
+              />
+            </label>
+          </>
+        ) : null}
+
+        <p className="text-xs leading-6 text-slate-500">
+          {t('sidebar.repositoryHint')}
+        </p>
+      </div>
 
       <div className="flex flex-wrap gap-2">
         <button

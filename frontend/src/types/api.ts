@@ -17,6 +17,25 @@ export type TokenUsageSummary = {
   estimated_total_tokens: number
 }
 
+export type RepositorySourceConfig = {
+  source_type: 'none' | 'local_path' | 'git_url' | string
+  local_path?: string | null
+  git_url?: string | null
+  git_ref?: string | null
+  cache_path?: string | null
+  commit_sha?: string | null
+}
+
+export type RepositoryManifestRead = {
+  root_path?: string | null
+  file_count: number
+  language_counts: Record<string, number>
+  top_level_directories: string[]
+  key_files: string[]
+  symbol_count: number
+  last_indexed_at?: string | null
+}
+
 export type HumanReviewInput = {
   verdict?: 'sufficient' | 'insufficient' | 'drifted' | null
   direction: 'continue' | 'redirect'
@@ -53,6 +72,11 @@ export type QuestionPlanRead = {
   human_review_applied?: boolean | null
   drift_detected?: boolean | null
   why_this_question?: string | null
+  repo_queries?: string[]
+  repo_selected_paths?: string[]
+  repo_selected_symbols?: string[]
+  repo_commit_sha?: string | null
+  repo_tool_calls?: Array<Record<string, unknown>>
 }
 
 export type RunStepRead = {
@@ -103,6 +127,8 @@ export type ProjectRead = {
   total_completion_tokens: number
   total_tokens: number
   estimated_total_tokens: number
+  repository: RepositorySourceConfig
+  repository_manifest: RepositoryManifestRead
   created_at: string
   updated_at: string
 }
@@ -162,6 +188,8 @@ export type ProjectStatusResponse = {
   cumulative_generation_time_ms: number
   run_count: number
   average_run_duration_ms: number
+  repository: RepositorySourceConfig
+  repository_manifest: RepositoryManifestRead
   usage_summary: TokenUsageSummary
 }
 
@@ -176,11 +204,23 @@ export type TranscriptResponse = {
 export type CreateProjectPayload = {
   project_name: string
   system_prompt: string
+  repository?: {
+    source_type: 'none' | 'local_path' | 'git_url'
+    local_path?: string | null
+    git_url?: string | null
+    git_ref?: string | null
+  }
 }
 
 export type UpdateProjectPayload = {
   project_name?: string
   system_prompt?: string
+  repository?: {
+    source_type: 'none' | 'local_path' | 'git_url'
+    local_path?: string | null
+    git_url?: string | null
+    git_ref?: string | null
+  }
 }
 
 export type CurrentQuestionRegenerateResponse = {

@@ -14,6 +14,16 @@ const baseProject: ProjectRead = {
   total_completion_tokens: 120,
   total_tokens: 420,
   estimated_total_tokens: 0,
+  repository: {
+    source_type: 'none',
+  },
+  repository_manifest: {
+    file_count: 0,
+    language_counts: {},
+    top_level_directories: [],
+    key_files: [],
+    symbol_count: 0,
+  },
   created_at: '2026-04-04T08:00:00',
   updated_at: '2026-04-04T10:00:00',
 }
@@ -40,6 +50,16 @@ const baseStatus: ProjectStatusResponse = {
   cumulative_generation_time_ms: 12_500,
   run_count: 4,
   average_run_duration_ms: 3_125,
+  repository: {
+    source_type: 'none',
+  },
+  repository_manifest: {
+    file_count: 0,
+    language_counts: {},
+    top_level_directories: [],
+    key_files: [],
+    symbol_count: 0,
+  },
   usage_summary: {
     prompt_tokens: 300,
     completion_tokens: 120,

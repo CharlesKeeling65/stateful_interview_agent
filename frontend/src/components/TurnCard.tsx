@@ -186,6 +186,28 @@ export const TurnCard = memo(function TurnCard({
                   {turn.question_plan.why_this_question}
                 </p>
               ) : null}
+              {turn.question_plan.repo_selected_paths?.length ? (
+                <div className="mt-3 rounded-2xl border border-sky-100 bg-white/70 px-3 py-3">
+                  <p className="text-[0.64rem] font-semibold uppercase tracking-[0.18em] text-sky-700">
+                    {t('transcript.repoGrounding')}
+                  </p>
+                  <div className="mt-2 flex flex-wrap gap-2 text-[0.68rem] font-semibold uppercase tracking-[0.14em] text-sky-900">
+                    {turn.question_plan.repo_commit_sha ? (
+                      <span className="rounded-full bg-sky-100 px-3 py-1">
+                        {t('transcript.repoCommit')}: {turn.question_plan.repo_commit_sha.slice(0, 12)}
+                      </span>
+                    ) : null}
+                    {turn.question_plan.repo_selected_symbols?.slice(0, 3).map((symbol) => (
+                      <span key={symbol} className="rounded-full bg-white px-3 py-1">
+                        {symbol}
+                      </span>
+                    ))}
+                  </div>
+                  <p className="mt-2 text-xs leading-6 text-sky-900">
+                    {turn.question_plan.repo_selected_paths.slice(0, 4).join(', ')}
+                  </p>
+                </div>
+              ) : null}
             </div>
           ) : null}
         </div>

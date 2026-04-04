@@ -57,6 +57,7 @@ export function StatusPanel({
   const projectFinished = isProjectFinished(project, status)
   const started = hasInterviewStarted(project)
   const canExport = Boolean(transcript?.transcript)
+  const repositoryProject = project && project.repository.source_type !== 'none' ? project : null
 
   return (
     <aside className="flex h-full flex-col gap-4">
@@ -118,12 +119,57 @@ export function StatusPanel({
                 nullLabel: t('status.noTurns'),
               })}
             />
+            <StatusItem
+              label={t('status.repoSource')}
+              value={
+                project.repository.source_type === 'local_path'
+                  ? (locale === 'zh-CN' ? '本地路径' : 'Local path')
+                  : project.repository.source_type === 'git_url'
+                    ? (locale === 'zh-CN' ? '仓库链接' : 'Git URL')
+                    : t('status.repoNotConfigured')
+              }
+            />
+            <StatusItem
+              label={t('status.repoCommit')}
+              value={project.repository.commit_sha?.slice(0, 12) || t('status.repoUnknown')}
+            />
+            <StatusItem
+              label={t('status.repoFiles')}
+              value={String(project.repository_manifest.file_count ?? 0)}
+            />
+            <StatusItem
+              label={t('status.repoSymbols')}
+              value={String(project.repository_manifest.symbol_count ?? 0)}
+            />
           </div>
         ) : (
           <p className="mt-5 text-sm leading-7 text-slate-600">
             {t('status.noProject')}
           </p>
         )}
+
+        {repositoryProject ? (
+          <div className="mt-5 rounded-[1.5rem] border border-slate-200 bg-slate-50/70 px-4 py-4">
+            <p className="text-[0.64rem] font-semibold uppercase tracking-[0.22em] text-slate-500">
+              {t('status.repository')}
+            </p>
+            <p className="mt-3 break-all text-sm leading-6 text-slate-700">
+              {repositoryProject.repository.source_type === 'local_path'
+                ? repositoryProject.repository.local_path
+                : repositoryProject.repository.git_url}
+            </p>
+            {repositoryProject.repository.git_ref ? (
+              <p className="mt-2 text-xs leading-6 text-slate-500">
+                {t('status.repoRef')}: {repositoryProject.repository.git_ref}
+              </p>
+            ) : null}
+            {repositoryProject.repository_manifest.key_files.length > 0 ? (
+              <p className="mt-2 text-xs leading-6 text-slate-500">
+                {t('status.repoKeyFiles')}: {repositoryProject.repository_manifest.key_files.slice(0, 4).join(', ')}
+              </p>
+            ) : null}
+          </div>
+        ) : null}
 
         {errorMessage ? (
           <div className="mt-5 rounded-[1.5rem] border border-rose-200 bg-rose-50 px-4 py-3 text-sm leading-6 text-rose-900">
