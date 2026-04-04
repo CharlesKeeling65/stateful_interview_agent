@@ -11,6 +11,7 @@ import {
   getProjectTurns,
   listProjects,
   regenerateCurrentQuestion,
+  submitAnswer,
   startProject,
   submitNext,
   updateProject,
@@ -43,7 +44,8 @@ export type BusyAction =
   | 'selecting'
   | 'creating'
   | 'starting'
-  | 'submitting'
+  | 'saving_answer'
+  | 'generating_next'
   | 'regenerating'
   | 'updating'
   | 'deleting'
@@ -217,12 +219,37 @@ export function useProject() {
     }
   }
 
-  async function handleNext(answerText: string, humanReview?: HumanReviewInput | null) {
+  async function handleSaveAnswer(answerText: string) {
     if (!project || !answerText.trim()) {
       return
     }
 
-    setBusyAction('submitting')
+    setBusyAction('saving_answer')
+    setLoading(true)
+    setError('')
+    setLastMessageKey('status.savingAnswer')
+    setLastRegenerationFeedback(null)
+
+    try {
+      await submitAnswer(project.id, answerText.trim())
+      startTransition(() => {
+        setLastMessageKey('status.answerSaved')
+      })
+      await refreshSelected(project.id)
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Unable to save the answer.')
+    } finally {
+      setBusyAction(null)
+      setLoading(false)
+    }
+  }
+
+  async function handleGenerateNext(humanReview?: HumanReviewInput | null) {
+    if (!project) {
+      return
+    }
+
+    setBusyAction('generating_next')
     setLoading(true)
     setError('')
     setLastMessageKey('status.generating')
@@ -265,7 +292,7 @@ export function useProject() {
         }
       })()
 
-      const result = await submitNext(project.id, answerText.trim(), humanReview ?? null)
+      const result = await submitNext(project.id, { human_review: humanReview ?? null })
       settled = true
       await pollActiveRun
       startTransition(() => {
@@ -278,7 +305,7 @@ export function useProject() {
       if (pollActiveRun) {
         await pollActiveRun
       }
-      setError(err instanceof Error ? err.message : 'Unable to submit the answer.')
+      setError(err instanceof Error ? err.message : 'Unable to generate the next question.')
     } finally {
       settled = true
       startTransition(() => {
@@ -470,7 +497,8 @@ export function useProject() {
     createProject: handleCreateProject,
     selectProject,
     startProject: handleStart,
-    submitNext: handleNext,
+    saveAnswer: handleSaveAnswer,
+    submitNext: handleGenerateNext,
     regenerateCurrentQuestion: handleRegenerateCurrentQuestion,
     deleteProject: handleDeleteProject,
     updateProject: handleUpdateProject,

@@ -40,6 +40,7 @@ const status: ProjectStatusResponse = {
   max_turn_limit: 40,
   latest_turn_no: 3,
   latest_turn_answered: false,
+  latest_turn_ready_for_next_generation: false,
   latest_question_text: 'Q3',
   latest_question_text_for_copy: 'Q3',
   latest_turn_regeneration_count: 2,

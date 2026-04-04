@@ -3,6 +3,7 @@ import { useEffect, useMemo, useState } from 'react'
 import { AnswerComposer } from './components/AnswerComposer'
 import { ConfirmDeleteDialog } from './components/ConfirmDeleteDialog'
 import { ActiveRunPanel } from './components/ExecutionTraceSection'
+import { GenerationControlPanel } from './components/GenerationControlPanel'
 import { ProjectSidebar } from './components/ProjectSidebar'
 import { RegenerationFeedbackBanner } from './components/RegenerationFeedbackBanner'
 import { StatsDashboard } from './components/StatsDashboard'
@@ -29,6 +30,7 @@ function App() {
     projects,
     regenerateCurrentQuestion,
     runs,
+    saveAnswer,
     selectProject,
     startProject,
     status,
@@ -118,7 +120,8 @@ function App() {
   const workingLabelMap = {
     creating: `${t('sidebar.createProject')}...`,
     starting: `${t('status.start')}...`,
-    submitting: `${t('status.generating')}`,
+    saving_answer: `${t('composer.saveAnswer')}...`,
+    generating_next: `${t('status.generating')}`,
     regenerating: `${t('status.regeneratingCurrent')}`,
     updating: `${t('sidebar.save')}...`,
     deleting: `${t('sidebar.delete')}...`,
@@ -127,6 +130,7 @@ function App() {
   } as const
   const workingLabel = busyAction ? workingLabelMap[busyAction] : null
   const infoMessage = lastMessageKey ? t(lastMessageKey as Parameters<typeof t>[0]) : ''
+  const latestTurn = turns[turns.length - 1] ?? null
   const overviewStats = [
     {
       label: t('app.activeSession'),
@@ -241,13 +245,29 @@ function App() {
               <div className="grid gap-4 xl:grid-cols-[minmax(0,1.45fr)_minmax(22rem,0.95fr)]">
                 <div className="flex min-h-0 flex-col gap-4">
                   <AnswerComposer
+                    key={`${project?.id ?? 'no-project'}-${latestTurn?.id ?? 'no-turn'}-${latestTurn?.answer_text ?? ''}`}
                     estimateDraftUsage={estimateDraftUsage}
+                    initialAnswer={latestTurn?.answer_text ?? ''}
                     locale={locale}
-                    onSubmit={submitNext}
+                    onSave={saveAnswer}
                     disabled={loading || !project || !projectStarted || projectFinished}
                     projectFinished={projectFinished}
                     projectStarted={projectStarted}
-                    workingLabel={busyAction === 'submitting' ? workingLabel : null}
+                    savedAnswer={latestTurn?.answer_text ?? null}
+                    workingLabel={busyAction === 'saving_answer' ? workingLabel : null}
+                    t={t}
+                  />
+
+                  <GenerationControlPanel
+                    canGenerateNext={Boolean(status?.latest_turn_ready_for_next_generation)}
+                    disabled={loading || !project || !projectStarted || projectFinished}
+                    estimateDraftUsage={estimateDraftUsage}
+                    locale={locale}
+                    onGenerateNext={submitNext}
+                    projectFinished={projectFinished}
+                    projectStarted={projectStarted}
+                    savedAnswer={latestTurn?.answer_text ?? null}
+                    workingLabel={busyAction === 'generating_next' ? workingLabel : null}
                     t={t}
                   />
 

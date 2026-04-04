@@ -181,6 +181,7 @@ export type ProjectStatusResponse = {
   max_turn_limit: number
   latest_turn_no: number | null
   latest_turn_answered: boolean | null
+  latest_turn_ready_for_next_generation: boolean
   latest_question_text: string | null
   latest_question_text_for_copy: string | null
   latest_turn_regeneration_count: number
@@ -199,6 +200,13 @@ export type TranscriptResponse = {
   turn_count: number
   usage_summary: TokenUsageSummary
   transcript: string
+}
+
+export type AnswerSubmitResponse = {
+  project_id: number
+  updated_turn: TurnRead
+  can_generate_next: boolean
+  message: string
 }
 
 export type CreateProjectPayload = {
@@ -221,6 +229,10 @@ export type UpdateProjectPayload = {
     git_url?: string | null
     git_ref?: string | null
   }
+}
+
+export type NextQuestionRequestPayload = {
+  human_review?: HumanReviewInput | null
 }
 
 export type CurrentQuestionRegenerateResponse = {

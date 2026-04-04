@@ -1,7 +1,9 @@
 import type {
+  AnswerSubmitResponse,
   CreateProjectPayload,
   CurrentQuestionRegenerateResponse,
   HumanReviewInput,
+  NextQuestionRequestPayload,
   ProjectNextResponse,
   ProjectRead,
   ProjectStartResponse,
@@ -50,11 +52,19 @@ export async function startProject(projectId: number) {
   })
 }
 
-export async function submitNext(projectId: number, answer_text: string, human_review?: HumanReviewInput | null) {
+export async function submitAnswer(projectId: number, answer_text: string) {
+  return request<AnswerSubmitResponse>(`/projects/${projectId}/answer`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ answer_text }),
+  })
+}
+
+export async function submitNext(projectId: number, payload?: NextQuestionRequestPayload) {
   return request<ProjectNextResponse>(`/projects/${projectId}/next`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ answer_text, human_review: human_review ?? null }),
+    body: JSON.stringify({ human_review: payload?.human_review ?? null }),
   })
 }
 
