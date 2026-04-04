@@ -92,11 +92,30 @@ class CurrentQuestionRegenerateRequest(BaseModel):
     human_review: HumanReviewInput | None = None
 
 
+class CurrentQuestionRegenerateAppliedChanges(BaseModel):
+    review_persisted: bool
+    planner_followed_review: bool
+    question_changed: bool
+    previous_stage: str
+    current_stage: str
+    stage_changed: bool
+    requested_focus: str | None = None
+    requested_verdict: str | None = None
+    requested_direction: str | None = None
+    note_applied: bool = False
+    phase_ready_applied: bool = False
+    question_version_before: int
+    question_version_after: int
+    regeneration_count_before: int
+    regeneration_count_after: int
+
+
 class CurrentQuestionRegenerateResponse(BaseModel):
     project_id: int
     turn: TurnRead
     run_id: int | None = None
     usage_summary: TokenUsageSummary
+    applied_changes: CurrentQuestionRegenerateAppliedChanges
     message: str
 
 

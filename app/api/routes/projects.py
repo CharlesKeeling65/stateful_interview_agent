@@ -275,6 +275,10 @@ def regenerate_current_question(
 
     try:
         human_review_signal = payload.human_review.model_dump() if payload.human_review else None
+        previous_stage = latest_turn.stage
+        previous_question_text = latest_turn.question_text
+        previous_version_no = latest_turn.current_question_version_no
+        previous_regeneration_count = latest_turn.question_regeneration_count
         corrected_stage = normalize_stage_name((human_review_signal or {}).get("phase")) if human_review_signal else None
         effective_stage = corrected_stage or latest_turn.stage
         if human_review_signal and human_review_signal.get("phase") and not corrected_stage:
@@ -393,6 +397,23 @@ def regenerate_current_question(
             "completion_tokens": usage_summary["completion_tokens"],
             "total_tokens": usage_summary["total_tokens"],
             "estimated_total_tokens": usage_summary["total_tokens"] if usage_summary["is_estimated"] else 0,
+        },
+        "applied_changes": {
+            "review_persisted": bool(latest_turn.human_review),
+            "planner_followed_review": bool((latest_turn.question_plan or {}).get("human_review_applied")),
+            "question_changed": latest_turn.question_text != previous_question_text,
+            "previous_stage": previous_stage,
+            "current_stage": latest_turn.stage,
+            "stage_changed": latest_turn.stage != previous_stage,
+            "requested_focus": (human_review_signal or {}).get("preferred_next_focus"),
+            "requested_verdict": (human_review_signal or {}).get("verdict"),
+            "requested_direction": (human_review_signal or {}).get("direction"),
+            "note_applied": bool((human_review_signal or {}).get("note")),
+            "phase_ready_applied": bool((human_review_signal or {}).get("phase_ready")),
+            "question_version_before": previous_version_no,
+            "question_version_after": latest_turn.current_question_version_no,
+            "regeneration_count_before": previous_regeneration_count,
+            "regeneration_count_after": latest_turn.question_regeneration_count,
         },
         "message": "Current question regenerated successfully.",
     }

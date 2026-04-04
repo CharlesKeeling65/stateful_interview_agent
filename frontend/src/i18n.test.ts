@@ -4,6 +4,7 @@ import {
   type Locale,
   createTranslator,
   getDisplayStageLabel,
+  getReviewFocusLabel,
   getReviewVerdictLabel,
 } from './i18n'
 
@@ -38,5 +39,11 @@ describe('i18n display helpers', () => {
   ] as const)('formats human review verdicts for %s', (locale, verdict, expected) => {
     expect(getReviewVerdictLabel(verdict, locale as Locale)).toBe(expected)
   })
-})
 
+  it.each([
+    ['en', 'architecture', 'Architecture'],
+    ['zh-CN', 'code_detail', '代码细节'],
+  ] as const)('formats human review focus labels for %s', (locale, focus, expected) => {
+    expect(getReviewFocusLabel(focus, locale as Locale)).toBe(expected)
+  })
+})

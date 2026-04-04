@@ -4,6 +4,7 @@ import { AnswerComposer } from './components/AnswerComposer'
 import { ConfirmDeleteDialog } from './components/ConfirmDeleteDialog'
 import { ActiveRunPanel } from './components/ExecutionTraceSection'
 import { ProjectSidebar } from './components/ProjectSidebar'
+import { RegenerationFeedbackBanner } from './components/RegenerationFeedbackBanner'
 import { StatsDashboard } from './components/StatsDashboard'
 import { StatusPanel } from './components/StatusPanel'
 import { TranscriptPanel } from './components/TranscriptPanel'
@@ -22,6 +23,7 @@ function App() {
     deleteProject,
     error,
     lastMessageKey,
+    lastRegenerationFeedback,
     loading,
     project,
     projects,
@@ -242,6 +244,15 @@ function App() {
                   run={activeRun}
                   t={t}
                   variant={busyAction === 'regenerating' ? 'regenerate' : 'next'}
+                />
+              ) : null}
+
+              {lastRegenerationFeedback ? (
+                <RegenerationFeedbackBanner
+                  feedback={lastRegenerationFeedback.applied_changes}
+                  locale={locale}
+                  t={t}
+                  tokensUsed={lastRegenerationFeedback.usage_summary.total_tokens}
                 />
               ) : null}
 

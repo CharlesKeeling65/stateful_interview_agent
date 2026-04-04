@@ -148,6 +148,22 @@ const translations = {
     'trace.activeCopy': 'The agent is moving through the orchestration steps below. This panel updates while the run is active.',
     'trace.regeneratingTitle': 'Regenerating the current question',
     'trace.regeneratingCopy': 'The agent is revising this same turn and refreshing the execution steps below while regeneration is in progress.',
+    'trace.reviewAppliedTitle': 'Applied review changes',
+    'trace.reviewAppliedCopy': 'This summary confirms which human review signals were saved and what changed in the regenerated question.',
+    'trace.reviewPersisted': 'Review saved',
+    'trace.reviewUsed': 'Planner followed review',
+    'trace.questionChanged': 'Question wording changed',
+    'trace.questionUnchanged': 'Question wording unchanged',
+    'trace.stageChanged': 'Stage corrected',
+    'trace.stageUnchanged': 'Stage kept',
+    'trace.focusApplied': 'Focus applied',
+    'trace.verdictApplied': 'Verdict recorded',
+    'trace.directionApplied': 'Direction recorded',
+    'trace.noteApplied': 'Human note attached',
+    'trace.phaseReadyApplied': 'Phase marked ready',
+    'trace.versionMoved': 'Question version',
+    'trace.regenerationMoved': 'Regenerations',
+    'trace.tokensUsed': 'This regeneration',
     'trace.live': 'Live',
     'trace.total': 'Total',
     'trace.duration': 'Duration',
@@ -343,6 +359,22 @@ const translations = {
     'trace.activeCopy': 'Agent 正在依次经过下方编排步骤，面板会在运行期间持续刷新。',
     'trace.regeneratingTitle': '正在重生成当前问题',
     'trace.regeneratingCopy': 'Agent 正在围绕同一轮问题重新修订，并在重生成期间持续刷新下方步骤链条。',
+    'trace.reviewAppliedTitle': '本次已生效的人工纠偏',
+    'trace.reviewAppliedCopy': '这里会明确说明这次人工评审信号是否已写入，并且是否真正作用到了当前问题的重生成。',
+    'trace.reviewPersisted': '人工评审已保存',
+    'trace.reviewUsed': '规划器已采纳评审信号',
+    'trace.questionChanged': '问题文案已变化',
+    'trace.questionUnchanged': '问题文案未变化',
+    'trace.stageChanged': '阶段已纠正',
+    'trace.stageUnchanged': '阶段保持不变',
+    'trace.focusApplied': '已应用追问焦点',
+    'trace.verdictApplied': '已记录评审结论',
+    'trace.directionApplied': '已记录推进方向',
+    'trace.noteApplied': '已附加人工备注',
+    'trace.phaseReadyApplied': '已标记阶段完成',
+    'trace.versionMoved': '问题版本',
+    'trace.regenerationMoved': '重生成次数',
+    'trace.tokensUsed': '本次重生成消耗',
     'trace.live': '实时',
     'trace.total': '总耗时',
     'trace.duration': '耗时',
@@ -526,6 +558,33 @@ export function getReviewDirectionLabel(direction: string | null | undefined, lo
   }
 
   return directionLabels[direction]?.[locale] ?? humanizeSnakeCase(direction)
+}
+
+export function getReviewFocusLabel(focus: string | null | undefined, locale: Locale) {
+  if (!focus) {
+    return locale === 'zh-CN' ? '未标注' : 'Not set'
+  }
+
+  const labels: Record<string, Record<Locale, string>> = {
+    panorama: {
+      en: 'Panorama',
+      'zh-CN': '全景',
+    },
+    architecture: {
+      en: 'Architecture',
+      'zh-CN': '架构',
+    },
+    code_detail: {
+      en: 'Code detail',
+      'zh-CN': '代码细节',
+    },
+    use_cases: {
+      en: 'Use cases',
+      'zh-CN': '使用场景',
+    },
+  }
+
+  return labels[focus]?.[locale] ?? humanizeSnakeCase(focus)
 }
 
 export function getRuntimeStatusText(status: 'finished' | 'in_progress' | 'ready' | 'empty', locale: Locale) {

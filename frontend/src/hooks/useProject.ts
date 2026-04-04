@@ -17,6 +17,7 @@ import {
 } from '../api/client'
 import type {
   CreateProjectPayload,
+  CurrentQuestionRegenerateResponse,
   HumanReviewInput,
   ProjectRead,
   ProjectStatusResponse,
@@ -75,6 +76,8 @@ export function useProject() {
   const [busyAction, setBusyAction] = useState<BusyAction>(null)
   const [error, setError] = useState('')
   const [lastMessageKey, setLastMessageKey] = useState('')
+  const [lastRegenerationFeedback, setLastRegenerationFeedback] =
+    useState<CurrentQuestionRegenerateResponse | null>(null)
 
   async function refreshProjects(preferredProjectId?: number) {
     const items = await listProjects()
@@ -121,6 +124,7 @@ export function useProject() {
         setRuns(details.runs)
         setActiveRun(details.runs.find((run) => run.status === 'running') ?? null)
         setLastMessageKey('')
+        setLastRegenerationFeedback(null)
       })
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Unable to load that project.')
@@ -196,6 +200,7 @@ export function useProject() {
     setBusyAction('starting')
     setLoading(true)
     setError('')
+    setLastRegenerationFeedback(null)
 
     try {
       const result = await startProject(project.id)
@@ -221,6 +226,7 @@ export function useProject() {
     setLoading(true)
     setError('')
     setLastMessageKey('status.generating')
+    setLastRegenerationFeedback(null)
 
     let settled = false
     let pollActiveRun: Promise<void> | null = null
@@ -292,6 +298,7 @@ export function useProject() {
     setLoading(true)
     setError('')
     setLastMessageKey('status.regeneratingCurrent')
+    setLastRegenerationFeedback(null)
 
     let settled = false
     let pollActiveRun: Promise<void> | null = null
@@ -330,11 +337,12 @@ export function useProject() {
         }
       })()
 
-      await regenerateCurrentQuestion(project.id, turnId, humanReview ?? null)
+      const result = await regenerateCurrentQuestion(project.id, turnId, humanReview ?? null)
       settled = true
       await pollActiveRun
       startTransition(() => {
         setLastMessageKey('status.regeneratedCurrent')
+        setLastRegenerationFeedback(result)
       })
       await refreshSelected(project.id)
     } catch (err) {
@@ -440,6 +448,7 @@ export function useProject() {
     busyAction,
     error,
     lastMessageKey,
+    lastRegenerationFeedback,
     loading,
     project,
     projects,

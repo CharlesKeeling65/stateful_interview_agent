@@ -236,6 +236,17 @@ class ProjectApiFlowTests(unittest.TestCase):
             0,
         )
         self.assertGreater(payload["usage_summary"]["total_tokens"], 0)
+        self.assertTrue(payload["applied_changes"]["review_persisted"])
+        self.assertTrue(payload["applied_changes"]["planner_followed_review"])
+        self.assertEqual(payload["applied_changes"]["question_version_before"], 1)
+        self.assertEqual(payload["applied_changes"]["question_version_after"], 2)
+        self.assertEqual(payload["applied_changes"]["regeneration_count_before"], 0)
+        self.assertEqual(payload["applied_changes"]["regeneration_count_after"], 1)
+        self.assertEqual(payload["applied_changes"]["requested_focus"], "architecture")
+        self.assertEqual(payload["applied_changes"]["requested_verdict"], "insufficient")
+        self.assertEqual(payload["applied_changes"]["requested_direction"], "redirect")
+        self.assertTrue(payload["applied_changes"]["note_applied"])
+        self.assertFalse(payload["applied_changes"]["phase_ready_applied"])
 
         turns = self.client.get(f"/projects/{project_id}/turns")
         self.assertEqual(turns.status_code, 200)
@@ -284,6 +295,9 @@ class ProjectApiFlowTests(unittest.TestCase):
         self.assertEqual(payload["turn"]["question_plan"]["phase"], "Architecture Understanding")
         self.assertEqual(payload["turn"]["human_review"]["phase"], "Architecture Understanding")
         self.assertEqual(payload["turn"]["question_versions"][-1]["human_review"]["phase"], "Architecture Understanding")
+        self.assertEqual(payload["applied_changes"]["previous_stage"], "Panorama Mapping")
+        self.assertEqual(payload["applied_changes"]["current_stage"], "Architecture Understanding")
+        self.assertTrue(payload["applied_changes"]["stage_changed"])
 
         project = self.client.get(f"/projects/{project_id}")
         self.assertEqual(project.status_code, 200)

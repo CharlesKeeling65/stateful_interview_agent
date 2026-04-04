@@ -188,5 +188,22 @@ export type CurrentQuestionRegenerateResponse = {
   turn: TurnRead
   run_id: number | null
   usage_summary: TokenUsageSummary
+  applied_changes: {
+    review_persisted: boolean
+    planner_followed_review: boolean
+    question_changed: boolean
+    previous_stage: string
+    current_stage: string
+    stage_changed: boolean
+    requested_focus?: string | null
+    requested_verdict?: string | null
+    requested_direction?: string | null
+    note_applied: boolean
+    phase_ready_applied: boolean
+    question_version_before: number
+    question_version_after: number
+    regeneration_count_before: number
+    regeneration_count_after: number
+  }
   message: string
 }
