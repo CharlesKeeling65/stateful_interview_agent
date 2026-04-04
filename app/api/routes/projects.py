@@ -317,6 +317,39 @@ def regenerate_current_question(
     except HTTPException:
         finalize_run(run_id=run.id, status="failed")
         raise
+    except ValueError as exc:
+        finalize_run(run_id=run.id, status="failed")
+        emit_event(
+            "workflow",
+            "turn.regenerate.error",
+            "Current question regeneration failed validation",
+            level=40,
+            operation="regenerate_current_question",
+            project_id=project_id,
+            turn_no=latest_turn.turn_no,
+            exc_info=exc,
+        )
+        raise HTTPException(status_code=400, detail=str(exc))
+    except ImportError as exc:
+        finalize_run(run_id=run.id, status="failed")
+        emit_event(
+            "workflow",
+            "turn.regenerate.error",
+            "Current question regeneration failed due to LLM client configuration",
+            level=40,
+            operation="regenerate_current_question",
+            project_id=project_id,
+            turn_no=latest_turn.turn_no,
+            exc_info=exc,
+        )
+        raise HTTPException(
+            status_code=503,
+            detail=(
+                "Question regeneration is temporarily unavailable because the LLM client "
+                "could not be initialized. Check proxy settings or install the optional "
+                "SOCKS dependency for httpx."
+            ),
+        )
     except Exception as exc:
         finalize_run(run_id=run.id, status="failed")
         emit_event(

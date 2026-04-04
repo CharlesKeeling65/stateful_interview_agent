@@ -10,6 +10,7 @@ from fastapi.testclient import TestClient
 from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
 
+from app.api.routes import projects as project_routes
 from app.core.database import Base, get_db
 from app.graphs import interview_graph as graph_module
 from app.main import app
@@ -245,6 +246,46 @@ class ProjectApiFlowTests(unittest.TestCase):
             turns_payload[0]["human_intervention_regeneration_usage_summary"]["total_tokens"],
             0,
         )
+
+    def test_regenerate_current_question_returns_bad_request_for_validation_failure(self):
+        created = self.client.post(
+            "/projects",
+            json={
+                "project_name": "Validation Failure Session",
+                "system_prompt": "You are a stateful interview agent.",
+            },
+        )
+        self.assertEqual(created.status_code, 200)
+        project_id = created.json()["id"]
+
+        started = self.client.post(f"/projects/{project_id}/start")
+        self.assertEqual(started.status_code, 200)
+        current_turn = started.json()["first_turn"]
+
+        original_generate = project_routes.generate_question_for_state
+        failure_client = TestClient(app, raise_server_exceptions=False)
+        try:
+            project_routes.generate_question_for_state = lambda **_kwargs: (_ for _ in ()).throw(
+                ValueError(
+                    "Generated question failed stage-specific validation: "
+                    "Question is too similar to a recently asked question and should target a different branch or implementation detail."
+                )
+            )
+            regenerated = failure_client.post(
+                f"/projects/{project_id}/turns/{current_turn['id']}/regenerate-question",
+                json={
+                    "human_review": {
+                        "verdict": "insufficient",
+                        "direction": "redirect",
+                        "preferred_next_focus": "branch detail",
+                    }
+                },
+            )
+        finally:
+            project_routes.generate_question_for_state = original_generate
+
+        self.assertEqual(regenerated.status_code, 400)
+        self.assertIn("too similar to a recently asked question", regenerated.json()["detail"])
 
 
 if __name__ == "__main__":
