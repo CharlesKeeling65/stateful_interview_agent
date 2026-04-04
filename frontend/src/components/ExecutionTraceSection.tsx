@@ -1,4 +1,4 @@
-import { memo, useMemo, useState } from 'react'
+import { memo, useEffect, useMemo, useRef, useState } from 'react'
 
 import { getRunStatusLabel, getStepStatusLabel, type Locale, type Translator } from '../i18n'
 import type { RunRead, RunStepRead } from '../types/api'
@@ -108,6 +108,7 @@ export const ExecutionTraceSection = memo(function ExecutionTraceSection({
   title,
 }: ExecutionTraceSectionProps) {
   const [expanded, setExpanded] = useState(defaultExpanded)
+  const stepsContainerRef = useRef<HTMLDivElement | null>(null)
   const completedSteps = useMemo(
     () => run.steps.filter((step) => step.status === 'completed').length,
     [run.steps],
@@ -121,6 +122,13 @@ export const ExecutionTraceSection = memo(function ExecutionTraceSection({
   )
 
   const runStatusLabel = getRunStatusLabel(run.status, locale)
+
+  useEffect(() => {
+    if (!expanded || !stepsContainerRef.current) {
+      return
+    }
+    stepsContainerRef.current.scrollTop = stepsContainerRef.current.scrollHeight
+  }, [expanded, run.steps, currentStep])
 
   return (
     <section className="rounded-[1.5rem] border border-slate-200 bg-slate-50/75">
@@ -165,16 +173,21 @@ export const ExecutionTraceSection = memo(function ExecutionTraceSection({
       </button>
 
       {expanded ? (
-        <div className="space-y-3 border-t border-slate-200 px-4 py-4">
-          {run.steps.map((step) => (
-            <StepRow
-              key={step.id}
-              locale={locale}
-              step={step}
-              isCurrent={run.status === 'running' && step.id === currentStep?.id}
-              t={t}
-            />
-          ))}
+        <div className="border-t border-slate-200 px-4 py-4">
+          <div
+            ref={stepsContainerRef}
+            className="h-72 space-y-3 overflow-y-auto pr-1"
+          >
+            {run.steps.map((step) => (
+              <StepRow
+                key={step.id}
+                locale={locale}
+                step={step}
+                isCurrent={run.status === 'running' && step.id === currentStep?.id}
+                t={t}
+              />
+            ))}
+          </div>
         </div>
       ) : null}
     </section>

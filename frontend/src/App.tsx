@@ -238,35 +238,37 @@ function App() {
 
           {page === 'workspace' ? (
             <div className="flex min-h-[70vh] flex-col gap-4">
-              {activeRun ? (
-                <ActiveRunPanel
-                  locale={locale}
-                  run={activeRun}
-                  t={t}
-                  variant={busyAction === 'regenerating' ? 'regenerate' : 'next'}
-                />
-              ) : null}
-
-              {lastRegenerationFeedback ? (
-                <RegenerationFeedbackBanner
-                  feedback={lastRegenerationFeedback.applied_changes}
-                  locale={locale}
-                  t={t}
-                  tokensUsed={lastRegenerationFeedback.usage_summary.total_tokens}
-                />
-              ) : null}
-
               <div className="grid gap-4 xl:grid-cols-[minmax(0,1.45fr)_minmax(22rem,0.95fr)]">
-                <AnswerComposer
-                  estimateDraftUsage={estimateDraftUsage}
-                  locale={locale}
-                  onSubmit={submitNext}
-                  disabled={loading || !project || !projectStarted || projectFinished}
-                  projectFinished={projectFinished}
-                  projectStarted={projectStarted}
-                  workingLabel={busyAction === 'submitting' ? workingLabel : null}
-                  t={t}
-                />
+                <div className="flex min-h-0 flex-col gap-4">
+                  <AnswerComposer
+                    estimateDraftUsage={estimateDraftUsage}
+                    locale={locale}
+                    onSubmit={submitNext}
+                    disabled={loading || !project || !projectStarted || projectFinished}
+                    projectFinished={projectFinished}
+                    projectStarted={projectStarted}
+                    workingLabel={busyAction === 'submitting' ? workingLabel : null}
+                    t={t}
+                  />
+
+                  {activeRun ? (
+                    <ActiveRunPanel
+                      locale={locale}
+                      run={activeRun}
+                      t={t}
+                      variant={busyAction === 'regenerating' ? 'regenerate' : 'next'}
+                    />
+                  ) : null}
+
+                  {lastRegenerationFeedback ? (
+                    <RegenerationFeedbackBanner
+                      feedback={lastRegenerationFeedback.applied_changes}
+                      locale={locale}
+                      t={t}
+                      tokensUsed={lastRegenerationFeedback.usage_summary.total_tokens}
+                    />
+                  ) : null}
+                </div>
 
                 <StatusPanel
                   errorMessage={error}

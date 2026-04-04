@@ -56,6 +56,7 @@ export function StatusPanel({
 }: StatusPanelProps) {
   const projectFinished = isProjectFinished(project, status)
   const started = hasInterviewStarted(project)
+  const canExport = Boolean(transcript?.transcript)
 
   return (
     <aside className="flex h-full flex-col gap-4">
@@ -78,7 +79,7 @@ export function StatusPanel({
         </div>
 
         {project ? (
-          <div className="mt-5 grid gap-3 sm:grid-cols-2 xl:grid-cols-1">
+          <div className="mt-5 grid gap-3 sm:grid-cols-2">
             <StatusItem label={t('status.projectId')} value={`#${project.id}`} />
             <div className="rounded-2xl border border-slate-200 bg-white px-4 py-3">
               <p className="text-[0.64rem] font-semibold uppercase tracking-[0.22em] text-slate-500">
@@ -163,9 +164,9 @@ export function StatusPanel({
             {t('status.exportHint')}
           </p>
 
-          <div className="mt-4 flex flex-wrap gap-2">
+          <div className="mt-4 grid gap-2 sm:grid-cols-3">
             <ActionButton
-              disabled={!transcript?.transcript}
+              disabled={!canExport}
               icon={<CopyIcon />}
               label={
                 exportLabel === 'Copying...' ? `${t('status.copyTranscript')}...`
@@ -176,14 +177,14 @@ export function StatusPanel({
               type="button"
             />
             <ActionButton
-              disabled={!transcript?.transcript}
+              disabled={!canExport}
               icon={<DownloadIcon />}
               label={exportLabel === 'Exporting .txt...' ? `${t('status.exportTxt')}...` : t('status.exportTxt')}
               onClick={onExportText}
               type="button"
             />
             <ActionButton
-              disabled={!transcript?.transcript}
+              disabled={!canExport}
               icon={<DownloadIcon />}
               label={exportLabel === 'Exporting .md...' ? `${t('status.exportMd')}...` : t('status.exportMd')}
               onClick={onExportMarkdown}
@@ -191,8 +192,9 @@ export function StatusPanel({
             />
           </div>
         </div>
+
         <p className="mt-3 text-xs leading-6 text-slate-500">
-          {transcript?.transcript
+          {canExport
             ? t('status.exportReady')
             : t('status.exportLocked')}
         </p>
