@@ -1,3 +1,5 @@
+import json
+
 from fastapi import APIRouter, Depends, HTTPException, Response, status
 from sqlalchemy.orm import Session
 
@@ -34,6 +36,7 @@ from app.services.question_version_service import (
     summarize_usage_metrics,
 )
 from app.services.run_trace_service import create_run, finalize_run, serialize_run
+from app.services.stage_manager import normalize_stage_name
 from app.services.transcript_service import build_project_transcript
 from app.services.usage_service import aggregate_project_usage, create_usage_record
 
@@ -270,6 +273,13 @@ def regenerate_current_question(
     bind_log_context(run_id=run.id)
 
     try:
+        human_review_signal = payload.human_review.model_dump() if payload.human_review else None
+        corrected_stage = normalize_stage_name((human_review_signal or {}).get("phase")) if human_review_signal else None
+        effective_stage = corrected_stage or latest_turn.stage
+        if human_review_signal and human_review_signal.get("phase") and not corrected_stage:
+            raise HTTPException(status_code=400, detail="Invalid stage correction for current question regeneration")
+
+        latest_turn.stage = effective_stage
         turns = (
             db.query(InterviewTurn)
             .filter(InterviewTurn.project_id == project_id)
@@ -277,9 +287,9 @@ def regenerate_current_question(
             .all()
         )
         generation_payload = generate_question_for_state(
-            current_stage=latest_turn.stage,
+            current_stage=effective_stage,
             db=db,
-            human_review_signal=payload.human_review.model_dump() if payload.human_review else None,
+            human_review_signal=human_review_signal,
             latest_answer_override=None,
             project=project,
             run_id=run.id,
@@ -288,8 +298,15 @@ def regenerate_current_question(
         )
 
         ensure_initial_question_version(db, latest_turn)
+        latest_turn.stage = effective_stage
         latest_turn.question_text = generation_payload["generated_question"]
         latest_turn.question_plan_json = build_question_plan_json(generation_payload)
+        latest_turn.human_review_json = (
+            json.dumps(human_review_signal, ensure_ascii=True, sort_keys=True)
+            if human_review_signal
+            else None
+        )
+        project.current_stage = effective_stage
 
         for usage_metrics in generation_payload["question_usage_metrics"]:
             db.add(
@@ -306,7 +323,7 @@ def regenerate_current_question(
             db=db,
             turn=latest_turn,
             generation_kind="human_regeneration",
-            human_review_signal=payload.human_review.model_dump() if payload.human_review else None,
+            human_review_signal=human_review_signal,
             question_plan_json=latest_turn.question_plan_json,
             question_text=latest_turn.question_text,
             usage_metrics_list=generation_payload["question_usage_metrics"],

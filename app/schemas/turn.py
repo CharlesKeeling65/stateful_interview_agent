@@ -12,6 +12,7 @@ class HumanReviewInput(BaseModel):
     direction: Literal["continue", "redirect"] = "continue"
     preferred_next_focus: str | None = Field(default=None, max_length=120)
     note: str | None = Field(default=None, max_length=500)
+    phase: str | None = Field(default=None, max_length=80)
     phase_ready: bool | None = None
 
 

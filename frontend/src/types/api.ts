@@ -22,6 +22,7 @@ export type HumanReviewInput = {
   direction: 'continue' | 'redirect'
   preferred_next_focus?: string | null
   note?: string | null
+  phase?: string | null
   phase_ready?: boolean | null
 }
 

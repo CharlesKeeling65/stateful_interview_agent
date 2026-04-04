@@ -11,6 +11,51 @@ CODE_DETAIL_STAGE = "Code Detail Completion"
 USE_CASE_STAGE = "Use Cases & Scenarios"
 WRAP_UP_STAGE = "Final Wrap-up"
 
+STAGE_ALIASES = {
+    "panorama": PANORAMA_STAGE,
+    "panorama_mapping": PANORAMA_STAGE,
+    "panorama mapping": PANORAMA_STAGE,
+    "architecture": ARCHITECTURE_STAGE,
+    "architecture_understanding": ARCHITECTURE_STAGE,
+    "architecture understanding": ARCHITECTURE_STAGE,
+    "code_detail": CODE_DETAIL_STAGE,
+    "code_detail_completion": CODE_DETAIL_STAGE,
+    "code detail": CODE_DETAIL_STAGE,
+    "code detail completion": CODE_DETAIL_STAGE,
+    "use_case": USE_CASE_STAGE,
+    "use_cases": USE_CASE_STAGE,
+    "use_case_scenarios": USE_CASE_STAGE,
+    "use cases & scenarios": USE_CASE_STAGE,
+    "use cases and scenarios": USE_CASE_STAGE,
+    "final_wrap_up": WRAP_UP_STAGE,
+    "final wrap-up": WRAP_UP_STAGE,
+    "wrap_up": WRAP_UP_STAGE,
+    "wrap up": WRAP_UP_STAGE,
+}
+
+
+def normalize_stage_name(value: str | None) -> str | None:
+    if not value:
+        return None
+
+    candidate = value.strip()
+    if not candidate:
+        return None
+
+    normalized = candidate.lower().replace("-", " ").replace("_", " ")
+    normalized = " ".join(normalized.split())
+
+    if candidate in {
+        PANORAMA_STAGE,
+        ARCHITECTURE_STAGE,
+        CODE_DETAIL_STAGE,
+        USE_CASE_STAGE,
+        WRAP_UP_STAGE,
+    }:
+        return candidate
+
+    return STAGE_ALIASES.get(normalized) or STAGE_ALIASES.get(normalized.replace(" ", "_"))
+
 
 def determine_stage_by_turn(turn_no: int) -> str:
     if 1 <= turn_no <= 5:

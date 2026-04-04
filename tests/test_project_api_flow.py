@@ -25,6 +25,8 @@ class _FakeChatCompletions:
             content = "Concise summary with architecture detail and unresolved integration point."
         elif "Start the interview" in user_content:
             content = "Q1: What is the project trying to achieve for its primary users?"
+        elif "Next question number: Q1" in user_content:
+            content = "Q1: Which modules coordinate the core workflow, and how do requests move between them?"
         elif "Next question number: Q2" in user_content:
             content = "Q2: Which modules coordinate the core workflow end to end?"
         elif "Next question number: Q3" in user_content:
@@ -246,6 +248,50 @@ class ProjectApiFlowTests(unittest.TestCase):
             turns_payload[0]["human_intervention_regeneration_usage_summary"]["total_tokens"],
             0,
         )
+
+    def test_regenerate_current_question_can_correct_stage_and_persist_review(self):
+        created = self.client.post(
+            "/projects",
+            json={
+                "project_name": "Stage Correction Session",
+                "system_prompt": "You are a stateful interview agent.",
+            },
+        )
+        self.assertEqual(created.status_code, 200)
+        project_id = created.json()["id"]
+
+        started = self.client.post(f"/projects/{project_id}/start")
+        self.assertEqual(started.status_code, 200)
+        current_turn = started.json()["first_turn"]
+
+        regenerated = self.client.post(
+            f"/projects/{project_id}/turns/{current_turn['id']}/regenerate-question",
+            json={
+                "human_review": {
+                    "verdict": "drifted",
+                    "direction": "redirect",
+                    "preferred_next_focus": "architecture",
+                    "note": "This should move to architecture instead of staying at panorama.",
+                    "phase": "Architecture Understanding",
+                    "phase_ready": False,
+                }
+            },
+        )
+        self.assertEqual(regenerated.status_code, 200)
+        payload = regenerated.json()
+
+        self.assertEqual(payload["turn"]["stage"], "Architecture Understanding")
+        self.assertEqual(payload["turn"]["question_plan"]["phase"], "Architecture Understanding")
+        self.assertEqual(payload["turn"]["human_review"]["phase"], "Architecture Understanding")
+        self.assertEqual(payload["turn"]["question_versions"][-1]["human_review"]["phase"], "Architecture Understanding")
+
+        project = self.client.get(f"/projects/{project_id}")
+        self.assertEqual(project.status_code, 200)
+        self.assertEqual(project.json()["current_stage"], "Architecture Understanding")
+
+        status = self.client.get(f"/projects/{project_id}/status")
+        self.assertEqual(status.status_code, 200)
+        self.assertEqual(status.json()["current_stage"], "Architecture Understanding")
 
     def test_regenerate_current_question_returns_bad_request_for_validation_failure(self):
         created = self.client.post(

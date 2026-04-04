@@ -56,10 +56,11 @@ export const TurnCard = memo(function TurnCard({
   const [reviewDirection, setReviewDirection] = useState<'continue' | 'redirect'>('continue')
   const [preferredNextFocus, setPreferredNextFocus] = useState('')
   const [reviewNote, setReviewNote] = useState('')
+  const [correctedPhase, setCorrectedPhase] = useState('')
   const [phaseReady, setPhaseReady] = useState(false)
   const showingCollapsedAnswer = shouldCollapseAnswer && !answerExpanded
   function buildHumanReviewSignal() {
-    if (!reviewVerdict && !preferredNextFocus.trim() && !reviewNote.trim() && !phaseReady) {
+    if (!reviewVerdict && !preferredNextFocus.trim() && !reviewNote.trim() && !correctedPhase && !phaseReady) {
       return {
         direction: reviewDirection,
       }
@@ -70,6 +71,7 @@ export const TurnCard = memo(function TurnCard({
       direction: reviewDirection,
       preferred_next_focus: preferredNextFocus.trim() || null,
       note: reviewNote.trim() || null,
+      phase: correctedPhase || null,
       phase_ready: phaseReady || null,
     }
   }
@@ -399,6 +401,24 @@ export const TurnCard = memo(function TurnCard({
                   </select>
                 </label>
 
+                <label className="text-sm text-slate-700">
+                  <span className="text-[0.64rem] font-semibold uppercase tracking-[0.18em] text-slate-500">
+                    {t('composer.phaseCorrection')}
+                  </span>
+                  <select
+                    className="mt-2 w-full rounded-2xl border border-slate-200 bg-white px-3 py-2.5 outline-none focus:border-amber-500 focus:ring-2 focus:ring-amber-200"
+                    value={correctedPhase}
+                    onChange={(event) => setCorrectedPhase(event.target.value)}
+                  >
+                    <option value="">{t('composer.noPhaseCorrection')}</option>
+                    <option value="Panorama Mapping">{getDisplayStageLabel('Panorama Mapping', locale)}</option>
+                    <option value="Architecture Understanding">{getDisplayStageLabel('Architecture Understanding', locale)}</option>
+                    <option value="Code Detail Completion">{getDisplayStageLabel('Code Detail Completion', locale)}</option>
+                    <option value="Use Cases & Scenarios">{getDisplayStageLabel('Use Cases & Scenarios', locale)}</option>
+                    <option value="Final Wrap-up">{getDisplayStageLabel('Final Wrap-up', locale)}</option>
+                  </select>
+                </label>
+
                 <label className="flex items-center gap-3 rounded-2xl border border-slate-200 bg-white px-4 py-3 text-sm text-slate-700">
                   <input
                     checked={phaseReady}
@@ -452,6 +472,11 @@ export const TurnCard = memo(function TurnCard({
               {turn.human_review.preferred_next_focus ? (
                 <span className="rounded-full bg-white/80 px-3 py-1">
                   {locale === 'zh-CN' ? '焦点' : 'Focus'}: {turn.human_review.preferred_next_focus}
+                </span>
+              ) : null}
+              {turn.human_review.phase ? (
+                <span className="rounded-full bg-white/80 px-3 py-1">
+                  {t('transcript.phaseCorrection')}: {getDisplayStageLabel(turn.human_review.phase, locale)}
                 </span>
               ) : null}
             </div>

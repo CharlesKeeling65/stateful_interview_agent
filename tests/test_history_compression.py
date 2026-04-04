@@ -51,6 +51,16 @@ class HistoryCompressionTests(unittest.TestCase):
             "Q2: What happens next?",
         )
 
+    def test_question_copy_variant_rewrites_wrong_turn_prefix_during_regeneration(self):
+        self.assertEqual(
+            clean_generated_question("Q20: Which method handles the edge case?", 19),
+            "Q19: Which method handles the edge case?",
+        )
+        self.assertEqual(
+            clean_generated_question("Q19: Q20: Which method handles the edge case?", 19),
+            "Q19: Which method handles the edge case?",
+        )
+
     def test_compact_context_uses_override_for_latest_pending_answer(self):
         turns = [
             InterviewTurn(

@@ -316,6 +316,8 @@ def format_human_review_context(human_review_signal: dict | None) -> str:
         parts.append(f"Preferred next focus: {human_review_signal['preferred_next_focus']}")
     if human_review_signal.get("note"):
         parts.append(f"Human note: {human_review_signal['note']}")
+    if human_review_signal.get("phase"):
+        parts.append(f"Corrected stage: {human_review_signal['phase']}")
     if human_review_signal.get("phase_ready") is not None:
         parts.append(f"Phase ready: {human_review_signal['phase_ready']}")
     return " | ".join(parts)
