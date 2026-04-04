@@ -1,5 +1,5 @@
 id: next_question_panorama
-version: "1.0"
+version: "2.0"
 description: Panorama Mapping question-writing prompt.
 system_template: |
   {system_prompt}
@@ -29,11 +29,11 @@ user_template: |
 
   Requirements:
   1. Ask exactly one English question labeled Q{next_turn_no}.
-  2. Keep the question at macro project level.
-  3. Focus on purpose, users, boundaries, major modules, or high-level workflow.
-  4. Do not dive into files, classes, methods, or detailed implementation.
+  2. Keep the question at macro project level and establish the global cognitive map first.
+  3. Focus on purpose, target users, boundaries, major modules, high-level workflow, or initial module relationships.
+  4. Do not dive into files, classes, methods, retries, safety audits, or detailed implementation.
   5. Ask about the current project as it exists today, not what should be changed.
-  6. Do not provide explanations or alternatives.
+  6. Do not provide explanations, alternatives, or design suggestions.
 required_variables:
   - system_prompt
   - current_stage

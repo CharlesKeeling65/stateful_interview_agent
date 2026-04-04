@@ -1,5 +1,5 @@
 id: next_question_use_cases
-version: "1.0"
+version: "2.0"
 description: Use Cases and Scenarios question-writing prompt.
 system_template: |
   {system_prompt}
@@ -29,11 +29,12 @@ user_template: |
 
   Requirements:
   1. Ask exactly one English question labeled Q{next_turn_no}.
-  2. Tie the question to a realistic scenario, user role, input/output pattern, boundary condition, or extension point.
+  2. Tie the question to a realistic current scenario, user role, input/output pattern, boundary condition, or extension point.
   3. Avoid drifting back to broad overview.
   4. Avoid purely internal code-detail questions unless they are necessary to explain a scenario boundary.
-  5. Ask how the current scenario behaves today, not what should change.
-  6. Do not provide explanations or alternatives.
+  5. Use the scenario contract explicitly: trigger, actor, inputs, process, outputs/results, and boundaries.
+  6. Ask how the current scenario behaves today, not what should change.
+  7. Do not provide explanations or alternatives.
 required_variables:
   - system_prompt
   - current_stage

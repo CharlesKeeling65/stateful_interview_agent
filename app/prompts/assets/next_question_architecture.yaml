@@ -1,5 +1,5 @@
 id: next_question_architecture
-version: "1.0"
+version: "2.0"
 description: Architecture Understanding question-writing prompt.
 system_template: |
   {system_prompt}
@@ -29,12 +29,12 @@ user_template: |
 
   Requirements:
   1. Ask exactly one English question labeled Q{next_turn_no}.
-  2. Focus on responsibilities, collaboration, communication mechanisms, or key call chains.
-  3. Avoid repeating shallow overview questions.
-  4. Avoid broad code-detail questions unless tied to a call path or component interaction.
+  2. Focus on responsibilities, collaboration mechanisms, key call chains, or system structure.
+  3. Avoid repeating shallow overview questions once panorama is already established.
+  4. Avoid broad code-detail questions unless tied to a concrete call path or component interaction.
   5. Stay in understand-current-code mode: ask how the current structure and interactions work.
   6. Do not ask for redesigns, refactors, proposed modifications, or test updates.
-  7. Do not provide explanations or alternatives.
+  7. Do not provide explanations, alternatives, or change proposals.
 required_variables:
   - system_prompt
   - current_stage
