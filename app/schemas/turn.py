@@ -29,6 +29,11 @@ class QuestionPlanRead(BaseModel):
     human_review_applied: bool | None = None
     drift_detected: bool | None = None
     why_this_question: str | None = None
+    repo_queries: list[str] = Field(default_factory=list)
+    repo_selected_paths: list[str] = Field(default_factory=list)
+    repo_selected_symbols: list[str] = Field(default_factory=list)
+    repo_commit_sha: str | None = None
+    repo_tool_calls: list[dict] = Field(default_factory=list)
 
 
 class TurnRead(BaseModel):

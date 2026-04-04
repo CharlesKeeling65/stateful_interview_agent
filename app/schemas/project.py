@@ -6,14 +6,35 @@ from app.schemas.turn import TurnRead
 from app.schemas.usage import TokenUsageSummary
 
 
+class RepositorySourceConfig(BaseModel):
+    source_type: str = "none"
+    local_path: str | None = None
+    git_url: str | None = None
+    git_ref: str | None = None
+    cache_path: str | None = None
+    commit_sha: str | None = None
+
+
+class RepositoryManifestRead(BaseModel):
+    root_path: str | None = None
+    file_count: int = 0
+    language_counts: dict[str, int] = Field(default_factory=dict)
+    top_level_directories: list[str] = Field(default_factory=list)
+    key_files: list[str] = Field(default_factory=list)
+    symbol_count: int = 0
+    last_indexed_at: str | None = None
+
+
 class ProjectCreate(BaseModel):
     project_name: str = Field(..., min_length=1, max_length=255)
     system_prompt: str = Field(..., min_length=1)
+    repository: RepositorySourceConfig | None = None
 
 
 class ProjectUpdate(BaseModel):
     project_name: str | None = Field(default=None, min_length=1, max_length=255)
     system_prompt: str | None = Field(default=None, min_length=1)
+    repository: RepositorySourceConfig | None = None
 
 
 class ProjectRead(BaseModel):
@@ -27,6 +48,8 @@ class ProjectRead(BaseModel):
     total_completion_tokens: int = 0
     total_tokens: int = 0
     estimated_total_tokens: int = 0
+    repository: RepositorySourceConfig = Field(default_factory=RepositorySourceConfig)
+    repository_manifest: RepositoryManifestRead = Field(default_factory=RepositoryManifestRead)
     created_at: datetime
     updated_at: datetime
 
@@ -73,6 +96,8 @@ class ProjectStatusResponse(BaseModel):
     cumulative_generation_time_ms: int = 0
     run_count: int = 0
     average_run_duration_ms: int = 0
+    repository: RepositorySourceConfig = Field(default_factory=RepositorySourceConfig)
+    repository_manifest: RepositoryManifestRead = Field(default_factory=RepositoryManifestRead)
     usage_summary: TokenUsageSummary
 
 

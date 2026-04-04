@@ -31,6 +31,7 @@ def build_generation_context(
     current_stage: str,
     next_turn_no: int,
     coverage_state: dict[str, Any] | None,
+    project=None,
     project_id: int | None = None,
     latest_answer_override: str | None = None,
     excluded_branch_ids: set[str] | None = None,
@@ -56,6 +57,18 @@ def build_generation_context(
     selected_branch_ids = [branch["branch_id"] for branch in selected_branches]
     retrieved_context = build_retrieved_branch_context(selected_branches)
     coverage_priorities = build_coverage_priorities(selected_branches, current_stage, stage_gaps)
+    repo_grounding_payload = {
+        "repo_grounding_context": "No repository source configured for this project.",
+        "repo_grounding_meta": {
+            "enabled": False,
+            "source_type": "none",
+            "queries": [],
+            "selected_paths": [],
+            "selected_symbols": [],
+            "tool_calls": [],
+            "commit_sha": None,
+        },
+    }
     emit_event(
         "retrieval",
         "retrieval.context.complete",
@@ -86,6 +99,7 @@ def build_generation_context(
                 artifact_category="retrieval",
                 artifact_name=f"project-{project_id or 'unknown'}-q{next_turn_no}-context",
             ),
+            "repo_selected_paths": repo_grounding_payload["repo_grounding_meta"].get("selected_paths", []),
         },
     )
 
@@ -96,6 +110,8 @@ def build_generation_context(
         "framework_gaps": stage_gaps,
         "recent_context": recent_context,
         "retrieved_context": retrieved_context,
+        "repo_grounding_context": repo_grounding_payload["repo_grounding_context"],
+        "repo_grounding_meta": repo_grounding_payload["repo_grounding_meta"],
         "coverage_priorities": coverage_priorities,
         "selected_turn_ids": selected_turn_ids,
         "selected_branch_ids": selected_branch_ids,
@@ -110,6 +126,7 @@ def build_generation_context(
             [
                 f"Recent context:\n{recent_context}",
                 f"Retrieved branch context:\n{retrieved_context}",
+                f"Repository evidence:\n{repo_grounding_payload['repo_grounding_context']}",
                 f"Coverage priorities:\n{coverage_priorities}",
             ]
         ).strip(),

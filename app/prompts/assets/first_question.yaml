@@ -9,6 +9,9 @@ user_template: |
   Current stage: {current_stage}
   Stage objective: {stage_objective}
 
+  Repository evidence:
+  {repo_grounding_context}
+
   Requirements:
   1. Ask exactly one question only.
   2. The question must be in English.
@@ -21,3 +24,4 @@ required_variables:
   - system_prompt
   - current_stage
   - stage_objective
+  - repo_grounding_context

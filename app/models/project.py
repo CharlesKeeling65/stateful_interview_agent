@@ -17,6 +17,13 @@ class ProjectSession(Base):
     current_stage: Mapped[str] = mapped_column(String(100), default="Panorama Mapping")
     turn_count: Mapped[int] = mapped_column(Integer, default=0)
     status: Mapped[str] = mapped_column(String(50), default="active")
+    repo_source_type: Mapped[str] = mapped_column(String(32), default="none")
+    repo_local_path: Mapped[str | None] = mapped_column(Text, nullable=True)
+    repo_git_url: Mapped[str | None] = mapped_column(Text, nullable=True)
+    repo_git_ref: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    repo_cache_path: Mapped[str | None] = mapped_column(Text, nullable=True)
+    repo_commit_sha: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    repo_manifest_json: Mapped[str] = mapped_column(Text, default="{}")
     coverage_state: Mapped[str] = mapped_column(
         Text,
         default='{"version": 1, "branch_count": 0, "updated_through_turn_no": 0, "branches": []}',
@@ -65,6 +72,38 @@ class ProjectSession(Base):
         parsed.setdefault("updated_through_turn_no", 0)
         parsed.setdefault("branches", [])
         return parsed
+
+    @property
+    def repo_manifest_data(self) -> dict[str, Any]:
+        try:
+            parsed = json.loads(self.repo_manifest_json) if self.repo_manifest_json else {}
+        except json.JSONDecodeError:
+            parsed = {}
+        if not isinstance(parsed, dict):
+            parsed = {}
+        parsed.setdefault("root_path", None)
+        parsed.setdefault("file_count", 0)
+        parsed.setdefault("language_counts", {})
+        parsed.setdefault("top_level_directories", [])
+        parsed.setdefault("key_files", [])
+        parsed.setdefault("symbol_count", 0)
+        parsed.setdefault("last_indexed_at", None)
+        return parsed
+
+    @property
+    def repository(self) -> dict[str, Any]:
+        return {
+            "source_type": self.repo_source_type or "none",
+            "local_path": self.repo_local_path,
+            "git_url": self.repo_git_url,
+            "git_ref": self.repo_git_ref,
+            "cache_path": self.repo_cache_path,
+            "commit_sha": self.repo_commit_sha,
+        }
+
+    @property
+    def repository_manifest(self) -> dict[str, Any]:
+        return self.repo_manifest_data
 
     @property
     def cumulative_generation_time_ms(self) -> int:

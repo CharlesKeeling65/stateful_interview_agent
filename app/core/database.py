@@ -65,3 +65,35 @@ def ensure_database_schema():
                         "'{\"version\": 1, \"branch_count\": 0, \"updated_through_turn_no\": 0, \"branches\": []}'"
                     )
                 )
+            if "repo_source_type" not in existing_columns:
+                connection.execute(
+                    text(
+                        "ALTER TABLE project_sessions ADD COLUMN repo_source_type TEXT DEFAULT 'none'"
+                    )
+                )
+            if "repo_local_path" not in existing_columns:
+                connection.execute(
+                    text("ALTER TABLE project_sessions ADD COLUMN repo_local_path TEXT")
+                )
+            if "repo_git_url" not in existing_columns:
+                connection.execute(
+                    text("ALTER TABLE project_sessions ADD COLUMN repo_git_url TEXT")
+                )
+            if "repo_git_ref" not in existing_columns:
+                connection.execute(
+                    text("ALTER TABLE project_sessions ADD COLUMN repo_git_ref TEXT")
+                )
+            if "repo_cache_path" not in existing_columns:
+                connection.execute(
+                    text("ALTER TABLE project_sessions ADD COLUMN repo_cache_path TEXT")
+                )
+            if "repo_commit_sha" not in existing_columns:
+                connection.execute(
+                    text("ALTER TABLE project_sessions ADD COLUMN repo_commit_sha TEXT")
+                )
+            if "repo_manifest_json" not in existing_columns:
+                connection.execute(
+                    text(
+                        "ALTER TABLE project_sessions ADD COLUMN repo_manifest_json TEXT DEFAULT '{}'"
+                    )
+                )

@@ -21,7 +21,7 @@ def generate_first_question(system_prompt: str) -> str:
     return generate_first_question_result(system_prompt)["question_text"]
 
 
-def generate_first_question_result(system_prompt: str) -> dict:
+def generate_first_question_result(system_prompt: str, repository_context: str = "No repository source configured for this project.") -> dict:
     client = get_openai_client()
     prompt = get_prompt_manager().render(
         "first_question",
@@ -29,6 +29,7 @@ def generate_first_question_result(system_prompt: str) -> dict:
             "system_prompt": system_prompt,
             "current_stage": "Panorama Mapping",
             "stage_objective": get_stage_instruction("Panorama Mapping"),
+            "repo_grounding_context": repository_context,
         },
     )
     prompt_text = "\n\n".join(message["content"] for message in prompt.messages)
@@ -132,6 +133,7 @@ def generate_next_question_from_history(
     next_turn_no: int,
     current_stage: str,
     planner_decision: dict | None = None,
+    repo_grounding_context: str = "No repository source configured for this project.",
     project_id: int | None = None,
     run_id: int | None = None,
 ) -> dict:
@@ -171,6 +173,7 @@ def generate_next_question_from_history(
                 "target_label": planner["target_label"],
                 "planner_reasoning": planner["reasoning"],
                 "human_review_context": format_human_review_context(planner.get("human_review_signal")),
+                "repo_grounding_context": repo_grounding_context,
                 "style_constraints": "; ".join(planner["constraints"]) + f"; Closing guidance: {closing_instruction}",
             },
         )

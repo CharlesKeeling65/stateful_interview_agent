@@ -17,6 +17,9 @@ user_template: |
   Retrieved branch context:
   {retrieved_context}
 
+  Repository evidence:
+  {repo_grounding_context}
+
   Coverage priorities:
   {coverage_priorities}
 
@@ -40,4 +43,5 @@ required_variables:
   - closing_guidance
   - recent_context
   - retrieved_context
+  - repo_grounding_context
   - coverage_priorities

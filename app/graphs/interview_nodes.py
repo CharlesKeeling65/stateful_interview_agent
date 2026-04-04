@@ -12,8 +12,12 @@ from app.services.interview_lifecycle import can_continue_interview, is_minimum_
 from app.services.question_planner import plan_next_question
 from app.services.question_generator import generate_next_question_from_history
 from app.services.question_version_service import append_question_version
-from app.services.question_validator import validate_question_for_stage
+from app.services.question_validator import (
+    validate_question_against_repository,
+    validate_question_for_stage,
+)
 from app.services.repetition_guard import build_question_signature, is_question_too_similar
+from app.services.repo_grounding_service import build_repo_grounding_context
 from app.services.run_trace_service import traced_run_step
 from app.services.summarization_service import ensure_turn_summaries
 from app.services.stage_manager import decide_next_stage
@@ -35,6 +39,11 @@ def build_question_plan_payload(state: dict) -> dict:
         "human_review_applied": state.get("planner_decision", {}).get("human_review_applied"),
         "drift_detected": state.get("planner_decision", {}).get("drift_detected"),
         "why_this_question": state.get("planner_decision", {}).get("why_this_question"),
+        "repo_queries": state.get("repo_grounding_meta", {}).get("queries", []),
+        "repo_selected_paths": state.get("repo_grounding_meta", {}).get("selected_paths", []),
+        "repo_selected_symbols": state.get("repo_grounding_meta", {}).get("selected_symbols", []),
+        "repo_commit_sha": state.get("repo_grounding_meta", {}).get("commit_sha"),
+        "repo_tool_calls": state.get("repo_grounding_meta", {}).get("tool_calls", []),
     }
 
 
@@ -63,6 +72,7 @@ def generate_question_for_state(
         current_stage=current_stage,
         next_turn_no=turn_no,
         coverage_state=coverage_state,
+        project=project,
         project_id=project.id,
         latest_answer_override=latest_answer_override,
     )
@@ -73,10 +83,23 @@ def generate_question_for_state(
         coverage_state=coverage_state,
         human_review_signal=human_review_signal,
     )
+    repo_grounding_payload = build_repo_grounding_context(
+        project=project,
+        turns=turns,
+        current_stage=current_stage,
+        next_turn_no=turn_no,
+        planner_decision=planner_decision,
+        latest_answer_override=latest_answer_override,
+        project_id=project.id,
+        run_id=run_id,
+    )
+    context_payload["repo_grounding_context"] = repo_grounding_payload["repo_grounding_context"]
+    context_payload["repo_grounding_meta"] = repo_grounding_payload["repo_grounding_meta"]
     next_question_result = generate_next_question_from_history(
         system_prompt=project.system_prompt,
         recent_context=context_payload["recent_context"],
         retrieved_context=context_payload["retrieved_context"],
+        repo_grounding_context=context_payload["repo_grounding_context"],
         coverage_priorities=context_payload["coverage_priorities"],
         next_turn_no=turn_no,
         current_stage=current_stage,
@@ -127,6 +150,7 @@ def generate_question_for_state(
             next_turn_no=turn_no,
             current_stage=current_stage,
             planner_decision=planner_decision,
+            repo_grounding_context=context_payload["repo_grounding_context"],
             project_id=project.id,
             run_id=run_id,
         )
@@ -141,6 +165,15 @@ def generate_question_for_state(
         recent_question_signatures=recent_question_signatures,
         branch_id=planner_decision.get("target_branch_id"),
     )
+    repo_validation = validate_question_against_repository(
+        text=next_question,
+        current_stage=current_stage,
+        repo_grounding_meta=context_payload.get("repo_grounding_meta"),
+        repo_manifest=project.repo_manifest_data,
+    )
+    if not repo_validation["is_valid"]:
+        validation["is_valid"] = False
+        validation["reasons"].extend(repo_validation["reasons"])
 
     if not validation["is_valid"]:
         retry_prompt = (
@@ -157,6 +190,7 @@ def generate_question_for_state(
             next_turn_no=turn_no,
             current_stage=current_stage,
             planner_decision=planner_decision,
+            repo_grounding_context=context_payload["repo_grounding_context"],
             project_id=project.id,
             run_id=run_id,
         )
@@ -170,6 +204,15 @@ def generate_question_for_state(
             recent_question_signatures=recent_question_signatures,
             branch_id=planner_decision.get("target_branch_id"),
         )
+        repo_validation = validate_question_against_repository(
+            text=next_question,
+            current_stage=current_stage,
+            repo_grounding_meta=context_payload.get("repo_grounding_meta"),
+            repo_manifest=project.repo_manifest_data,
+        )
+        if not repo_validation["is_valid"]:
+            validation["is_valid"] = False
+            validation["reasons"].extend(repo_validation["reasons"])
         if not validation["is_valid"]:
             raise ValueError(
                 "Generated question failed stage-specific validation: "
@@ -181,6 +224,8 @@ def generate_question_for_state(
         "coverage_state": coverage_state,
         "retrieved_context": context_payload["retrieved_context"],
         "coverage_priorities": context_payload["coverage_priorities"],
+        "repo_grounding_context": context_payload["repo_grounding_context"],
+        "repo_grounding_meta": context_payload["repo_grounding_meta"],
         "selected_turn_ids": context_payload["selected_turn_ids"],
         "selected_branch_ids": context_payload["selected_branch_ids"],
         "planner_decision": planner_decision,

@@ -21,6 +21,9 @@ user_template: |
   Retrieved branch context:
   {retrieved_context}
 
+  Repository evidence:
+  {repo_grounding_context}
+
   Framework gaps:
   {coverage_priorities}
 
@@ -49,5 +52,6 @@ required_variables:
   - next_turn_no
   - recent_context
   - retrieved_context
+  - repo_grounding_context
   - coverage_priorities
   - style_constraints

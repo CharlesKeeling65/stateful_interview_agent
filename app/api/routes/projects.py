@@ -37,6 +37,12 @@ from app.services.question_version_service import (
     normalize_question_versions,
     summarize_usage_metrics,
 )
+from app.services.repository_service import (
+    RepositoryConfigurationError,
+    apply_repository_configuration,
+    format_repository_manifest,
+    resolve_project_repository,
+)
 from app.services.run_trace_service import create_run, finalize_run, serialize_run
 from app.services.stage_manager import decide_next_stage, normalize_stage_name
 from app.services.coverage_service import rebuild_coverage_state
@@ -60,6 +66,16 @@ def create_project(payload: ProjectCreate, db: Session = Depends(get_db)):
         system_prompt=payload.system_prompt,
     )
     db.add(project)
+    db.flush()
+    try:
+        apply_repository_configuration(
+            project,
+            payload.repository.model_dump() if payload.repository else None,
+        )
+        if project.repo_source_type != "none":
+            resolve_project_repository(project)
+    except RepositoryConfigurationError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
     db.commit()
     db.refresh(project)
     bind_log_context(project_id=project.id)
@@ -107,8 +123,16 @@ def update_project(
         raise HTTPException(status_code=404, detail="Project not found")
 
     updates = payload.model_dump(exclude_unset=True)
+    repository_update = updates.pop("repository", None)
     for field_name, value in updates.items():
         setattr(project, field_name, value)
+    if "repository" in payload.model_fields_set:
+        try:
+            apply_repository_configuration(project, repository_update)
+            if project.repo_source_type != "none":
+                resolve_project_repository(project)
+        except RepositoryConfigurationError as exc:
+            raise HTTPException(status_code=400, detail=str(exc)) from exc
 
     db.commit()
     db.refresh(project)
@@ -156,7 +180,23 @@ def start_project_interview(project_id: int, db: Session = Depends(get_db)):
             status_code=400, detail="Project interview has already started"
         )
 
-    first_question_result = generate_first_question_result(project.system_prompt)
+    repository_context = "No repository source configured for this project."
+    if project.repo_source_type != "none":
+        try:
+            workspace = resolve_project_repository(project)
+            if workspace:
+                repository_context = format_repository_manifest(
+                    workspace.manifest,
+                    source_label=workspace.source_label,
+                    commit_sha=workspace.commit_sha,
+                )
+        except RepositoryConfigurationError as exc:
+            raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+    first_question_result = generate_first_question_result(
+        project.system_prompt,
+        repository_context=repository_context,
+    )
 
     first_turn = InterviewTurn(
         project_id=project.id,
@@ -720,5 +760,7 @@ def get_project_status(project_id: int, db: Session = Depends(get_db)):
         "cumulative_generation_time_ms": project.cumulative_generation_time_ms,
         "run_count": project.run_count,
         "average_run_duration_ms": project.average_run_duration_ms,
+        "repository": project.repository,
+        "repository_manifest": project.repository_manifest,
         "usage_summary": aggregate_project_usage(project.llm_usages),
     }

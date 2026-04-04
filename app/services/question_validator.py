@@ -68,6 +68,8 @@ USE_CASE_MARKERS = (
     "extension",
     "workflow",
 )
+QUESTION_FILE_PATTERN = re.compile(r"\b[\w./-]+\.(?:py|ts|tsx|js|jsx|java|go|rb|yaml|yml|json|toml|md)\b")
+QUESTION_SYMBOL_PATTERN = re.compile(r"\b[A-Z][A-Za-z0-9_]{2,}\b")
 
 
 def looks_like_valid_question(text: str, expected_turn_no: int) -> bool:
@@ -158,6 +160,52 @@ def validate_question_for_stage(
     elif current_stage == "Final Wrap-up":
         if any(marker in normalized for marker in ("class ", "method ", ".py", ".ts")):
             reasons.append("Wrap-up questions should not reopen deep implementation topics.")
+
+    return {
+        "is_valid": len(reasons) == 0,
+        "reasons": reasons,
+    }
+
+
+def validate_question_against_repository(
+    *,
+    text: str,
+    current_stage: str | None,
+    repo_grounding_meta: dict | None,
+    repo_manifest: dict | None,
+) -> dict:
+    repo_grounding_meta = repo_grounding_meta or {}
+    repo_manifest = repo_manifest or {}
+    if not repo_grounding_meta.get("enabled"):
+        return {"is_valid": True, "reasons": []}
+
+    normalized = text.strip()
+    reasons: list[str] = []
+    known_paths = {
+        str(path)
+        for path in (
+            repo_grounding_meta.get("selected_paths", [])
+            + repo_manifest.get("key_files", [])
+        )
+    }
+    known_symbols = {str(symbol) for symbol in repo_grounding_meta.get("selected_symbols", [])}
+
+    mentioned_paths = QUESTION_FILE_PATTERN.findall(normalized)
+    if mentioned_paths:
+        missing_paths = [path for path in mentioned_paths if path not in known_paths]
+        if missing_paths:
+            reasons.append(
+                "Question references repository paths that were not found in the current evidence bundle: "
+                + ", ".join(sorted(set(missing_paths)))
+            )
+
+    if current_stage == "Code Detail Completion":
+        if not mentioned_paths:
+            mentioned_symbols = set(QUESTION_SYMBOL_PATTERN.findall(normalized))
+            if known_symbols and not (mentioned_symbols & known_symbols):
+                reasons.append(
+                    "Code-detail questions must mention at least one grounded file path or symbol from the repository evidence bundle."
+                )
 
     return {
         "is_valid": len(reasons) == 0,

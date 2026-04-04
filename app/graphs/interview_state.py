@@ -17,6 +17,8 @@ class InterviewGraphState(TypedDict, total=False):
     history_text: str
     coverage_state: dict
     retrieved_context: str
+    repo_grounding_context: str
+    repo_grounding_meta: dict
     coverage_priorities: str
     selected_turn_ids: list[int]
     selected_branch_ids: list[str]

@@ -213,6 +213,36 @@ class ProjectApiFlowTests(unittest.TestCase):
         self.assertEqual(listed.status_code, 200)
         self.assertEqual(listed.json(), [])
 
+    def test_project_can_attach_local_repository_source(self):
+        repo_root = Path(self.temp_dir.name) / "attached-repo"
+        (repo_root / "app").mkdir(parents=True, exist_ok=True)
+        (repo_root / "README.md").write_text("# Attached repo\n", encoding="utf-8")
+        (repo_root / "app/main.py").write_text(
+            "def bootstrap_app():\n    return 'ready'\n",
+            encoding="utf-8",
+        )
+
+        created = self.client.post(
+            "/projects",
+            json={
+                "project_name": "Repo Attached Session",
+                "system_prompt": "You are a stateful interview agent.",
+                "repository": {
+                    "source_type": "local_path",
+                    "local_path": str(repo_root),
+                },
+            },
+        )
+        self.assertEqual(created.status_code, 200)
+        payload = created.json()
+        self.assertEqual(payload["repository"]["source_type"], "local_path")
+        self.assertEqual(payload["repository_manifest"]["file_count"], 2)
+        self.assertIn("README.md", payload["repository_manifest"]["key_files"])
+
+        started = self.client.post(f"/projects/{payload['id']}/start")
+        self.assertEqual(started.status_code, 200)
+        self.assertEqual(started.json()["project"]["repository"]["source_type"], "local_path")
+
     def test_regenerate_current_question_tracks_versions_and_usage(self):
         created = self.client.post(
             "/projects",
