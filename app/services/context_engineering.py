@@ -6,6 +6,7 @@ from app.services.coverage_service import (
     default_coverage_state,
     extract_keywords,
     framework_gaps_for_stage,
+    normalize_framework_coverage,
 )
 from app.services.stage_manager import (
     ARCHITECTURE_STAGE,
@@ -151,6 +152,9 @@ def select_relevant_branches(
     stage_gaps: list[str],
     excluded_branch_ids: set[str],
 ) -> list[dict[str, Any]]:
+    framework = normalize_framework_coverage(
+        coverage_state.get("framework", {})
+    )
     latest_text = latest_answer_override or turns[-1].answer_text or ""
     latest_keywords = set(extract_keywords(latest_text, turns[-1].question_text if turns else ""))
     stage_weight = STAGE_WEIGHTS.get(current_stage, 1.0)
@@ -209,7 +213,9 @@ def select_relevant_branches(
         ).lower()
         gap_hits = sum(1 for gap in stage_gaps if gap.replace("_", " ") in label_and_summary)
         if gap_hits:
-            score += gap_hits * 0.22
+            score += gap_hits * 0.35
+
+        score += stage_relevance_bonus(current_stage=current_stage, branch=branch, framework=framework)
 
         branch_id = str(branch.get("branch_id") or "")
         novelty_penalty = 0.0
@@ -218,6 +224,7 @@ def select_relevant_branches(
             recent_top_branch_id = str(recent_question_history[-1].get("branch_id") or "") if recent_question_history else ""
             if recent_top_branch_id and recent_top_branch_id == branch_id:
                 novelty_penalty += 0.28
+        novelty_penalty += stage_misalignment_penalty(current_stage=current_stage, branch_text=label_and_summary)
         score -= novelty_penalty
 
         branch_copy = dict(branch)
@@ -247,6 +254,38 @@ def build_retrieved_branch_context(branches: list[dict[str, Any]]) -> str:
         if unresolved_points:
             lines.append(f"  Unresolved: {' | '.join(unresolved_points)}")
     return "\n".join(lines)
+
+
+def stage_relevance_bonus(*, current_stage: str, branch: dict[str, Any], framework: dict[str, Any]) -> float:
+    text = " ".join(str(branch.get(field, "")) for field in ("label", "summary")).lower()
+    if current_stage == PANORAMA_STAGE:
+        if any(marker in text for marker in ("purpose", "user", "workflow", "module", "boundary")):
+            return 0.22
+        return 0.0
+    if current_stage == ARCHITECTURE_STAGE:
+        if any(marker in text for marker in ("call chain", "path", "collabor", "module", "layer")):
+            return 0.24
+        return 0.0
+    if current_stage == CODE_DETAIL_STAGE:
+        if any(marker in text for marker in (".py", ".ts", ".tsx", ".js", "class", "method", "function", "execution path")):
+            return 0.28
+        return -0.1
+    if current_stage == USE_CASE_STAGE:
+        if any(marker in text for marker in ("scenario", "actor", "input", "output", "boundary", "extension")):
+            return 0.26
+        if framework.get("use_cases", {}).get("representative_scenarios_count", 0) <= 0:
+            return -0.12
+    return 0.0
+
+
+def stage_misalignment_penalty(*, current_stage: str, branch_text: str) -> float:
+    if current_stage == PANORAMA_STAGE and any(marker in branch_text for marker in (".py", ".ts", ".tsx", ".js", "class ", "method ", "error handling")):
+        return 0.45
+    if current_stage == ARCHITECTURE_STAGE and any(marker in branch_text for marker in ("refactor", "redesign", "modify", "update tests")):
+        return 0.42
+    if current_stage == USE_CASE_STAGE and any(marker in branch_text for marker in (".py", ".ts", ".tsx", ".js", "class ", "method ")):
+        return 0.35
+    return 0.0
 
 
 def build_coverage_priorities(

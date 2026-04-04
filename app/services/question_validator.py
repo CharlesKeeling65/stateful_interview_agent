@@ -31,6 +31,8 @@ CODE_DETAIL_MARKERS = (
     "library",
     "error handling",
     "exception",
+    "currently",
+    "current behavior",
 )
 
 PANORAMA_DEEP_DETAIL_MARKERS = (
@@ -131,6 +133,10 @@ def validate_question_for_stage(
     elif current_stage == "Code Detail Completion":
         if not any(marker in normalized for marker in CODE_DETAIL_MARKERS):
             reasons.append("Code-detail questions must target a concrete implementation artifact or path.")
+        if any(phrase in normalized for phrase in ("overall", "generally", "in the project overall")) and not any(
+            marker in normalized for marker in (".py", ".ts", ".tsx", ".js", "class ", "method ", "function ", "execution path", "request path")
+        ):
+            reasons.append("Code-detail questions must stay specific; broad overall implementation prompts are not concrete enough.")
         if intent_mode == "understand_current_code" and not any(
             marker in normalized
             for marker in ("how does", "how do", "what does", "trace", "currently", "current", "where does")
@@ -138,12 +144,16 @@ def validate_question_for_stage(
             reasons.append(
                 "Code-detail questions in understand mode must ask how the current implementation works."
             )
+        if any(marker in normalized for marker in CHANGE_PROPOSAL_MARKERS):
+            reasons.append("Code-detail questions in understand mode must not drift into redesign or modification planning.")
 
     elif current_stage == "Use Cases & Scenarios":
         if not any(marker in normalized for marker in USE_CASE_MARKERS):
             reasons.append("Use-case questions must stay tied to actors, scenarios, inputs/outputs, or boundaries.")
         if any(marker in normalized for marker in (".py", ".ts", ".tsx", ".js", "class ", "method ", "function ")):
             reasons.append("Use-case questions should not be purely code-level.")
+        if not any(marker in normalized for marker in ("trigger", "actor", "input", "output", "result", "boundary", "scenario")):
+            reasons.append("Use-case questions should explicitly gather scenario contract details such as trigger, actor, input/output, or boundaries.")
 
     elif current_stage == "Final Wrap-up":
         if any(marker in normalized for marker in ("class ", "method ", ".py", ".ts")):

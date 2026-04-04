@@ -64,9 +64,37 @@ class FrameworkCoverageTests(unittest.TestCase):
         self.assertTrue(framework["panorama"]["target_users"])
         self.assertTrue(framework["architecture"]["module_responsibilities"])
         self.assertTrue(framework["architecture"]["key_call_chains"])
-        self.assertGreaterEqual(framework["code_detail"]["key_files_count"], 2)
-        self.assertGreaterEqual(framework["code_detail"]["key_methods_count"], 1)
-        self.assertGreaterEqual(framework["code_detail"]["error_handling_count"], 1)
+        self.assertTrue(framework["panorama"]["initial_module_relationships"])
+        self.assertGreaterEqual(framework["code_detail"]["specific_files_count"], 2)
+        self.assertGreaterEqual(framework["code_detail"]["specific_methods_count"], 1)
+        self.assertGreaterEqual(framework["code_detail"]["error_handling_points_count"], 1)
+        self.assertGreaterEqual(framework["code_detail"]["protocol_implementation_points_count"], 1)
+
+    def test_rebuild_coverage_state_tracks_use_case_scenario_contract(self):
+        turns = [
+            InterviewTurn(
+                id=8,
+                turn_no=14,
+                stage="Use Cases & Scenarios",
+                question_text="Q14: Walk through one representative scenario from trigger to result.",
+                answer_text=(
+                    "A support operator triggers the process by opening a new escalation. "
+                    "The actor is the support operator. Inputs include the case payload and account metadata. "
+                    "The process routes the request through intake, orchestration, and reporting. "
+                    "The output is an updated case record and a ranked handling plan. "
+                    "Boundary conditions include missing account data and unsupported escalation types. "
+                    "An extension point allows a custom routing policy."
+                ),
+                answer_summary="One scenario covers trigger, actor, inputs, process, outputs, boundaries, and extension points.",
+            )
+        ]
+
+        framework = rebuild_coverage_state(turns)["framework"]
+        self.assertGreaterEqual(framework["use_cases"]["representative_scenarios_count"], 1)
+        self.assertGreaterEqual(framework["use_cases"]["actors_roles_count"], 1)
+        self.assertGreaterEqual(framework["use_cases"]["input_output_patterns_count"], 1)
+        self.assertGreaterEqual(framework["use_cases"]["boundary_conditions_count"], 1)
+        self.assertGreaterEqual(framework["use_cases"]["extension_points_count"], 1)
 
 
 class StageControllerTests(unittest.TestCase):
@@ -107,21 +135,25 @@ class StageControllerTests(unittest.TestCase):
                     "boundaries": True,
                     "major_modules": True,
                     "high_level_workflow": True,
+                    "initial_module_relationships": True,
                 },
                 "architecture": {
-                    "architecture_style": True,
+                    "architecture_style_or_organization": True,
                     "module_responsibilities": True,
-                    "communication_mechanisms": True,
+                    "collaboration_mechanisms": True,
                     "key_call_chains": True,
-                    "design_rationale": True,
+                    "system_structure": True,
+                    "design_rationale_or_quality_attributes": True,
                 },
                 "code_detail": {
-                    "key_files_count": 0,
-                    "key_classes_count": 0,
-                    "key_methods_count": 0,
+                    "specific_files_count": 0,
+                    "specific_classes_count": 0,
+                    "specific_methods_count": 0,
                     "execution_paths_count": 0,
-                    "third_party_library_usage_count": 0,
-                    "error_handling_count": 0,
+                    "library_usage_points_count": 0,
+                    "error_handling_points_count": 0,
+                    "protocol_implementation_points_count": 0,
+                    "state_management_points_count": 0,
                 },
                 "use_cases": {},
                 "stage_turn_counts": {
@@ -151,25 +183,29 @@ class StageControllerTests(unittest.TestCase):
                     "boundaries": True,
                     "major_modules": True,
                     "high_level_workflow": True,
+                    "initial_module_relationships": True,
                 },
                 "architecture": {
-                    "architecture_style": True,
+                    "architecture_style_or_organization": True,
                     "module_responsibilities": True,
-                    "communication_mechanisms": True,
+                    "collaboration_mechanisms": True,
                     "key_call_chains": True,
-                    "design_rationale": True,
+                    "system_structure": True,
+                    "design_rationale_or_quality_attributes": True,
                 },
                 "code_detail": {
-                    "key_files_count": 12,
-                    "key_classes_count": 7,
-                    "key_methods_count": 14,
+                    "specific_files_count": 12,
+                    "specific_classes_count": 7,
+                    "specific_methods_count": 14,
                     "execution_paths_count": 8,
-                    "third_party_library_usage_count": 4,
-                    "error_handling_count": 5,
+                    "library_usage_points_count": 4,
+                    "error_handling_points_count": 5,
+                    "protocol_implementation_points_count": 3,
+                    "state_management_points_count": 2,
                 },
                 "use_cases": {
-                    "scenario_count": 0,
-                    "user_roles_count": 0,
+                    "representative_scenarios_count": 0,
+                    "actors_roles_count": 0,
                     "input_output_patterns_count": 0,
                     "boundary_conditions_count": 0,
                     "extension_points_count": 0,
@@ -192,8 +228,8 @@ class StageControllerTests(unittest.TestCase):
                     "architecture": [],
                     "code_detail": [],
                     "use_cases": [
-                        "scenario_count",
-                        "user_roles_count",
+                        "representative_scenarios_count",
+                        "actors_roles_count",
                         "input_output_patterns_count",
                     ],
                     "human_collaboration": [],
@@ -272,6 +308,8 @@ class PlannerAndValidatorTests(unittest.TestCase):
         self.assertIn(planner["target_type"], {"file", "class", "method", "execution_path"})
         self.assertTrue(planner["target_label"])
         self.assertTrue(planner["constraints"])
+        self.assertEqual(planner["intent_mode"], "understand_current_code")
+        self.assertIsNotNone(planner["selected_framework_gap"])
 
     def test_question_planner_avoids_recently_asked_same_code_detail_target(self):
         turns = [
@@ -367,6 +405,114 @@ class PlannerAndValidatorTests(unittest.TestCase):
         self.assertTrue(valid["is_valid"])
         self.assertTrue(invalid["reasons"])
 
+    def test_question_planner_prefers_macro_panorama_gap_before_local_branch(self):
+        coverage_state = {
+            "branches": [
+                {
+                    "branch_id": "retry_edge_case",
+                    "label": "retry edge-case handling in workflow_runner.py",
+                    "stage": "Panorama Mapping",
+                    "status": "needs_follow_up",
+                    "priority": 0.98,
+                    "keywords": ["retry", "edge", "workflow_runner.py"],
+                    "evidence_turn_ids": [1],
+                    "evidence_turn_nos": [1],
+                    "summary": "A narrow retry branch appeared before the global workflow was explained.",
+                    "unresolved_points": ["The global workflow is still missing."],
+                    "last_turn_no": 1,
+                }
+            ],
+            "framework": {
+                "panorama": {
+                    "purpose": True,
+                    "target_users": True,
+                    "boundaries": False,
+                    "major_modules": True,
+                    "high_level_workflow": False,
+                    "initial_module_relationships": False,
+                },
+                "architecture": {},
+                "code_detail": {},
+                "use_cases": {},
+                "human_collaboration": {},
+                "stage_turn_counts": {"Panorama Mapping": 1},
+                "gaps": {
+                    "panorama": ["boundaries", "high_level_workflow", "initial_module_relationships"],
+                    "architecture": [],
+                    "code_detail": [],
+                    "use_cases": [],
+                    "human_collaboration": [],
+                },
+                "wrap_up_ready": False,
+            },
+        }
+
+        planner = plan_next_question(
+            turns=[],
+            current_stage="Panorama Mapping",
+            next_turn_no=2,
+            coverage_state=coverage_state,
+        )
+
+        self.assertEqual(planner["question_intent"], "overview_gap_fill")
+        self.assertEqual(planner["selected_framework_gap"], "boundaries")
+        self.assertEqual(planner["target_type"], "framework_gap")
+        self.assertIn("macro", " ".join(planner["constraints"]).lower())
+
+    def test_question_planner_builds_structured_use_case_contract(self):
+        coverage_state = {
+            "branches": [
+                {
+                    "branch_id": "operator_scenario",
+                    "label": "operator handles a new escalation through the current workflow",
+                    "stage": "Use Cases & Scenarios",
+                    "status": "needs_follow_up",
+                    "priority": 0.88,
+                    "keywords": ["operator", "escalation", "workflow"],
+                    "evidence_turn_ids": [11],
+                    "evidence_turn_nos": [11],
+                    "summary": "The actor and trigger are known, but the outputs and boundaries are incomplete.",
+                    "unresolved_points": ["Need the current outputs and failure boundaries."],
+                    "last_turn_no": 11,
+                }
+            ],
+            "framework": {
+                "use_cases": {
+                    "representative_scenarios_count": 1,
+                    "actors_roles_count": 1,
+                    "input_output_patterns_count": 0,
+                    "boundary_conditions_count": 0,
+                    "extension_points_count": 0,
+                },
+                "gaps": {
+                    "panorama": [],
+                    "architecture": [],
+                    "code_detail": [],
+                    "use_cases": [
+                        "input_output_patterns_count",
+                        "boundary_conditions_count",
+                        "extension_points_count",
+                    ],
+                    "human_collaboration": [],
+                },
+                "human_collaboration": {},
+                "stage_turn_counts": {"Use Cases & Scenarios": 1},
+                "wrap_up_ready": False,
+            },
+        }
+
+        planner = plan_next_question(
+            turns=[],
+            current_stage="Use Cases & Scenarios",
+            next_turn_no=12,
+            coverage_state=coverage_state,
+        )
+
+        self.assertEqual(planner["question_intent"], "scenario_completion")
+        self.assertEqual(planner["selected_framework_gap"], "input_output_patterns_count")
+        self.assertIn("trigger", " ".join(planner["constraints"]).lower())
+        self.assertIn("outputs", " ".join(planner["constraints"]).lower())
+
     def test_stage_validator_rejects_change_proposal_questions_in_understand_mode(self):
         invalid = validate_question_for_stage(
             text="Q12: Which files should be modified to redesign the return type and update the related tests?",
@@ -455,10 +601,61 @@ class CoverageCountingTests(unittest.TestCase):
         coverage = rebuild_coverage_state(turns)
         use_cases = coverage["framework"]["use_cases"]
 
-        self.assertEqual(use_cases["scenario_count"], 0)
-        self.assertEqual(use_cases["user_roles_count"], 0)
+        self.assertEqual(use_cases["representative_scenarios_count"], 0)
+        self.assertEqual(use_cases["actors_roles_count"], 0)
         self.assertEqual(use_cases["input_output_patterns_count"], 0)
         self.assertEqual(use_cases["boundary_conditions_count"], 0)
+
+    def test_stage_controller_keeps_architecture_until_core_structure_is_covered(self):
+        coverage_state = {
+            "framework": {
+                "panorama": {
+                    "purpose": True,
+                    "target_users": True,
+                    "boundaries": True,
+                    "major_modules": True,
+                    "high_level_workflow": True,
+                    "initial_module_relationships": True,
+                },
+                "architecture": {
+                    "architecture_style_or_organization": True,
+                    "module_responsibilities": True,
+                    "communication_mechanisms": False,
+                    "key_call_chains": False,
+                    "system_structure": False,
+                    "design_rationale_or_quality_attributes": True,
+                },
+                "code_detail": {},
+                "use_cases": {},
+                "human_collaboration": {},
+                "stage_turn_counts": {
+                    "Panorama Mapping": 2,
+                    "Architecture Understanding": 2,
+                },
+                "gaps": {
+                    "panorama": [],
+                    "architecture": [
+                        "communication_mechanisms",
+                        "key_call_chains",
+                        "system_structure",
+                    ],
+                    "code_detail": [],
+                    "use_cases": [],
+                    "human_collaboration": [],
+                },
+                "wrap_up_ready": False,
+            }
+        }
+
+        decision = decide_next_stage(
+            next_turn_no=6,
+            coverage_state=coverage_state,
+            current_stage="Architecture Understanding",
+            max_turns=40,
+        )
+
+        self.assertEqual(decision["next_stage"], "Architecture Understanding")
+        self.assertIn("architecture", decision["reason"].lower())
 
 
 if __name__ == "__main__":

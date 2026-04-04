@@ -6,6 +6,7 @@ from app.services.coverage_service import (
     default_framework_coverage,
     detect_topic_drift,
     framework_gaps_for_stage,
+    normalize_framework_coverage,
 )
 from app.services.repetition_guard import build_question_signature, normalize_target_label
 from app.services.stage_manager import (
@@ -31,7 +32,9 @@ def plan_next_question(
     excluded_branch_ids: set[str] | None = None,
     excluded_target_signatures: set[str] | None = None,
 ) -> dict[str, Any]:
-    framework = coverage_state.get("framework", default_framework_coverage())
+    framework = normalize_framework_coverage(
+        coverage_state.get("framework", default_framework_coverage())
+    )
     branches = coverage_state.get("branches", [])
     question_history = coverage_state.get("question_history", [])
     recent_question_history = question_history[-8:]
@@ -43,7 +46,8 @@ def plan_next_question(
         recent_question_history=recent_question_history,
         excluded_branch_ids=excluded_branch_ids,
     )
-    stage_gaps = framework_gaps_for_stage(coverage_state, current_stage)
+    stage_gaps = prioritized_stage_gaps(current_stage, framework_gaps_for_stage(coverage_state, current_stage))
+    selected_framework_gap = stage_gaps[0] if stage_gaps else None
     collaboration = framework.get("human_collaboration", {})
     collaboration_gap_count = sum(
         1 for count in collaboration.values() if isinstance(count, (int, float)) and count <= 0
@@ -69,10 +73,15 @@ def plan_next_question(
         )
         return {
             "question_intent": "human_guided_redirect",
+            "phase": current_stage,
             "intent_mode": intent_mode,
             "target_type": "human_selected_focus",
             "target_label": target_label,
+            "target_identifier": target_label,
             "target_branch_id": branch.get("branch_id") if branch else None,
+            "selected_framework_gap": selected_framework_gap,
+            "selected_branch_ids": [branch.get("branch_id")] if branch and branch.get("branch_id") else [],
+            "selected_turn_ids": branch.get("evidence_turn_ids", []) if branch else [],
             "retrieval_focus": "human redirection first, then stage gaps and strongest branch evidence",
             "constraints": [
                 "Stay in understand-current-code mode",
@@ -85,17 +94,32 @@ def plan_next_question(
             "human_collaboration_gate": False,
             "human_review_applied": True,
             "human_review_signal": review,
+            "validation_constraints": [
+                "must stay in understand_current_code",
+                "must reflect explicit human redirection",
+            ],
             "why_this_question": f"The human redirected the interview toward {target_label} to keep the conversation on understanding the current code.",
         }
 
-    if drift["detected"]:
+    panorama_repeated_drift = (
+        current_stage == PANORAMA_STAGE
+        and drift["detected"]
+        and branch is not None
+        and len(branch.get("evidence_turn_nos", [])) >= 2
+    )
+    if drift["detected"] and (current_stage != PANORAMA_STAGE or panorama_repeated_drift):
         target_label = stage_gaps[0] if stage_gaps else "the most important missing framework target"
         return {
             "question_intent": "drift_repair",
+            "phase": current_stage,
             "intent_mode": intent_mode,
             "target_type": "framework_gap",
             "target_label": target_label,
+            "target_identifier": target_label,
             "target_branch_id": drift["branch_id"],
+            "selected_framework_gap": selected_framework_gap,
+            "selected_branch_ids": [drift["branch_id"]] if drift["branch_id"] else [],
+            "selected_turn_ids": [],
             "retrieval_focus": "framework gaps first, then earlier broad branches",
             "constraints": [
                 "Repair drift and return to the highest-priority framework gap",
@@ -107,59 +131,99 @@ def plan_next_question(
             "drift_detected": True,
             "human_collaboration_gate": False,
             "human_review_applied": False,
+            "validation_constraints": [
+                "must repair drift toward a framework gap",
+                "must avoid branch-local rabbit holes",
+            ],
             "why_this_question": f"Repair drift by returning to the missing {target_label} coverage.",
         }
 
     if current_stage == PANORAMA_STAGE:
         return {
             "question_intent": "overview_gap_fill",
+            "phase": current_stage,
             "intent_mode": intent_mode,
             "target_type": "framework_gap",
-            "target_label": stage_gaps[0] if stage_gaps else "overall project understanding",
+            "target_label": selected_framework_gap or "overall project understanding",
+            "target_identifier": selected_framework_gap or "overall_project_understanding",
             "target_branch_id": branch.get("branch_id") if branch else None,
+            "selected_framework_gap": selected_framework_gap,
+            "selected_branch_ids": [branch.get("branch_id")] if branch and branch.get("branch_id") else [],
+            "selected_turn_ids": branch.get("evidence_turn_ids", []) if branch else [],
             "retrieval_focus": "panorama gaps and broad branch clues",
             "constraints": [
                 "Stay at macro level",
                 "Avoid file/class/method detail",
                 "Prioritize purpose, users, boundaries, modules, or workflow",
+                "If a narrow branch is tempting, redirect back to the missing macro framework gap",
             ],
             "prompt_id": "next_question_panorama",
             "reasoning": f"Panorama gaps remaining: {', '.join(stage_gaps) or 'none detected'}",
-            "drift_detected": False,
+            "drift_detected": drift["detected"],
             "human_collaboration_gate": False,
             "human_review_applied": False,
-            "why_this_question": f"Panorama is still incomplete, so the next question should fill {stage_gaps[0] if stage_gaps else 'the broadest remaining macro gap'}.",
+            "validation_constraints": [
+                "must stay macro-level",
+                "must not mention files/classes/methods",
+            ],
+            "why_this_question": f"Panorama is still incomplete, so the next question should fill {selected_framework_gap if selected_framework_gap else 'the broadest remaining macro gap'}.",
         }
 
     if current_stage == ARCHITECTURE_STAGE:
         return {
             "question_intent": "architecture_clarification",
+            "phase": current_stage,
             "intent_mode": intent_mode,
             "target_type": "module_or_call_chain",
             "target_label": branch["label"] if branch else "module responsibilities and call chains",
+            "target_identifier": branch["label"] if branch else "module responsibilities and call chains",
             "target_branch_id": branch.get("branch_id") if branch else None,
+            "selected_framework_gap": selected_framework_gap,
+            "selected_branch_ids": [branch.get("branch_id")] if branch and branch.get("branch_id") else [],
+            "selected_turn_ids": branch.get("evidence_turn_ids", []) if branch else [],
             "retrieval_focus": "architecture gaps, collaboration mechanisms, and key branch evidence",
             "constraints": [
                 "Ask about collaboration or call chains",
                 "Avoid shallow overview repetition",
                 "Avoid jumping to file-level implementation detail unless naming a path is necessary",
+                "Stay focused on how the current structure is organized rather than proposing changes",
             ],
             "prompt_id": "next_question_architecture",
             "reasoning": f"Architecture gaps remaining: {', '.join(stage_gaps) or 'none detected'}",
             "drift_detected": False,
             "human_collaboration_gate": False,
             "human_review_applied": False,
+            "validation_constraints": [
+                "must stay architecture-oriented",
+                "must emphasize module interaction or call chains",
+            ],
             "why_this_question": "Architecture still needs clearer module responsibilities or call-chain evidence.",
         }
 
     if current_stage == CODE_DETAIL_STAGE:
-        if collaboration_gap_count >= 3 and framework_gaps_for_stage(coverage_state, CODE_DETAIL_STAGE):
+        code_detail_turns = framework.get("stage_turn_counts", {}).get(CODE_DETAIL_STAGE, 0)
+        branch_requests_human_choice = bool(
+            branch and any(
+                marker in " ".join(branch.get("unresolved_points", [])).lower()
+                for marker in ("human should choose", "choose whether", "prioritize", "deepen first")
+            )
+        )
+        if (
+            collaboration_gap_count >= 3
+            and framework_gaps_for_stage(coverage_state, CODE_DETAIL_STAGE)
+            and (code_detail_turns >= 4 or branch_requests_human_choice)
+        ):
             return {
                 "question_intent": "human_review",
+                "phase": current_stage,
                 "intent_mode": intent_mode,
                 "target_type": "prioritization",
                 "target_label": branch["label"] if branch else "which implementation branch to deepen next",
+                "target_identifier": branch["label"] if branch else "which implementation branch to deepen next",
                 "target_branch_id": branch.get("branch_id") if branch else None,
+                "selected_framework_gap": selected_framework_gap,
+                "selected_branch_ids": [branch.get("branch_id")] if branch and branch.get("branch_id") else [],
+                "selected_turn_ids": branch.get("evidence_turn_ids", []) if branch else [],
                 "retrieval_focus": "highest-priority branch plus code-detail gaps",
                 "constraints": [
                     "Ask the human to choose which module, file, path, or branch should be deepened next",
@@ -171,6 +235,10 @@ def plan_next_question(
                 "drift_detected": False,
                 "human_collaboration_gate": True,
                 "human_review_applied": False,
+                "validation_constraints": [
+                    "must ask for human prioritization explicitly",
+                    "must stay in understand-current-code mode",
+                ],
                 "why_this_question": "Before going deeper into implementation, the interview should record the human's prioritization choice.",
             }
 
@@ -186,22 +254,33 @@ def plan_next_question(
             )
         return {
             "question_intent": "code_detail_deep_dive",
+            "phase": current_stage,
             "intent_mode": intent_mode,
             "target_type": target_type,
             "target_label": target_label,
+            "target_identifier": target_label,
             "target_branch_id": branch.get("branch_id") if branch else None,
+            "selected_framework_gap": selected_framework_gap,
+            "selected_branch_ids": [branch.get("branch_id")] if branch and branch.get("branch_id") else [],
+            "selected_turn_ids": branch.get("evidence_turn_ids", []) if branch else [],
             "retrieval_focus": "code-detail counts, unresolved implementation gaps, and the most evidence-backed branch",
             "constraints": [
                 "Must reference a specific file, class, method, execution path, library usage, or error path",
                 "Reject broad implementation questions without a concrete target",
                 "Prefer actual code artifact names when available",
                 "Ask how the current implementation works, not what should be changed",
+                "Keep the question focused on the current code artifact rather than redesign ideas",
             ],
             "prompt_id": "next_question_code_detail",
             "reasoning": f"Code-detail gaps remaining: {', '.join(stage_gaps) or 'need more concrete implementation evidence'}",
             "drift_detected": False,
             "human_collaboration_gate": False,
             "human_review_applied": False,
+            "validation_constraints": [
+                "must be implementation-specific",
+                "must stay in understand_current_code mode",
+                "must reference a concrete artifact or execution path",
+            ],
             "why_this_question": build_code_detail_why_text(
                 target_type=target_type,
                 target_label=target_label,
@@ -213,13 +292,18 @@ def plan_next_question(
         scenario_target = pick_use_case_target(stage_gaps, branch)
         return {
             "question_intent": "scenario_completion",
+            "phase": current_stage,
             "intent_mode": intent_mode,
             "target_type": "scenario",
             "target_label": scenario_target,
+            "target_identifier": scenario_target,
             "target_branch_id": branch.get("branch_id") if branch else None,
+            "selected_framework_gap": selected_framework_gap,
+            "selected_branch_ids": [branch.get("branch_id")] if branch and branch.get("branch_id") else [],
+            "selected_turn_ids": branch.get("evidence_turn_ids", []) if branch else [],
             "retrieval_focus": "scenario gaps, earlier actor/module evidence, and boundary conditions",
             "constraints": [
-                "Collect trigger, actors, inputs, process, result, and boundary conditions",
+                "Collect trigger, actors, inputs, process, outputs, and boundary conditions",
                 "Tie the scenario back to real actors and inputs/outputs",
                 "Avoid returning to broad overview",
                 "Avoid purely internal code questions without scenario relevance",
@@ -230,15 +314,24 @@ def plan_next_question(
             "drift_detected": False,
             "human_collaboration_gate": False,
             "human_review_applied": False,
+            "validation_constraints": [
+                "must collect scenario contract evidence",
+                "must mention actor/process/input/output/boundary framing",
+            ],
             "why_this_question": "The interview now needs a complete representative scenario rather than more isolated code details.",
         }
 
     return {
         "question_intent": "wrap_up_readiness",
+        "phase": current_stage,
         "intent_mode": intent_mode,
         "target_type": "coverage_gap",
         "target_label": "remaining evidence needed before delivery",
+        "target_identifier": "remaining evidence needed before delivery",
         "target_branch_id": branch.get("branch_id") if branch else None,
+        "selected_framework_gap": selected_framework_gap,
+        "selected_branch_ids": [branch.get("branch_id")] if branch and branch.get("branch_id") else [],
+        "selected_turn_ids": branch.get("evidence_turn_ids", []) if branch else [],
         "retrieval_focus": "small remaining gaps and handoff readiness",
         "constraints": [
             "Do not reopen large new topics",
@@ -249,8 +342,51 @@ def plan_next_question(
         "drift_detected": False,
         "human_collaboration_gate": False,
         "human_review_applied": False,
+        "validation_constraints": [
+            "must stay concise and close remaining evidence gaps only",
+        ],
         "why_this_question": "Coverage is mostly complete, so the next question should only close the final remaining gap.",
     }
+
+
+def prioritized_stage_gaps(stage: str, stage_gaps: list[str]) -> list[str]:
+    priority_order = {
+        PANORAMA_STAGE: [
+            "purpose",
+            "target_users",
+            "boundaries",
+            "major_modules",
+            "high_level_workflow",
+            "initial_module_relationships",
+        ],
+        ARCHITECTURE_STAGE: [
+            "module_responsibilities",
+            "collaboration_mechanisms",
+            "key_call_chains",
+            "system_structure",
+            "architecture_style_or_organization",
+            "design_rationale_or_quality_attributes",
+        ],
+        CODE_DETAIL_STAGE: [
+            "specific_files_count",
+            "specific_methods_count",
+            "execution_paths_count",
+            "error_handling_points_count",
+            "library_usage_points_count",
+            "protocol_implementation_points_count",
+            "state_management_points_count",
+            "specific_classes_count",
+        ],
+        USE_CASE_STAGE: [
+            "representative_scenarios_count",
+            "actors_roles_count",
+            "input_output_patterns_count",
+            "boundary_conditions_count",
+            "extension_points_count",
+        ],
+    }
+    order = priority_order.get(stage, [])
+    return sorted(stage_gaps, key=lambda gap: (order.index(gap) if gap in order else len(order), gap))
 
 
 def prompt_id_for_stage(stage: str) -> str:
@@ -294,9 +430,9 @@ def resolve_human_review_target(
 
 
 def pick_use_case_target(stage_gaps: list[str], branch: dict[str, Any] | None) -> str:
-    if "scenario_count" in stage_gaps:
+    if "representative_scenarios_count" in stage_gaps or "scenario_count" in stage_gaps:
         return "the next representative scenario"
-    if "user_roles_count" in stage_gaps:
+    if "actors_roles_count" in stage_gaps or "user_roles_count" in stage_gaps:
         return "the actor or user role in the current scenario"
     if "input_output_patterns_count" in stage_gaps:
         return "the inputs and outputs of the current scenario"

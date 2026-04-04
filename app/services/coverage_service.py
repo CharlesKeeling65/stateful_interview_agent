@@ -87,29 +87,31 @@ PANORAMA_KEYWORDS = {
     "boundaries": {"boundary", "boundaries", "scope", "limit", "outside", "inside"},
     "major_modules": {"module", "modules", "service", "services", "component", "components", "gateway"},
     "high_level_workflow": {"workflow", "flow", "routing", "pipeline", "intake", "handoff", "request"},
+    "initial_module_relationships": {"between", "connect", "handoff", "through", "relationship", "interaction", "coordinate"},
 }
 
 ARCHITECTURE_KEYWORDS = {
-    "architecture_style": {"layered", "pipeline", "monolith", "microservice", "architecture", "tier"},
+    "architecture_style_or_organization": {"layered", "pipeline", "monolith", "microservice", "architecture", "tier", "organized"},
     "module_responsibilities": {"responsibility", "responsibilities", "owns", "split", "organize", "module"},
-    "communication_mechanisms": {"http", "rpc", "event", "queue", "message", "async", "synchronous"},
+    "collaboration_mechanisms": {"http", "rpc", "event", "queue", "message", "async", "synchronous", "collabor"},
     "key_call_chains": {"call chain", "path", "handoff", "request path", "execution path", "routes to", "->"},
-    "design_rationale": {"rationale", "tradeoff", "reliability", "performance", "maintainability", "why"},
+    "system_structure": {"layer", "structure", "organized", "split", "boundary", "tier"},
+    "design_rationale_or_quality_attributes": {"rationale", "tradeoff", "reliability", "performance", "maintainability", "why"},
 }
 
 USE_CASE_KEYWORDS = {
-    "scenario_count": {"scenario", "workflow", "journey", "request", "case"},
-    "user_roles_count": {"role", "operator", "customer", "admin", "analyst", "actor"},
+    "representative_scenarios_count": {"scenario", "workflow", "journey", "request", "case", "trigger"},
+    "actors_roles_count": {"role", "operator", "customer", "admin", "analyst", "actor", "user"},
     "input_output_patterns_count": {"input", "output", "payload", "response", "request", "result"},
     "boundary_conditions_count": {"edge", "boundary", "limit", "invalid", "failure", "condition"},
     "extension_points_count": {"extension", "plugin", "customize", "hook", "configuration"},
 }
 
 COLLABORATION_MARKERS = {
-    "judgment_turn_count": ("i think", "i believe", "my judgment", "my read is", "my view"),
-    "correction_turn_count": ("correct", "actually", "instead", "not that", "misread", "fix the earlier"),
-    "redirection_turn_count": ("redirect", "back to", "return to", "focus back", "instead of that branch"),
-    "prioritization_turn_count": ("prioritize", "worth continuing", "deepen next", "first before", "more central"),
+    "human_judgment_turn_count": ("i think", "i believe", "my judgment", "my read is", "my view"),
+    "human_correction_turn_count": ("correct", "actually", "instead", "not that", "misread", "fix the earlier"),
+    "human_redirection_turn_count": ("redirect", "back to", "return to", "focus back", "instead of that branch"),
+    "human_prioritization_turn_count": ("prioritize", "worth continuing", "deepen next", "first before", "more central"),
 }
 
 DRIFT_NARROW_TOPIC_MARKERS = {
@@ -127,7 +129,7 @@ DRIFT_NARROW_TOPIC_MARKERS = {
 
 def default_coverage_state() -> dict[str, Any]:
     return {
-        "version": 1,
+        "version": 2,
         "branch_count": 0,
         "updated_through_turn_no": 0,
         "branches": [],
@@ -148,12 +150,14 @@ def load_coverage_state(project: ProjectSession) -> dict[str, Any]:
 
     if not isinstance(parsed, dict):
         return default_coverage_state()
-    parsed.setdefault("version", 1)
+    parsed.setdefault("version", 2)
     parsed.setdefault("branches", [])
     parsed.setdefault("branch_count", len(parsed["branches"]))
     parsed.setdefault("updated_through_turn_no", 0)
     parsed.setdefault("question_history", [])
-    parsed.setdefault("framework", default_framework_coverage())
+    parsed["framework"] = normalize_framework_coverage(
+        parsed.get("framework", default_framework_coverage())
+    )
     return parsed
 
 
@@ -259,34 +263,38 @@ def default_framework_coverage() -> dict[str, Any]:
             "boundaries": False,
             "major_modules": False,
             "high_level_workflow": False,
+            "initial_module_relationships": False,
         },
         "architecture": {
-            "architecture_style": False,
+            "architecture_style_or_organization": False,
             "module_responsibilities": False,
-            "communication_mechanisms": False,
+            "collaboration_mechanisms": False,
             "key_call_chains": False,
-            "design_rationale": False,
+            "system_structure": False,
+            "design_rationale_or_quality_attributes": False,
         },
         "code_detail": {
-            "key_files_count": 0,
-            "key_classes_count": 0,
-            "key_methods_count": 0,
+            "specific_files_count": 0,
+            "specific_classes_count": 0,
+            "specific_methods_count": 0,
             "execution_paths_count": 0,
-            "third_party_library_usage_count": 0,
-            "error_handling_count": 0,
+            "library_usage_points_count": 0,
+            "error_handling_points_count": 0,
+            "protocol_implementation_points_count": 0,
+            "state_management_points_count": 0,
         },
         "use_cases": {
-            "scenario_count": 0,
-            "user_roles_count": 0,
+            "representative_scenarios_count": 0,
+            "actors_roles_count": 0,
             "input_output_patterns_count": 0,
             "boundary_conditions_count": 0,
             "extension_points_count": 0,
         },
         "human_collaboration": {
-            "judgment_turn_count": 0,
-            "correction_turn_count": 0,
-            "redirection_turn_count": 0,
-            "prioritization_turn_count": 0,
+            "human_judgment_turn_count": 0,
+            "human_correction_turn_count": 0,
+            "human_redirection_turn_count": 0,
+            "human_prioritization_turn_count": 0,
         },
         "stage_turn_counts": {
             "Panorama Mapping": 0,
@@ -300,8 +308,93 @@ def default_framework_coverage() -> dict[str, Any]:
     }
 
 
+def normalize_framework_coverage(framework: dict[str, Any] | None) -> dict[str, Any]:
+    normalized = default_framework_coverage()
+    source = framework or {}
+
+    for section in ("panorama", "architecture", "code_detail", "use_cases", "human_collaboration"):
+        normalized_section = normalized[section]
+        incoming = source.get(section, {}) or {}
+        for key in normalized_section:
+            if key in incoming:
+                normalized_section[key] = incoming[key]
+
+    architecture = normalized["architecture"]
+    incoming_architecture = (source.get("architecture", {}) or {})
+    architecture["architecture_style_or_organization"] = incoming_architecture.get(
+        "architecture_style_or_organization",
+        incoming_architecture.get("architecture_style", architecture["architecture_style_or_organization"]),
+    )
+    architecture["collaboration_mechanisms"] = incoming_architecture.get(
+        "collaboration_mechanisms",
+        incoming_architecture.get("communication_mechanisms", architecture["collaboration_mechanisms"]),
+    )
+    architecture["design_rationale_or_quality_attributes"] = incoming_architecture.get(
+        "design_rationale_or_quality_attributes",
+        incoming_architecture.get("design_rationale", architecture["design_rationale_or_quality_attributes"]),
+    )
+
+    code_detail = normalized["code_detail"]
+    incoming_code_detail = (source.get("code_detail", {}) or {})
+    code_detail["specific_files_count"] = incoming_code_detail.get(
+        "specific_files_count",
+        incoming_code_detail.get("key_files_count", code_detail["specific_files_count"]),
+    )
+    code_detail["specific_classes_count"] = incoming_code_detail.get(
+        "specific_classes_count",
+        incoming_code_detail.get("key_classes_count", code_detail["specific_classes_count"]),
+    )
+    code_detail["specific_methods_count"] = incoming_code_detail.get(
+        "specific_methods_count",
+        incoming_code_detail.get("key_methods_count", code_detail["specific_methods_count"]),
+    )
+    code_detail["library_usage_points_count"] = incoming_code_detail.get(
+        "library_usage_points_count",
+        incoming_code_detail.get("third_party_library_usage_count", code_detail["library_usage_points_count"]),
+    )
+    code_detail["error_handling_points_count"] = incoming_code_detail.get(
+        "error_handling_points_count",
+        incoming_code_detail.get("error_handling_count", code_detail["error_handling_points_count"]),
+    )
+
+    use_cases = normalized["use_cases"]
+    incoming_use_cases = (source.get("use_cases", {}) or {})
+    use_cases["representative_scenarios_count"] = incoming_use_cases.get(
+        "representative_scenarios_count",
+        incoming_use_cases.get("scenario_count", use_cases["representative_scenarios_count"]),
+    )
+    use_cases["actors_roles_count"] = incoming_use_cases.get(
+        "actors_roles_count",
+        incoming_use_cases.get("user_roles_count", use_cases["actors_roles_count"]),
+    )
+
+    collaboration = normalized["human_collaboration"]
+    incoming_collaboration = (source.get("human_collaboration", {}) or {})
+    collaboration["human_judgment_turn_count"] = incoming_collaboration.get(
+        "human_judgment_turn_count",
+        incoming_collaboration.get("judgment_turn_count", collaboration["human_judgment_turn_count"]),
+    )
+    collaboration["human_correction_turn_count"] = incoming_collaboration.get(
+        "human_correction_turn_count",
+        incoming_collaboration.get("correction_turn_count", collaboration["human_correction_turn_count"]),
+    )
+    collaboration["human_redirection_turn_count"] = incoming_collaboration.get(
+        "human_redirection_turn_count",
+        incoming_collaboration.get("redirection_turn_count", collaboration["human_redirection_turn_count"]),
+    )
+    collaboration["human_prioritization_turn_count"] = incoming_collaboration.get(
+        "human_prioritization_turn_count",
+        incoming_collaboration.get("prioritization_turn_count", collaboration["human_prioritization_turn_count"]),
+    )
+
+    normalized["stage_turn_counts"].update(source.get("stage_turn_counts", {}) or {})
+    normalized["gaps"] = source.get("gaps", {}) or {}
+    normalized["wrap_up_ready"] = bool(source.get("wrap_up_ready", False))
+    return normalized
+
+
 def rebuild_framework_coverage(turns: list[InterviewTurn]) -> dict[str, Any]:
-    framework = default_framework_coverage()
+    framework = normalize_framework_coverage(default_framework_coverage())
     panorama = framework["panorama"]
     architecture = framework["architecture"]
     code_detail = framework["code_detail"]
@@ -329,16 +422,21 @@ def rebuild_framework_coverage(turns: list[InterviewTurn]) -> dict[str, Any]:
             if any(keyword in text for keyword in keywords):
                 architecture[key] = True
 
-        code_detail["key_files_count"] += len(set(FILE_PATTERN.findall(turn.answer_text)))
-        code_detail["key_classes_count"] += len(set(CLASS_PATTERN.findall(turn.answer_text)))
-        code_detail["key_methods_count"] += len(set(method.strip(" (") for method in METHOD_PATTERN.findall(turn.answer_text)))
+        answer_text = turn.answer_text or ""
+        code_detail["specific_files_count"] += len(set(FILE_PATTERN.findall(answer_text)))
+        code_detail["specific_classes_count"] += len(set(CLASS_PATTERN.findall(answer_text)))
+        code_detail["specific_methods_count"] += len(set(method.strip(" (") for method in METHOD_PATTERN.findall(answer_text)))
         if any(marker in text for marker in {"execution path", "request path", "call chain", "->"}):
             code_detail["execution_paths_count"] += 1
-        code_detail["third_party_library_usage_count"] += len(
-            set(token.lower() for token in LIBRARY_PATTERN.findall(turn.answer_text))
+        code_detail["library_usage_points_count"] += len(
+            set(token.lower() for token in LIBRARY_PATTERN.findall(answer_text))
         )
         if any(marker in text for marker in {"error", "exception", "retry", "fallback", "http exception", "log"}):
-            code_detail["error_handling_count"] += 1
+            code_detail["error_handling_points_count"] += 1
+        if any(marker in text for marker in {"protocol", "schema", "payload", "response model", "request body", "serialization", "request", "response", "api", "route"}):
+            code_detail["protocol_implementation_points_count"] += 1
+        if any(marker in text for marker in {"state", "cache", "session", "checkpoint", "thread_id", "persistence"}):
+            code_detail["state_management_points_count"] += 1
 
         for key, keywords in USE_CASE_KEYWORDS.items():
             if turn.stage == "Use Cases & Scenarios" and any(keyword in text for keyword in keywords):
@@ -352,12 +450,12 @@ def rebuild_framework_coverage(turns: list[InterviewTurn]) -> dict[str, Any]:
         verdict = human_review.get("verdict")
         direction = human_review.get("direction")
         if verdict in {"sufficient", "insufficient", "drifted"}:
-            collaboration["judgment_turn_count"] += 1
+            collaboration["human_judgment_turn_count"] += 1
         if verdict == "drifted" or direction == "redirect":
-            collaboration["redirection_turn_count"] += 1
-            collaboration["correction_turn_count"] += 1
+            collaboration["human_redirection_turn_count"] += 1
+            collaboration["human_correction_turn_count"] += 1
         if human_review.get("preferred_next_focus"):
-            collaboration["prioritization_turn_count"] += 1
+            collaboration["human_prioritization_turn_count"] += 1
 
     framework["gaps"] = {
         "panorama": [
@@ -385,12 +483,34 @@ def rebuild_framework_coverage(turns: list[InterviewTurn]) -> dict[str, Any]:
     framework["wrap_up_ready"] = (
         len(framework["gaps"]["panorama"]) <= 1
         and len(framework["gaps"]["architecture"]) <= 1
-        and code_detail["key_files_count"] >= 2
-        and code_detail["key_methods_count"] >= 2
-        and use_cases["scenario_count"] >= 1
+        and code_detail["specific_files_count"] >= 2
+        and code_detail["specific_methods_count"] >= 2
+        and use_cases["representative_scenarios_count"] >= 1
         and use_cases["input_output_patterns_count"] >= 1
         and use_cases["boundary_conditions_count"] >= 1
     )
+    return add_legacy_framework_aliases(framework)
+
+
+def add_legacy_framework_aliases(framework: dict[str, Any]) -> dict[str, Any]:
+    framework["architecture"]["architecture_style"] = framework["architecture"]["architecture_style_or_organization"]
+    framework["architecture"]["communication_mechanisms"] = framework["architecture"]["collaboration_mechanisms"]
+    framework["architecture"]["design_rationale"] = framework["architecture"]["design_rationale_or_quality_attributes"]
+
+    framework["code_detail"]["key_files_count"] = framework["code_detail"]["specific_files_count"]
+    framework["code_detail"]["key_classes_count"] = framework["code_detail"]["specific_classes_count"]
+    framework["code_detail"]["key_methods_count"] = framework["code_detail"]["specific_methods_count"]
+    framework["code_detail"]["third_party_library_usage_count"] = framework["code_detail"]["library_usage_points_count"]
+    framework["code_detail"]["error_handling_count"] = framework["code_detail"]["error_handling_points_count"]
+
+    framework["use_cases"]["scenario_count"] = framework["use_cases"]["representative_scenarios_count"]
+    framework["use_cases"]["typical_scenarios_count"] = framework["use_cases"]["representative_scenarios_count"]
+    framework["use_cases"]["user_roles_count"] = framework["use_cases"]["actors_roles_count"]
+
+    framework["human_collaboration"]["judgment_turn_count"] = framework["human_collaboration"]["human_judgment_turn_count"]
+    framework["human_collaboration"]["correction_turn_count"] = framework["human_collaboration"]["human_correction_turn_count"]
+    framework["human_collaboration"]["redirection_turn_count"] = framework["human_collaboration"]["human_redirection_turn_count"]
+    framework["human_collaboration"]["prioritization_turn_count"] = framework["human_collaboration"]["human_prioritization_turn_count"]
     return framework
 
 
@@ -479,7 +599,9 @@ def merge_unique(existing: list[Any], incoming: list[Any], *, limit: int | None 
 
 
 def framework_gaps_for_stage(coverage_state: dict[str, Any], stage: str) -> list[str]:
-    framework = coverage_state.get("framework", default_framework_coverage())
+    framework = normalize_framework_coverage(
+        coverage_state.get("framework", default_framework_coverage())
+    )
     gap_map = framework.get("gaps", {})
     if not gap_map:
         gap_map = {
@@ -509,6 +631,27 @@ def framework_gaps_for_stage(coverage_state: dict[str, Any], stage: str) -> list
                 if isinstance(count, (int, float)) and count <= 0
             ],
         }
+    gap_aliases = {
+        "architecture_style": "architecture_style_or_organization",
+        "communication_mechanisms": "collaboration_mechanisms",
+        "design_rationale": "design_rationale_or_quality_attributes",
+        "key_files_count": "specific_files_count",
+        "key_classes_count": "specific_classes_count",
+        "key_methods_count": "specific_methods_count",
+        "third_party_library_usage_count": "library_usage_points_count",
+        "error_handling_count": "error_handling_points_count",
+        "scenario_count": "representative_scenarios_count",
+        "typical_scenarios_count": "representative_scenarios_count",
+        "user_roles_count": "actors_roles_count",
+        "judgment_turn_count": "human_judgment_turn_count",
+        "correction_turn_count": "human_correction_turn_count",
+        "redirection_turn_count": "human_redirection_turn_count",
+        "prioritization_turn_count": "human_prioritization_turn_count",
+    }
+    gap_map = {
+        key: [gap_aliases.get(item, item) for item in value]
+        for key, value in gap_map.items()
+    }
     if stage == "Panorama Mapping":
         return gap_map.get("panorama", [])
     if stage == "Architecture Understanding":
@@ -521,7 +664,9 @@ def framework_gaps_for_stage(coverage_state: dict[str, Any], stage: str) -> list
 
 
 def detect_topic_drift(coverage_state: dict[str, Any], stage: str) -> dict[str, Any]:
-    framework = coverage_state.get("framework", default_framework_coverage())
+    framework = normalize_framework_coverage(
+        coverage_state.get("framework", default_framework_coverage())
+    )
     panorama_gaps = framework_gaps_for_stage(coverage_state, "Panorama Mapping")
     architecture_gaps = framework_gaps_for_stage(coverage_state, "Architecture Understanding")
     branches = coverage_state.get("branches", [])

@@ -1,4 +1,8 @@
-from app.services.coverage_service import default_framework_coverage, framework_gaps_for_stage
+from app.services.coverage_service import (
+    default_framework_coverage,
+    framework_gaps_for_stage,
+    normalize_framework_coverage,
+)
 
 
 PANORAMA_STAGE = "Panorama Mapping"
@@ -27,7 +31,9 @@ def decide_next_stage(
     max_turns: int,
     human_review_signal: dict | None = None,
 ) -> dict:
-    framework = coverage_state.get("framework", default_framework_coverage())
+    framework = normalize_framework_coverage(
+        coverage_state.get("framework", default_framework_coverage())
+    )
     stage_turn_counts = framework.get("stage_turn_counts", {})
     remaining_turns = max_turns - next_turn_no + 1
     wrap_up_ready = framework.get("wrap_up_ready", False)
@@ -38,6 +44,27 @@ def decide_next_stage(
     use_case_gaps = framework_gaps_for_stage(coverage_state, USE_CASE_STAGE)
     collaboration_gaps = framework.get("gaps", {}).get("human_collaboration", [])
     human_phase_ready = bool((human_review_signal or {}).get("phase_ready"))
+    human_direction = (human_review_signal or {}).get("direction")
+
+    panorama_required = {"purpose", "target_users", "major_modules", "high_level_workflow"}
+    architecture_required = {
+        "module_responsibilities",
+        "collaboration_mechanisms",
+        "key_call_chains",
+        "system_structure",
+    }
+    code_detail_required = {
+        "specific_files_count",
+        "specific_methods_count",
+        "execution_paths_count",
+        "error_handling_points_count",
+    }
+    use_case_required = {
+        "representative_scenarios_count",
+        "actors_roles_count",
+        "input_output_patterns_count",
+        "boundary_conditions_count",
+    }
 
     if wrap_up_ready and remaining_turns <= 1:
         return {
@@ -47,30 +74,32 @@ def decide_next_stage(
         }
 
     panorama_turns = stage_turn_counts.get(PANORAMA_STAGE, 0)
-    if current_stage == PANORAMA_STAGE and human_phase_ready and panorama_turns >= 2:
+    panorama_critical_gaps = [gap for gap in panorama_gaps if gap in panorama_required]
+    if current_stage == PANORAMA_STAGE and human_phase_ready and panorama_turns >= 2 and len(panorama_critical_gaps) <= 1:
         return {
             "next_stage": ARCHITECTURE_STAGE,
             "reason": "A human marked panorama coverage as sufficiently complete, so the interview can move into architecture understanding.",
             "gaps": architecture_gaps,
         }
-    if panorama_turns < 2 or panorama_gaps:
+    if panorama_turns < 2 or panorama_critical_gaps or len(panorama_gaps) > 1:
         return {
             "next_stage": PANORAMA_STAGE,
-            "reason": f"Panorama coverage still has gaps: {', '.join(panorama_gaps[:3]) or 'need at least two panorama turns'}.",
+            "reason": f"Panorama coverage still has macro gaps: {', '.join((panorama_critical_gaps or panorama_gaps)[:3]) or 'need at least two panorama turns'}.",
             "gaps": panorama_gaps,
         }
 
     architecture_turns = stage_turn_counts.get(ARCHITECTURE_STAGE, 0)
-    if current_stage == ARCHITECTURE_STAGE and human_phase_ready and architecture_turns >= 2:
+    architecture_critical_gaps = [gap for gap in architecture_gaps if gap in architecture_required]
+    if current_stage == ARCHITECTURE_STAGE and human_phase_ready and architecture_turns >= 3 and len(architecture_critical_gaps) <= 1:
         return {
             "next_stage": CODE_DETAIL_STAGE,
             "reason": "A human marked architecture coverage as sufficiently complete, so the interview can move into code detail.",
             "gaps": code_detail_gaps,
         }
-    if architecture_turns < 3 or architecture_gaps:
+    if architecture_turns < 3 or architecture_critical_gaps or len(architecture_gaps) > 1:
         return {
             "next_stage": ARCHITECTURE_STAGE,
-            "reason": f"Architecture understanding is not complete yet: {', '.join(architecture_gaps[:3]) or 'need more architecture turns'}.",
+            "reason": f"Architecture understanding is not complete yet: {', '.join((architecture_critical_gaps or architecture_gaps)[:3]) or 'need more architecture turns'}.",
             "gaps": architecture_gaps,
         }
 
@@ -93,21 +122,28 @@ def decide_next_stage(
     code_detail_share = (
         code_detail_turns / total_completed_turns if total_completed_turns > 0 else 0.0
     )
-    target_code_detail_turns = max(8, int(max_turns * 0.45))
+    target_code_detail_turns = max(10, int(max_turns * 0.65))
     code_detail_is_dominant = code_detail_turns >= 8 and code_detail_share >= 0.55
+    code_detail_core_gaps = [gap for gap in code_detail_gaps if gap in code_detail_required]
+    use_case_core_gaps = [gap for gap in use_case_gaps if gap in use_case_required]
 
-    if code_detail_is_dominant and use_case_gaps and remaining_turns <= max(10, max_turns // 4):
+    if use_case_core_gaps and (remaining_turns <= max(4, len(use_case_core_gaps) + 1)):
         return {
             "next_stage": USE_CASE_STAGE,
             "reason": (
-                "Code-detail coverage has already dominated the interview, so the remaining turns "
-                f"should complete use-case evidence: {', '.join(use_case_gaps[:3])}."
+                "The interview is entering its closing window, so the remaining turns must complete "
+                f"the missing scenario contract: {', '.join(use_case_core_gaps[:3])}."
             ),
-            "gaps": use_case_gaps,
+            "gaps": use_case_core_gaps,
         }
 
-    if code_detail_gaps:
-        if current_stage == CODE_DETAIL_STAGE and human_phase_ready and code_detail_turns >= max(6, max_turns // 5):
+    if code_detail_core_gaps:
+        if (
+            current_stage == CODE_DETAIL_STAGE
+            and human_phase_ready
+            and code_detail_turns >= max(8, max_turns // 4)
+            and not use_case_core_gaps
+        ):
             return {
                 "next_stage": USE_CASE_STAGE,
                 "reason": "A human marked the current code-detail phase as sufficiently complete, so the remaining turns should collect scenario evidence.",
@@ -117,26 +153,30 @@ def decide_next_stage(
             "next_stage": CODE_DETAIL_STAGE,
             "reason": (
                 "Code detail coverage must dominate the remaining interview turns. "
-                f"Outstanding code-detail gaps: {', '.join(code_detail_gaps[:4]) or 'more implementation depth needed'}."
+                f"Outstanding code-detail gaps: {', '.join(code_detail_core_gaps[:4]) or 'more implementation depth needed'}."
             ),
-            "gaps": code_detail_gaps,
+            "gaps": code_detail_core_gaps,
         }
 
-    if code_detail_turns < target_code_detail_turns and not use_case_gaps:
+    if (
+        code_detail_turns < target_code_detail_turns
+        and not use_case_core_gaps
+        and human_direction != "redirect"
+    ):
         return {
             "next_stage": CODE_DETAIL_STAGE,
             "reason": (
-                "Code-detail coverage is still growing, but scenario coverage is already complete, "
-                "so the interview can spend another turn in implementation detail."
+                "Code-detail should still dominate the transcript, and the current implementation coverage "
+                "has not yet reached the target depth."
             ),
             "gaps": code_detail_gaps,
         }
 
-    if use_case_gaps:
+    if use_case_core_gaps:
         return {
             "next_stage": USE_CASE_STAGE,
-            "reason": f"Use-case and scenario coverage is still incomplete: {', '.join(use_case_gaps[:3])}.",
-            "gaps": use_case_gaps,
+            "reason": f"Use-case and scenario coverage is still incomplete: {', '.join(use_case_core_gaps[:3])}.",
+            "gaps": use_case_core_gaps,
         }
 
     if wrap_up_ready or (current_stage == USE_CASE_STAGE and human_phase_ready and not use_case_gaps):
