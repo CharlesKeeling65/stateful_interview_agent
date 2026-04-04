@@ -2,7 +2,9 @@ import { useEffect, useMemo, useState } from 'react'
 
 import { AnswerComposer } from './components/AnswerComposer'
 import { ConfirmDeleteDialog } from './components/ConfirmDeleteDialog'
+import { ActiveRunPanel } from './components/ExecutionTraceSection'
 import { ProjectSidebar } from './components/ProjectSidebar'
+import { StatsDashboard } from './components/StatsDashboard'
 import { StatusPanel } from './components/StatusPanel'
 import { TranscriptPanel } from './components/TranscriptPanel'
 import { LOCALE_STORAGE_KEY, createTranslator, getDisplayStageLabel, normalizeLocale, type Locale } from './i18n'
@@ -36,6 +38,7 @@ function App() {
     activeRun,
   } = useProject()
   const [locale, setLocale] = useState<Locale>(() => normalizeLocale(localStorage.getItem(LOCALE_STORAGE_KEY)))
+  const [page, setPage] = useState<'workspace' | 'analytics'>('workspace')
   const [exportLabel, setExportLabel] = useState<string | null>(null)
   const [latestQuestionCopyLabel, setLatestQuestionCopyLabel] = useState<string | null>(null)
   const [projectPendingDelete, setProjectPendingDelete] = useState<ProjectRead | null>(null)
@@ -147,27 +150,40 @@ function App() {
 
       <div className="relative mx-auto min-h-screen w-full max-w-[1800px] px-4 py-4 sm:px-6 lg:px-8">
         <section className="mb-4 rounded-[2rem] border border-white/60 bg-white/80 p-5 shadow-[0_20px_50px_rgba(148,163,184,0.16)] backdrop-blur">
-          <div className="flex flex-wrap items-start justify-between gap-4">
-            <div className="max-w-3xl">
+          <div className="flex flex-wrap items-center justify-between gap-4">
+            <div>
               <p className="text-[0.68rem] font-semibold uppercase tracking-[0.32em] text-slate-500">
                 {t('app.interviewFlow')}
               </p>
               <h1 className="mt-3 font-serif text-4xl leading-tight text-slate-950">
                 {t('app.title')}
               </h1>
-              <p className="mt-3 text-sm leading-7 text-slate-600">
-                {t('app.subtitle')}
-              </p>
-              <p className="mt-2 text-xs leading-6 text-slate-500">
-                {t('app.interviewFlowHint')}
-              </p>
             </div>
 
-            <div className="rounded-[1.5rem] border border-slate-200 bg-slate-50 px-4 py-3">
-              <p className="text-[0.64rem] font-semibold uppercase tracking-[0.2em] text-slate-500">
-                {t('app.language')}
-              </p>
-              <div className="mt-3 inline-flex rounded-full border border-slate-200 bg-white p-1">
+            <div className="flex flex-wrap items-center gap-3">
+              <nav className="inline-flex rounded-full border border-slate-200 bg-white p-1">
+                {([
+                  ['workspace', t('nav.workspace')],
+                  ['analytics', t('nav.analytics')],
+                ] as const).map(([value, label]) => {
+                  const active = page === value
+                  return (
+                    <button
+                      key={value}
+                      type="button"
+                      className={`rounded-full px-4 py-2 text-sm font-medium transition ${
+                        active ? 'bg-slate-950 text-white' : 'text-slate-600 hover:bg-slate-100'
+                      }`}
+                      onClick={() => setPage(value)}
+                      aria-pressed={active}
+                    >
+                      {label}
+                    </button>
+                  )
+                })}
+              </nav>
+
+              <div className="inline-flex rounded-full border border-slate-200 bg-white p-1">
                 {(['en', 'zh-CN'] as const).map((option) => {
                   const active = option === locale
                   return (
@@ -188,6 +204,10 @@ function App() {
             </div>
           </div>
 
+          <p className="mt-4 max-w-3xl text-sm leading-7 text-slate-600">
+            {page === 'workspace' ? t('app.subtitle') : t('analytics.subtitle')}
+          </p>
+
           <div className="mt-5 grid gap-3 md:grid-cols-2 xl:grid-cols-4">
             {overviewStats.map((item) => (
               <div key={item.label} className="rounded-[1.5rem] border border-slate-200 bg-slate-50/80 px-4 py-4">
@@ -200,7 +220,7 @@ function App() {
           </div>
         </section>
 
-        <div className="grid min-h-[calc(100vh-2rem)] gap-4 lg:grid-cols-[20rem_minmax(0,1fr)] xl:grid-cols-[22rem_minmax(0,1fr)_24rem]">
+        <div className="grid min-h-[calc(100vh-2rem)] gap-4 lg:grid-cols-[20rem_minmax(0,1fr)]">
           <ProjectSidebar
             activeProjectId={project?.id ?? null}
             busyAction={busyAction}
@@ -214,58 +234,72 @@ function App() {
             t={t}
           />
 
-          <div className="flex min-h-[70vh] flex-col gap-4">
-            <div className="min-h-0 flex-1">
-              <TranscriptPanel
-                key={project?.id ?? 'empty-project'}
-                activeRun={activeRun}
-                copyLabel={latestQuestionCopyLabel}
-                locale={locale}
-                onCopyLatestQuestion={handleCopyLatestQuestion}
-                onRegenerateCurrentQuestion={regenerateCurrentQuestion}
-                onRequestDelete={setProjectPendingDelete}
-                onRenameProject={
-                  project ? async (nextTitle: string) => updateProject(project.id, { project_name: nextTitle }) : undefined
-                }
-                project={project}
-                regenerateWorking={busyAction === 'regenerating'}
-                renameDisabled={loading}
-                runs={runs}
-                t={t}
-                turns={turns}
-              />
+          {page === 'workspace' ? (
+            <div className="flex min-h-[70vh] flex-col gap-4">
+              {activeRun ? (
+                <ActiveRunPanel locale={locale} run={activeRun} t={t} />
+              ) : null}
+
+              <div className="grid gap-4 xl:grid-cols-[minmax(0,1.45fr)_minmax(22rem,0.95fr)]">
+                <AnswerComposer
+                  estimateDraftUsage={estimateDraftUsage}
+                  locale={locale}
+                  onSubmit={submitNext}
+                  disabled={loading || !project || !projectStarted || projectFinished}
+                  projectFinished={projectFinished}
+                  projectStarted={projectStarted}
+                  workingLabel={busyAction === 'submitting' ? workingLabel : null}
+                  t={t}
+                />
+
+                <StatusPanel
+                  errorMessage={error}
+                  exportLabel={exportLabel}
+                  infoMessage={infoMessage}
+                  locale={locale}
+                  onCopyTranscript={handleCopyTranscript}
+                  onExportMarkdown={handleExportMarkdown}
+                  onExportText={handleExportText}
+                  onStart={startProject}
+                  project={project}
+                  status={status}
+                  t={t}
+                  transcript={transcript}
+                  working={loading}
+                  workingLabel={busyAction === 'starting' ? workingLabel : null}
+                />
+              </div>
+
+              <div className="min-h-0 flex-1">
+                <TranscriptPanel
+                  key={project?.id ?? 'empty-project'}
+                  copyLabel={latestQuestionCopyLabel}
+                  locale={locale}
+                  onCopyLatestQuestion={handleCopyLatestQuestion}
+                  onRegenerateCurrentQuestion={regenerateCurrentQuestion}
+                  onRequestDelete={setProjectPendingDelete}
+                  onRenameProject={
+                    project ? async (nextTitle: string) => updateProject(project.id, { project_name: nextTitle }) : undefined
+                  }
+                  project={project}
+                  regenerateWorking={busyAction === 'regenerating'}
+                  renameDisabled={loading}
+                  runs={runs}
+                  t={t}
+                  turns={turns}
+                />
+              </div>
             </div>
-
-            <AnswerComposer
-              estimateDraftUsage={estimateDraftUsage}
+          ) : (
+            <StatsDashboard
               locale={locale}
-              onSubmit={submitNext}
-              disabled={loading || !project || !projectStarted || projectFinished}
-              projectFinished={projectFinished}
-              projectStarted={projectStarted}
-              workingLabel={busyAction === 'submitting' ? workingLabel : null}
-              t={t}
-            />
-          </div>
-
-          <div className="lg:col-span-2 xl:col-span-1">
-            <StatusPanel
-              errorMessage={error}
-              exportLabel={exportLabel}
-              infoMessage={infoMessage}
-              locale={locale}
-              onCopyTranscript={handleCopyTranscript}
-              onExportMarkdown={handleExportMarkdown}
-              onExportText={handleExportText}
-              onStart={startProject}
               project={project}
+              projects={projects}
               status={status}
               t={t}
-              transcript={transcript}
-              working={loading}
-              workingLabel={busyAction === 'starting' ? workingLabel : null}
+              turns={turns}
             />
-          </div>
+          )}
         </div>
       </div>
 

@@ -4,7 +4,6 @@ import { getDisplayStageLabel, type Locale, type Translator } from '../i18n'
 import type { ProjectRead, RunRead, TurnRead } from '../types/api'
 import { ActionButton } from './ActionButton'
 import { CopyIcon, TrashIcon } from './Icons'
-import { ActiveRunPanel } from './ExecutionTraceSection'
 import { ProjectMetadataEditor } from './ProjectMetadataEditor'
 import { TranscriptPagination } from './TranscriptPagination'
 import { TurnCard } from './TurnCard'
@@ -18,7 +17,6 @@ type TranscriptPanelProps = {
   project: ProjectRead | null
   renameDisabled?: boolean
   regenerateWorking?: boolean
-  activeRun?: RunRead | null
   runs?: RunRead[]
   turns: TurnRead[]
   locale?: Locale
@@ -50,7 +48,6 @@ export function TranscriptPanel({
   project,
   renameDisabled = false,
   regenerateWorking = false,
-  activeRun = null,
   runs = [],
   turns,
   locale = 'en',
@@ -135,10 +132,6 @@ export function TranscriptPanel({
 
       <div className="mt-4 min-h-0 flex-1 overflow-auto rounded-[2rem] border border-white/60 bg-[linear-gradient(180deg,rgba(255,255,255,0.88),rgba(248,250,252,0.92))] p-5 shadow-[0_20px_50px_rgba(148,163,184,0.16)] backdrop-blur">
         <div className="space-y-4">
-          {activeRun ? (
-            <ActiveRunPanel locale={locale} run={activeRun} t={t} />
-          ) : null}
-
           <TranscriptPagination
             currentPage={safeCurrentPage}
             onPageChange={(nextPage) => {
