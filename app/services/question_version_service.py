@@ -4,6 +4,7 @@ from sqlalchemy.orm import Session
 
 from app.models.question_version import InterviewQuestionVersion
 from app.models.turn import InterviewTurn
+from app.services.question_postprocessor import clean_generated_question
 
 
 def summarize_usage_metrics(usage_metrics_list: list[dict]) -> dict:
@@ -15,8 +16,44 @@ def summarize_usage_metrics(usage_metrics_list: list[dict]) -> dict:
     }
 
 
+def normalize_question_versions(db: Session, turn: InterviewTurn) -> list[InterviewQuestionVersion]:
+    versions = (
+        db.query(InterviewQuestionVersion)
+        .filter(InterviewQuestionVersion.turn_id == turn.id)
+        .order_by(InterviewQuestionVersion.created_at.asc(), InterviewQuestionVersion.id.asc())
+        .all()
+    )
+    if not versions:
+        return []
+
+    saw_initial = False
+    for index, version in enumerate(versions, start=1):
+        if version.version_no != index:
+            version.version_no = index
+        if index == 1 and version.generation_kind != "initial":
+            version.generation_kind = "initial"
+        elif index > 1 and version.generation_kind == "initial":
+            version.generation_kind = "human_regeneration"
+        if version.question_text:
+            cleaned_question = clean_generated_question(version.question_text, turn.turn_no)
+            if cleaned_question != version.question_text:
+                version.question_text = cleaned_question
+        saw_initial = saw_initial or version.generation_kind == "initial"
+
+    if not saw_initial:
+        versions[0].generation_kind = "initial"
+
+    if turn.question_text:
+        cleaned_turn_question = clean_generated_question(turn.question_text, turn.turn_no)
+        if cleaned_turn_question != turn.question_text:
+            turn.question_text = cleaned_turn_question
+
+    db.flush()
+    return versions
+
+
 def ensure_initial_question_version(db: Session, turn: InterviewTurn) -> InterviewQuestionVersion:
-    existing_versions = list(turn.question_versions)
+    existing_versions = normalize_question_versions(db, turn)
     if existing_versions:
         return existing_versions[0]
 
@@ -56,11 +93,13 @@ def append_question_version(
     question_text: str,
     usage_metrics_list: list[dict],
 ) -> InterviewQuestionVersion:
-    ensure_initial_question_version(db, turn)
+    existing_versions = normalize_question_versions(db, turn)
+    if not existing_versions:
+        existing_versions = [ensure_initial_question_version(db, turn)]
     summary = summarize_usage_metrics(usage_metrics_list)
     version = InterviewQuestionVersion(
         turn_id=turn.id,
-        version_no=(turn.question_versions[-1].version_no + 1) if turn.question_versions else 1,
+        version_no=existing_versions[-1].version_no + 1,
         generation_kind=generation_kind,
         question_text=question_text,
         question_plan_json=question_plan_json,

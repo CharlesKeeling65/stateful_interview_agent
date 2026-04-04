@@ -33,6 +33,7 @@ from app.services.question_generator import generate_first_question_result
 from app.services.question_version_service import (
     append_question_version,
     ensure_initial_question_version,
+    normalize_question_versions,
     summarize_usage_metrics,
 )
 from app.services.run_trace_service import create_run, finalize_run, serialize_run
@@ -583,6 +584,22 @@ def get_project_turns(project_id: int, db: Session = Depends(get_db)):
         .order_by(InterviewTurn.turn_no.asc())
         .all()
     )
+    mutated = False
+    for turn in turns:
+        before_text = turn.question_text
+        before_version_snapshot = [
+            (version.id, version.version_no, version.generation_kind, version.question_text)
+            for version in turn.question_versions
+        ]
+        normalized_versions = normalize_question_versions(db, turn)
+        after_version_snapshot = [
+            (version.id, version.version_no, version.generation_kind, version.question_text)
+            for version in normalized_versions
+        ]
+        if turn.question_text != before_text or after_version_snapshot != before_version_snapshot:
+            mutated = True
+    if mutated:
+        db.commit()
     return turns
 
 
@@ -620,6 +637,10 @@ def get_project_status(project_id: int, db: Session = Depends(get_db)):
         .order_by(InterviewTurn.turn_no.desc())
         .first()
     )
+    if latest_turn:
+        normalize_question_versions(db, latest_turn)
+        db.commit()
+        db.refresh(latest_turn)
 
     return {
         "project_id": project.id,

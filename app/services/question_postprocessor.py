@@ -21,6 +21,7 @@ def clean_generated_question(text: str, expected_turn_no: int) -> str:
 
     # 去掉开头或整体包裹的 markdown 粗体标记，例如 **Q2:** ...
     text = text.replace("**", "").strip()
+    text = re.sub(r"^\s*#+\s*", "", text).strip()
 
     # 去掉任意已有的题号前缀，避免重生成时出现 "Q19: Q20: ..."
     text = re.sub(
@@ -29,6 +30,7 @@ def clean_generated_question(text: str, expected_turn_no: int) -> str:
         text,
         flags=re.IGNORECASE,
     ).strip()
+    text = re.sub(r"^\s*#+\s*", "", text).strip()
 
     # 统一把 "Question 2", "Q 2", "Q2." 等标准化成 "Q2: "
     text = re.sub(

@@ -293,6 +293,56 @@ class ProjectApiFlowTests(unittest.TestCase):
         self.assertEqual(status.status_code, 200)
         self.assertEqual(status.json()["current_stage"], "Architecture Understanding")
 
+    def test_multiple_regenerations_increment_version_numbers_without_duplicate_initial_versions(self):
+        created = self.client.post(
+            "/projects",
+            json={
+                "project_name": "Version Integrity Session",
+                "system_prompt": "You are a stateful interview agent.",
+            },
+        )
+        self.assertEqual(created.status_code, 200)
+        project_id = created.json()["id"]
+
+        started = self.client.post(f"/projects/{project_id}/start")
+        self.assertEqual(started.status_code, 200)
+        current_turn = started.json()["first_turn"]
+
+        first_regeneration = self.client.post(
+            f"/projects/{project_id}/turns/{current_turn['id']}/regenerate-question",
+            json={
+                "human_review": {
+                    "verdict": "drifted",
+                    "direction": "redirect",
+                    "preferred_next_focus": "architecture",
+                    "note": "Push this toward architecture.",
+                }
+            },
+        )
+        self.assertEqual(first_regeneration.status_code, 200)
+
+        second_regeneration = self.client.post(
+            f"/projects/{project_id}/turns/{current_turn['id']}/regenerate-question",
+            json={
+                "human_review": {
+                    "verdict": "drifted",
+                    "direction": "redirect",
+                    "preferred_next_focus": "code_detail",
+                    "note": "Now narrow it to the main code path.",
+                }
+            },
+        )
+        self.assertEqual(second_regeneration.status_code, 200)
+        payload = second_regeneration.json()
+
+        version_numbers = [version["version_no"] for version in payload["turn"]["question_versions"]]
+        generation_kinds = [version["generation_kind"] for version in payload["turn"]["question_versions"]]
+
+        self.assertEqual(version_numbers, [1, 2, 3])
+        self.assertEqual(generation_kinds.count("initial"), 1)
+        self.assertEqual(payload["turn"]["current_question_version_no"], 3)
+        self.assertEqual(payload["turn"]["question_regeneration_count"], 2)
+
     def test_regenerate_current_question_returns_bad_request_for_validation_failure(self):
         created = self.client.post(
             "/projects",

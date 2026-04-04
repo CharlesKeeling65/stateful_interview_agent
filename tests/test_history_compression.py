@@ -61,6 +61,12 @@ class HistoryCompressionTests(unittest.TestCase):
             "Q19: Which method handles the edge case?",
         )
 
+    def test_question_copy_variant_strips_markdown_heading_prefix(self):
+        self.assertEqual(
+            clean_generated_question("# Q6: Call Chain Walkthrough?", 6),
+            "Q6: Call Chain Walkthrough?",
+        )
+
     def test_compact_context_uses_override_for_latest_pending_answer(self):
         turns = [
             InterviewTurn(
