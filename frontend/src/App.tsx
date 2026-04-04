@@ -23,6 +23,7 @@ function App() {
     loading,
     project,
     projects,
+    regenerateCurrentQuestion,
     runs,
     selectProject,
     startProject,
@@ -113,6 +114,7 @@ function App() {
     creating: `${t('sidebar.createProject')}...`,
     starting: `${t('status.start')}...`,
     submitting: `${t('status.generating')}`,
+    regenerating: `${t('status.regeneratingCurrent')}`,
     updating: `${t('sidebar.save')}...`,
     deleting: `${t('sidebar.delete')}...`,
     selecting: locale === 'zh-CN' ? '加载中...' : 'Loading...',
@@ -220,11 +222,13 @@ function App() {
                 copyLabel={latestQuestionCopyLabel}
                 locale={locale}
                 onCopyLatestQuestion={handleCopyLatestQuestion}
+                onRegenerateCurrentQuestion={regenerateCurrentQuestion}
                 onRequestDelete={setProjectPendingDelete}
                 onRenameProject={
                   project ? async (nextTitle: string) => updateProject(project.id, { project_name: nextTitle }) : undefined
                 }
                 project={project}
+                regenerateWorking={busyAction === 'regenerating'}
                 renameDisabled={loading}
                 runs={runs}
                 t={t}

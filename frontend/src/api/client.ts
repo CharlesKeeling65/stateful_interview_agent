@@ -1,5 +1,6 @@
 import type {
   CreateProjectPayload,
+  CurrentQuestionRegenerateResponse,
   HumanReviewInput,
   ProjectNextResponse,
   ProjectRead,
@@ -54,6 +55,14 @@ export async function submitNext(projectId: number, answer_text: string, human_r
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ answer_text, human_review: human_review ?? null }),
+  })
+}
+
+export async function regenerateCurrentQuestion(projectId: number, turnId: number, human_review?: HumanReviewInput | null) {
+  return request<CurrentQuestionRegenerateResponse>(`/projects/${projectId}/turns/${turnId}/regenerate-question`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ human_review: human_review ?? null }),
   })
 }
 

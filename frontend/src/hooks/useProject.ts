@@ -10,6 +10,7 @@ import {
   getProjectTranscript,
   getProjectTurns,
   listProjects,
+  regenerateCurrentQuestion,
   startProject,
   submitNext,
   updateProject,
@@ -42,6 +43,7 @@ export type BusyAction =
   | 'creating'
   | 'starting'
   | 'submitting'
+  | 'regenerating'
   | 'updating'
   | 'deleting'
   | null
@@ -281,6 +283,76 @@ export function useProject() {
     }
   }
 
+  async function handleRegenerateCurrentQuestion(turnId: number, humanReview?: HumanReviewInput | null) {
+    if (!project) {
+      return
+    }
+
+    setBusyAction('regenerating')
+    setLoading(true)
+    setError('')
+    setLastMessageKey('status.regeneratingCurrent')
+
+    let settled = false
+    let pollActiveRun: Promise<void> | null = null
+
+    try {
+      pollActiveRun = (async () => {
+        while (!settled) {
+          try {
+            const latestRun = await getLatestProjectRun(project.id)
+            startTransition(() => {
+              setActiveRun(latestRun.status === 'running' ? latestRun : null)
+              setRuns((current) => {
+                const nextRuns = current.filter((run) => run.id !== latestRun.id)
+                return [latestRun, ...nextRuns].toSorted((a, b) => b.id - a.id)
+              })
+            })
+          } catch {
+            // Ignore until the backend creates or updates the run trace.
+          }
+          await new Promise((resolve) => window.setTimeout(resolve, 700))
+        }
+
+        try {
+          const latestRun = await getLatestProjectRun(project.id)
+          startTransition(() => {
+            setRuns((current) => {
+              const nextRuns = current.filter((run) => run.id !== latestRun.id)
+              return [latestRun, ...nextRuns].toSorted((a, b) => b.id - a.id)
+            })
+            setActiveRun(latestRun.status === 'running' ? latestRun : null)
+          })
+        } catch {
+          startTransition(() => {
+            setActiveRun(null)
+          })
+        }
+      })()
+
+      await regenerateCurrentQuestion(project.id, turnId, humanReview ?? null)
+      settled = true
+      await pollActiveRun
+      startTransition(() => {
+        setLastMessageKey('status.regeneratedCurrent')
+      })
+      await refreshSelected(project.id)
+    } catch (err) {
+      settled = true
+      if (pollActiveRun) {
+        await pollActiveRun
+      }
+      setError(err instanceof Error ? err.message : 'Unable to regenerate the current question.')
+    } finally {
+      settled = true
+      startTransition(() => {
+        setActiveRun(null)
+      })
+      setBusyAction(null)
+      setLoading(false)
+    }
+  }
+
   async function handleUpdateProject(projectId: number, payload: { project_name?: string }) {
     setBusyAction('updating')
     setLoading(true)
@@ -390,6 +462,7 @@ export function useProject() {
     selectProject,
     startProject: handleStart,
     submitNext: handleNext,
+    regenerateCurrentQuestion: handleRegenerateCurrentQuestion,
     deleteProject: handleDeleteProject,
     updateProject: handleUpdateProject,
   }

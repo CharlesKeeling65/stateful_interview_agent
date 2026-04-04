@@ -25,6 +25,20 @@ export type HumanReviewInput = {
   phase_ready?: boolean | null
 }
 
+export type QuestionVersionRead = {
+  id: number
+  version_no: number
+  generation_kind: string
+  question_text: string
+  question_plan: QuestionPlanRead | null
+  human_review: HumanReviewInput | null
+  prompt_tokens: number
+  completion_tokens: number
+  total_tokens: number
+  is_estimated: boolean
+  created_at: string
+}
+
 export type QuestionPlanRead = {
   phase?: string | null
   intent_mode?: string | null
@@ -103,6 +117,10 @@ export type TurnRead = {
   answer_summary: string | null
   human_review: HumanReviewInput | null
   question_plan: QuestionPlanRead | null
+  current_question_version_no: number
+  question_regeneration_count: number
+  human_intervention_regeneration_usage_summary: TokenUsageSummary
+  question_versions: QuestionVersionRead[]
   prompt_tokens: number
   completion_tokens: number
   total_tokens: number
@@ -138,6 +156,8 @@ export type ProjectStatusResponse = {
   latest_turn_answered: boolean | null
   latest_question_text: string | null
   latest_question_text_for_copy: string | null
+  latest_turn_regeneration_count: number
+  latest_human_intervention_regeneration_usage_summary: TokenUsageSummary
   cumulative_generation_time_ms: number
   run_count: number
   average_run_duration_ms: number
@@ -160,4 +180,12 @@ export type CreateProjectPayload = {
 export type UpdateProjectPayload = {
   project_name?: string
   system_prompt?: string
+}
+
+export type CurrentQuestionRegenerateResponse = {
+  project_id: number
+  turn: TurnRead
+  run_id: number | null
+  usage_summary: TokenUsageSummary
+  message: string
 }

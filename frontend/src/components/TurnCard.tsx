@@ -12,7 +12,7 @@ import {
 import type { RunRead, TurnRead } from '../types/api'
 import { formatDurationMs, formatTimestamp } from '../utils/format'
 import { normalizeAnswerText, normalizeQuestionText } from '../utils/text'
-import { summarizeOperationUsage } from '../utils/tokens'
+import { formatTokenCount, summarizeOperationUsage } from '../utils/tokens'
 import { ActionButton } from './ActionButton'
 import { CheckIcon, ChevronDownIcon, ClockIcon, CopyIcon } from './Icons'
 import { ExecutionTraceSection } from './ExecutionTraceSection'
@@ -25,6 +25,8 @@ type TurnCardProps = {
   isLatestActiveTurn?: boolean
   locale?: Locale
   onCopyLatestQuestion?: (text: string) => Promise<void> | void
+  onRegenerateCurrentQuestion?: (turnId: number, humanReview?: TurnRead['human_review']) => Promise<void> | void
+  regenerateWorking?: boolean
   run?: RunRead | null
   t: Translator
   turn: TurnRead
@@ -35,6 +37,8 @@ export const TurnCard = memo(function TurnCard({
   isLatestActiveTurn = false,
   locale = 'en',
   onCopyLatestQuestion,
+  onRegenerateCurrentQuestion,
+  regenerateWorking = false,
   run = null,
   t,
   turn,
@@ -46,7 +50,29 @@ export const TurnCard = memo(function TurnCard({
   const shouldCollapseAnswer =
     !waitingForAnswer && normalizedAnswer.length > ANSWER_COLLAPSE_THRESHOLD
   const [answerExpanded, setAnswerExpanded] = useState(false)
+  const [reviewExpanded, setReviewExpanded] = useState(false)
+  const [versionHistoryExpanded, setVersionHistoryExpanded] = useState(false)
+  const [reviewVerdict, setReviewVerdict] = useState<'' | 'sufficient' | 'insufficient' | 'drifted'>('')
+  const [reviewDirection, setReviewDirection] = useState<'continue' | 'redirect'>('continue')
+  const [preferredNextFocus, setPreferredNextFocus] = useState('')
+  const [reviewNote, setReviewNote] = useState('')
+  const [phaseReady, setPhaseReady] = useState(false)
   const showingCollapsedAnswer = shouldCollapseAnswer && !answerExpanded
+  function buildHumanReviewSignal() {
+    if (!reviewVerdict && !preferredNextFocus.trim() && !reviewNote.trim() && !phaseReady) {
+      return {
+        direction: reviewDirection,
+      }
+    }
+
+    return {
+      verdict: reviewVerdict || null,
+      direction: reviewDirection,
+      preferred_next_focus: preferredNextFocus.trim() || null,
+      note: reviewNote.trim() || null,
+      phase_ready: phaseReady || null,
+    }
+  }
 
   return (
     <article
@@ -97,6 +123,9 @@ export const TurnCard = memo(function TurnCard({
                 {t('transcript.trace')} {formatDurationMs(run.duration_ms, locale)}
               </span>
             ) : null}
+            <span className="inline-flex items-center rounded-full bg-slate-100 px-3 py-1 text-xs font-semibold uppercase tracking-[0.16em] text-slate-700">
+              {t('transcript.version')} {turn.current_question_version_no}
+            </span>
           </div>
         </div>
       </div>
@@ -109,6 +138,14 @@ export const TurnCard = memo(function TurnCard({
           <p className="mt-3 whitespace-pre-wrap break-words text-base leading-7 text-slate-950">
             {normalizedQuestion}
           </p>
+          <div className="mt-3 flex flex-wrap gap-2">
+            <span className="rounded-full bg-slate-100 px-3 py-1 text-[0.72rem] font-semibold text-slate-700">
+              {t('transcript.regeneratedTimes')}: {turn.question_regeneration_count}
+            </span>
+            <span className="rounded-full bg-slate-100 px-3 py-1 text-[0.72rem] font-semibold text-slate-700">
+              {t('transcript.humanRegenTokens')}: {formatTokenCount(turn.human_intervention_regeneration_usage_summary.total_tokens, locale)}
+            </span>
+          </div>
           {turn.question_plan ? (
             <div className="mt-3 rounded-2xl border border-sky-200 bg-sky-50/70 px-4 py-3">
               <p className="text-[0.64rem] font-semibold uppercase tracking-[0.22em] text-sky-700">
@@ -198,6 +235,159 @@ export const TurnCard = memo(function TurnCard({
             ) : null}
           </div>
         </div>
+
+        {turn.question_versions.length > 1 ? (
+          <div className="rounded-2xl border border-slate-200 bg-slate-50/80 px-4 py-4">
+            <button
+              type="button"
+              className="flex w-full items-center justify-between gap-3 text-left"
+              onClick={() => setVersionHistoryExpanded((current) => !current)}
+            >
+              <div>
+                <p className="text-[0.68rem] font-semibold uppercase tracking-[0.28em] text-slate-500">
+                  {t('transcript.versionHistory')}
+                </p>
+                <p className="mt-1 text-sm text-slate-600">
+                  {turn.question_versions.length} {locale === 'zh-CN' ? '个版本' : 'versions'}
+                </p>
+              </div>
+              <ChevronDownIcon className={`size-4 text-slate-500 transition ${versionHistoryExpanded ? 'rotate-180' : ''}`} />
+            </button>
+
+            {versionHistoryExpanded ? (
+              <div className="mt-4 space-y-3">
+                {turn.question_versions.map((version) => (
+                  <div key={version.id} className="rounded-2xl border border-slate-200 bg-white px-4 py-3">
+                    <div className="flex flex-wrap items-center justify-between gap-2">
+                      <div className="flex flex-wrap items-center gap-2">
+                        <span className="rounded-full bg-slate-100 px-3 py-1 text-[0.72rem] font-semibold text-slate-700">
+                          {t('transcript.version')} {version.version_no}
+                        </span>
+                        <span className="rounded-full bg-slate-100 px-3 py-1 text-[0.72rem] font-semibold text-slate-700">
+                          {version.generation_kind}
+                        </span>
+                      </div>
+                      <span className="text-xs text-slate-500">{formatTimestamp(version.created_at, locale)}</span>
+                    </div>
+                    <p className="mt-3 whitespace-pre-wrap break-words text-sm leading-7 text-slate-800">
+                      {version.question_text}
+                    </p>
+                    {version.human_review?.note ? (
+                      <p className="mt-2 text-xs leading-6 text-slate-500">{version.human_review.note}</p>
+                    ) : null}
+                  </div>
+                ))}
+              </div>
+            ) : null}
+          </div>
+        ) : null}
+
+        {waitingForAnswer && isLatestActiveTurn && onRegenerateCurrentQuestion ? (
+          <div className="rounded-2xl border border-amber-200 bg-amber-50/70 px-4 py-4">
+            <button
+              type="button"
+              className="flex w-full items-center justify-between gap-3 text-left"
+              onClick={() => setReviewExpanded((current) => !current)}
+            >
+              <div>
+                <p className="text-[0.68rem] font-semibold uppercase tracking-[0.28em] text-amber-700">
+                  {t('transcript.reviewAndRegenerate')}
+                </p>
+                <p className="mt-1 text-sm leading-6 text-amber-900">
+                  {t('transcript.reviewAndRegenerateHint')}
+                </p>
+              </div>
+              <ChevronDownIcon className={`size-4 text-amber-700 transition ${reviewExpanded ? 'rotate-180' : ''}`} />
+            </button>
+
+            {reviewExpanded ? (
+              <div className="mt-4 grid gap-4 md:grid-cols-2">
+                <label className="text-sm text-slate-700">
+                  <span className="text-[0.64rem] font-semibold uppercase tracking-[0.18em] text-slate-500">
+                    Verdict
+                  </span>
+                  <select
+                    className="mt-2 w-full rounded-2xl border border-slate-200 bg-white px-3 py-2.5 outline-none focus:border-amber-500 focus:ring-2 focus:ring-amber-200"
+                    value={reviewVerdict}
+                    onChange={(event) =>
+                      setReviewVerdict(event.target.value as '' | 'sufficient' | 'insufficient' | 'drifted')
+                    }
+                  >
+                    <option value="">{locale === 'zh-CN' ? '不设置明确评审' : 'No explicit review'}</option>
+                    <option value="sufficient">{locale === 'zh-CN' ? '信息充分' : 'Sufficient'}</option>
+                    <option value="insufficient">{locale === 'zh-CN' ? '信息不足' : 'Insufficient'}</option>
+                    <option value="drifted">{locale === 'zh-CN' ? '已跑偏' : 'Drifted'}</option>
+                  </select>
+                </label>
+
+                <label className="text-sm text-slate-700">
+                  <span className="text-[0.64rem] font-semibold uppercase tracking-[0.18em] text-slate-500">
+                    Direction
+                  </span>
+                  <select
+                    className="mt-2 w-full rounded-2xl border border-slate-200 bg-white px-3 py-2.5 outline-none focus:border-amber-500 focus:ring-2 focus:ring-amber-200"
+                    value={reviewDirection}
+                    onChange={(event) => setReviewDirection(event.target.value as 'continue' | 'redirect')}
+                  >
+                    <option value="continue">{locale === 'zh-CN' ? '继续当前分支' : 'Continue current branch'}</option>
+                    <option value="redirect">{locale === 'zh-CN' ? '调整下一问方向' : 'Redirect next question'}</option>
+                  </select>
+                </label>
+
+                <label className="text-sm text-slate-700">
+                  <span className="text-[0.64rem] font-semibold uppercase tracking-[0.18em] text-slate-500">
+                    Preferred next focus
+                  </span>
+                  <select
+                    className="mt-2 w-full rounded-2xl border border-slate-200 bg-white px-3 py-2.5 outline-none focus:border-amber-500 focus:ring-2 focus:ring-amber-200"
+                    value={preferredNextFocus}
+                    onChange={(event) => setPreferredNextFocus(event.target.value)}
+                  >
+                    <option value="">{locale === 'zh-CN' ? '不指定焦点' : 'No explicit focus'}</option>
+                    <option value="panorama">{locale === 'zh-CN' ? '全景' : 'Panorama'}</option>
+                    <option value="architecture">{locale === 'zh-CN' ? '架构' : 'Architecture'}</option>
+                    <option value="code_detail">{locale === 'zh-CN' ? '代码细节' : 'Code detail'}</option>
+                    <option value="code path">{locale === 'zh-CN' ? '代码路径' : 'Code path'}</option>
+                    <option value="scenario">{locale === 'zh-CN' ? '场景' : 'Scenario'}</option>
+                    <option value="use_case">{locale === 'zh-CN' ? '用例' : 'Use case'}</option>
+                  </select>
+                </label>
+
+                <label className="flex items-center gap-3 rounded-2xl border border-slate-200 bg-white px-4 py-3 text-sm text-slate-700">
+                  <input
+                    checked={phaseReady}
+                    className="size-4 rounded border-slate-300 text-amber-600 focus:ring-amber-500"
+                    onChange={(event) => setPhaseReady(event.target.checked)}
+                    type="checkbox"
+                  />
+                  {locale === 'zh-CN' ? '将当前阶段标记为“信息已足够”' : 'Mark the current phase as sufficiently complete'}
+                </label>
+
+                <label className="md:col-span-2 text-sm text-slate-700">
+                  <span className="text-[0.64rem] font-semibold uppercase tracking-[0.18em] text-slate-500">
+                    Human note
+                  </span>
+                  <textarea
+                    className="mt-2 min-h-24 w-full rounded-[1.25rem] border border-slate-200 bg-white px-3 py-3 outline-none focus:border-amber-500 focus:ring-2 focus:ring-amber-200"
+                    placeholder={locale === 'zh-CN' ? '说明当前问题为何需要重生成。' : 'Explain why the current question should be regenerated.'}
+                    value={reviewNote}
+                    onChange={(event) => setReviewNote(event.target.value)}
+                  />
+                </label>
+
+                <div className="md:col-span-2">
+                  <ActionButton
+                    disabled={regenerateWorking}
+                    label={regenerateWorking ? `${t('transcript.regenerate')}...` : t('transcript.regenerate')}
+                    onClick={() => void onRegenerateCurrentQuestion(turn.id, buildHumanReviewSignal())}
+                    type="button"
+                    variant="primary"
+                  />
+                </div>
+              </div>
+            ) : null}
+          </div>
+        ) : null}
 
         {turn.human_review ? (
           <div className="rounded-2xl border border-indigo-200 bg-indigo-50/70 px-4 py-4">
