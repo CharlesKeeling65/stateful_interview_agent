@@ -25,6 +25,21 @@ export type HumanReviewInput = {
   phase_ready?: boolean | null
 }
 
+export type QuestionPlanRead = {
+  phase?: string | null
+  intent_mode?: string | null
+  question_intent?: string | null
+  target_branch_id?: string | null
+  target_type?: string | null
+  target_label?: string | null
+  selected_framework_gap?: string | null
+  selected_branch_ids?: string[]
+  selected_turn_ids?: number[]
+  human_review_applied?: boolean | null
+  drift_detected?: boolean | null
+  why_this_question?: string | null
+}
+
 export type RunStepRead = {
   id: number
   step_index: number
@@ -87,6 +102,7 @@ export type TurnRead = {
   answer_text: string | null
   answer_summary: string | null
   human_review: HumanReviewInput | null
+  question_plan: QuestionPlanRead | null
   prompt_tokens: number
   completion_tokens: number
   total_tokens: number

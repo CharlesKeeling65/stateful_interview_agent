@@ -27,7 +27,7 @@ export function AnswerComposer({
 }: AnswerComposerProps) {
   const [answer, setAnswer] = useState('')
   const [reviewExpanded, setReviewExpanded] = useState(false)
-  const [reviewVerdict, setReviewVerdict] = useState<HumanReviewInput['verdict'] | ''>('')
+  const [reviewVerdict, setReviewVerdict] = useState<'' | 'sufficient' | 'insufficient' | 'drifted'>('')
   const [reviewDirection, setReviewDirection] = useState<HumanReviewInput['direction']>('continue')
   const [preferredNextFocus, setPreferredNextFocus] = useState('')
   const [reviewNote, setReviewNote] = useState('')
@@ -124,7 +124,9 @@ export function AnswerComposer({
               <select
                 className="mt-2 w-full rounded-2xl border border-slate-200 bg-slate-50 px-3 py-2.5 outline-none focus:border-amber-500 focus:ring-2 focus:ring-amber-200"
                 value={reviewVerdict}
-                onChange={(event) => setReviewVerdict(event.target.value as HumanReviewInput['verdict'] | '')}
+                onChange={(event) =>
+                  setReviewVerdict(event.target.value as '' | 'sufficient' | 'insufficient' | 'drifted')
+                }
               >
                 <option value="">No explicit review</option>
                 <option value="sufficient">Sufficient</option>

@@ -479,11 +479,17 @@ def persist_next_step(state, db: Session):
             question_text=state["generated_question"],
             question_plan_json=json.dumps(
                 {
+                    "phase": state.get("planner_decision", {}).get("phase"),
                     "question_intent": state.get("planner_decision", {}).get("question_intent"),
                     "intent_mode": state.get("planner_decision", {}).get("intent_mode"),
                     "target_branch_id": state.get("planner_decision", {}).get("target_branch_id"),
                     "target_type": state.get("planner_decision", {}).get("target_type"),
                     "target_label": state.get("planner_decision", {}).get("target_label"),
+                    "selected_framework_gap": state.get("planner_decision", {}).get("selected_framework_gap"),
+                    "selected_branch_ids": state.get("planner_decision", {}).get("selected_branch_ids", []),
+                    "selected_turn_ids": state.get("planner_decision", {}).get("selected_turn_ids", []),
+                    "human_review_applied": state.get("planner_decision", {}).get("human_review_applied"),
+                    "drift_detected": state.get("planner_decision", {}).get("drift_detected"),
                     "why_this_question": state.get("planner_decision", {}).get("why_this_question"),
                 },
                 ensure_ascii=True,

@@ -141,6 +141,9 @@ class ProjectApiFlowTests(unittest.TestCase):
         self.assertEqual(turns_payload[0]["human_review"]["verdict"], "insufficient")
         self.assertEqual(turns_payload[0]["human_review"]["preferred_next_focus"], "architecture")
         self.assertTrue(turns_payload[0]["answer_summary"])
+        self.assertIn("question_plan", turns_payload[1])
+        self.assertEqual(turns_payload[1]["question_plan"]["intent_mode"], "understand_current_code")
+        self.assertTrue(turns_payload[1]["question_plan"]["why_this_question"])
         self.assertEqual(
             turns_payload[1]["answer_text"],
             "Long answer two with service orchestration, event handling, and integration constraints.",

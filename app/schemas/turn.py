@@ -14,6 +14,21 @@ class HumanReviewInput(BaseModel):
     phase_ready: bool | None = None
 
 
+class QuestionPlanRead(BaseModel):
+    phase: str | None = None
+    intent_mode: str | None = None
+    question_intent: str | None = None
+    target_branch_id: str | None = None
+    target_type: str | None = None
+    target_label: str | None = None
+    selected_framework_gap: str | None = None
+    selected_branch_ids: list[str] = Field(default_factory=list)
+    selected_turn_ids: list[int] = Field(default_factory=list)
+    human_review_applied: bool | None = None
+    drift_detected: bool | None = None
+    why_this_question: str | None = None
+
+
 class TurnRead(BaseModel):
     id: int
     project_id: int
@@ -24,6 +39,7 @@ class TurnRead(BaseModel):
     answer_text: str | None
     answer_summary: str | None
     human_review: HumanReviewInput | None = None
+    question_plan: QuestionPlanRead | None = None
     prompt_tokens: int
     completion_tokens: int
     total_tokens: int

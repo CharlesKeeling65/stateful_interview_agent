@@ -96,6 +96,43 @@ export const TurnCard = memo(function TurnCard({
           <p className="mt-3 whitespace-pre-wrap break-words text-base leading-7 text-slate-950">
             {normalizedQuestion}
           </p>
+          {turn.question_plan ? (
+            <div className="mt-3 rounded-2xl border border-sky-200 bg-sky-50/70 px-4 py-3">
+              <p className="text-[0.64rem] font-semibold uppercase tracking-[0.22em] text-sky-700">
+                Why This Question
+              </p>
+              <div className="mt-2 flex flex-wrap gap-2 text-[0.7rem] font-semibold uppercase tracking-[0.16em] text-sky-800">
+                {turn.question_plan.phase ? (
+                  <span className="rounded-full bg-white/80 px-3 py-1">{turn.question_plan.phase}</span>
+                ) : null}
+                {turn.question_plan.question_intent ? (
+                  <span className="rounded-full bg-white/80 px-3 py-1">
+                    {turn.question_plan.question_intent.replace(/_/g, ' ')}
+                  </span>
+                ) : null}
+                {turn.question_plan.selected_framework_gap ? (
+                  <span className="rounded-full bg-white/80 px-3 py-1">
+                    Gap: {turn.question_plan.selected_framework_gap.replace(/_/g, ' ')}
+                  </span>
+                ) : null}
+                {turn.question_plan.human_review_applied ? (
+                  <span className="rounded-full bg-emerald-100 px-3 py-1 text-emerald-800">
+                    Followed human review
+                  </span>
+                ) : null}
+                {turn.question_plan.drift_detected ? (
+                  <span className="rounded-full bg-amber-100 px-3 py-1 text-amber-800">
+                    Drift repair
+                  </span>
+                ) : null}
+              </div>
+              {turn.question_plan.why_this_question ? (
+                <p className="mt-3 text-sm leading-6 text-sky-950">
+                  {turn.question_plan.why_this_question}
+                </p>
+              ) : null}
+            </div>
+          ) : null}
         </div>
 
         <div>
