@@ -41,6 +41,9 @@ STAGE_SEQUENCE = [
     WRAP_UP_STAGE,
 ]
 
+CODE_DETAIL_MIN_EXIT_TURN_NO = 35
+CODE_DETAIL_FORCE_EXIT_TURN_NO = 40
+
 
 def normalize_stage_name(value: str | None) -> str | None:
     if not value:
@@ -86,7 +89,7 @@ def determine_stage_by_turn(turn_no: int) -> str:
         return PANORAMA_STAGE
     elif 6 <= turn_no <= 10:
         return ARCHITECTURE_STAGE
-    elif 11 <= turn_no <= 32:
+    elif 11 <= turn_no <= CODE_DETAIL_FORCE_EXIT_TURN_NO:
         return CODE_DETAIL_STAGE
     else:
         return USE_CASE_STAGE
@@ -181,21 +184,29 @@ def decide_next_stage(
             "gaps": [],
         }
 
-    code_detail_turns = stage_turn_counts.get(CODE_DETAIL_STAGE, 0)
-    total_completed_turns = sum(stage_turn_counts.values())
-    code_detail_share = (
-        code_detail_turns / total_completed_turns if total_completed_turns > 0 else 0.0
-    )
-    target_code_detail_turns = max(10, int(max_turns * 0.65))
-    code_detail_is_dominant = code_detail_turns >= 8 and code_detail_share >= 0.55
     code_detail_core_gaps = [gap for gap in code_detail_gaps if gap in code_detail_required]
     use_case_core_gaps = [gap for gap in use_case_gaps if gap in use_case_required]
+    in_hard_coded_code_detail_window = (
+        current_stage == CODE_DETAIL_STAGE and next_turn_no < CODE_DETAIL_MIN_EXIT_TURN_NO
+    )
+    at_forced_code_detail_exit = (
+        current_stage == CODE_DETAIL_STAGE and next_turn_no >= CODE_DETAIL_FORCE_EXIT_TURN_NO
+    )
     architecture_can_enter_use_cases = (
-          current_stage != ARCHITECTURE_STAGE
-          or explicit_use_case_request
-          or code_detail_is_dominant
-          or code_detail_turns >= target_code_detail_turns
-      )
+        current_stage == USE_CASE_STAGE
+        or explicit_use_case_request
+        or (current_stage == CODE_DETAIL_STAGE and next_turn_no >= CODE_DETAIL_MIN_EXIT_TURN_NO)
+    )
+
+    if in_hard_coded_code_detail_window and not explicit_use_case_request:
+        return {
+            "next_stage": clamp_stage_not_before_current(CODE_DETAIL_STAGE, current_stage),
+            "reason": (
+                "Code detail is hard-gated to remain dominant until turn "
+                f"{CODE_DETAIL_MIN_EXIT_TURN_NO}, regardless of early gap completion."
+            ),
+            "gaps": code_detail_core_gaps or code_detail_gaps,
+        }
 
     if use_case_core_gaps and (remaining_turns <= max(4, len(use_case_core_gaps) + 1)) and architecture_can_enter_use_cases:
         return {
@@ -218,7 +229,7 @@ def decide_next_stage(
         if (
             current_stage == CODE_DETAIL_STAGE
             and human_phase_ready
-            and code_detail_turns >= max(8, max_turns // 4)
+            and next_turn_no >= CODE_DETAIL_MIN_EXIT_TURN_NO
             and not use_case_core_gaps
         ):
             return {
@@ -235,18 +246,24 @@ def decide_next_stage(
             "gaps": code_detail_core_gaps,
         }
 
-    if (
-        code_detail_turns < target_code_detail_turns
-        and not use_case_core_gaps
-        and human_direction != "redirect"
-    ):
+    if current_stage == CODE_DETAIL_STAGE and next_turn_no < CODE_DETAIL_FORCE_EXIT_TURN_NO and human_direction != "redirect":
         return {
             "next_stage": clamp_stage_not_before_current(CODE_DETAIL_STAGE, current_stage),
             "reason": (
-                "Code-detail should still dominate the transcript, and the current implementation coverage "
-                "has not yet reached the target depth."
+                "Code-detail remains the active stage until the hard-coded transition window near turns "
+                f"{CODE_DETAIL_MIN_EXIT_TURN_NO}-{CODE_DETAIL_FORCE_EXIT_TURN_NO}."
             ),
             "gaps": code_detail_gaps,
+        }
+
+    if at_forced_code_detail_exit and use_case_gaps:
+        return {
+            "next_stage": clamp_stage_not_before_current(USE_CASE_STAGE, current_stage),
+            "reason": (
+                "Code-detail has reached the hard-coded exit window, so the remaining turns must finish "
+                f"use-case coverage: {', '.join(use_case_gaps[:3])}."
+            ),
+            "gaps": use_case_gaps,
         }
 
     if use_case_core_gaps and architecture_can_enter_use_cases:

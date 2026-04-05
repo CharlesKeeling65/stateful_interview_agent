@@ -295,7 +295,7 @@ class StageControllerTests(unittest.TestCase):
 
         self.assertEqual(decision["next_stage"], "Use Cases & Scenarios")
 
-    def test_stage_controller_can_move_to_use_cases_before_hardcoded_turn_32_when_code_detail_is_already_dominant(self):
+    def test_stage_controller_stays_in_code_detail_before_hardcoded_turn_window_even_if_coverage_is_strong(self):
         coverage_state = {
             "framework": {
                 "panorama": {
@@ -366,8 +366,83 @@ class StageControllerTests(unittest.TestCase):
             max_turns=40,
         )
 
-        self.assertEqual(decision["next_stage"], "Use Cases & Scenarios")
-        self.assertIn("use-case", decision["reason"].lower())
+        self.assertEqual(decision["next_stage"], "Code Detail Completion")
+        self.assertIn("hard-gated", decision["reason"].lower())
+
+    def test_stage_controller_for_45_turn_cap_blocks_use_cases_until_turn_35(self):
+        coverage_state = {
+            "framework": {
+                "panorama": {
+                    "purpose": True,
+                    "target_users": True,
+                    "boundaries": True,
+                    "major_modules": True,
+                    "high_level_workflow": True,
+                    "initial_module_relationships": True,
+                },
+                "architecture": {
+                    "architecture_style_or_organization": True,
+                    "module_responsibilities": True,
+                    "collaboration_mechanisms": True,
+                    "key_call_chains": True,
+                    "system_structure": True,
+                    "design_rationale_or_quality_attributes": True,
+                },
+                "code_detail": {
+                    "specific_files_count": 20,
+                    "specific_classes_count": 10,
+                    "specific_methods_count": 24,
+                    "execution_paths_count": 12,
+                    "library_usage_points_count": 8,
+                    "error_handling_points_count": 6,
+                    "protocol_implementation_points_count": 4,
+                    "state_management_points_count": 3,
+                },
+                "use_cases": {
+                    "representative_scenarios_count": 0,
+                    "actors_roles_count": 0,
+                    "input_output_patterns_count": 0,
+                    "boundary_conditions_count": 0,
+                    "extension_points_count": 0,
+                },
+                "human_collaboration": {
+                    "human_judgment_turn_count": 2,
+                    "human_correction_turn_count": 1,
+                    "human_redirection_turn_count": 0,
+                    "human_prioritization_turn_count": 1,
+                },
+                "stage_turn_counts": {
+                    "Panorama Mapping": 2,
+                    "Architecture Understanding": 3,
+                    "Code Detail Completion": 29,
+                    "Use Cases & Scenarios": 0,
+                    "Final Wrap-up": 0,
+                },
+                "gaps": {
+                    "panorama": [],
+                    "architecture": [],
+                    "code_detail": [],
+                    "use_cases": [
+                        "representative_scenarios_count",
+                        "actors_roles_count",
+                        "input_output_patterns_count",
+                        "boundary_conditions_count",
+                    ],
+                    "human_collaboration": [],
+                },
+                "wrap_up_ready": False,
+            }
+        }
+
+        decision = decide_next_stage(
+            next_turn_no=34,
+            coverage_state=coverage_state,
+            current_stage="Code Detail Completion",
+            max_turns=45,
+        )
+
+        self.assertEqual(decision["next_stage"], "Code Detail Completion")
+        self.assertIn("turn 35", decision["reason"].lower())
 
 
 class PlannerAndValidatorTests(unittest.TestCase):
