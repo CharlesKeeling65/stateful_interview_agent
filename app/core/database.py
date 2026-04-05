@@ -53,6 +53,10 @@ def ensure_database_schema():
                 connection.execute(
                     text("ALTER TABLE interview_turns ADD COLUMN human_review_json TEXT")
                 )
+            if "event_log_json" not in existing_columns:
+                connection.execute(
+                    text("ALTER TABLE interview_turns ADD COLUMN event_log_json TEXT DEFAULT '[]'")
+                )
 
     if "interview_question_versions" not in inspector.get_table_names():
         Base.metadata.tables["interview_question_versions"].create(bind=engine)
@@ -99,5 +103,23 @@ def ensure_database_schema():
                 connection.execute(
                     text(
                         "ALTER TABLE project_sessions ADD COLUMN repo_manifest_json TEXT DEFAULT '{}'"
+                    )
+                )
+            if "agent_mode" not in existing_columns:
+                connection.execute(
+                    text(
+                        "ALTER TABLE project_sessions ADD COLUMN agent_mode TEXT DEFAULT 'understand_current_code'"
+                    )
+                )
+            if "rubric_task_board" not in existing_columns:
+                connection.execute(
+                    text(
+                        "ALTER TABLE project_sessions ADD COLUMN rubric_task_board TEXT DEFAULT '{}'"
+                    )
+                )
+            if "pending_gate_json" not in existing_columns:
+                connection.execute(
+                    text(
+                        "ALTER TABLE project_sessions ADD COLUMN pending_gate_json TEXT DEFAULT 'null'"
                     )
                 )

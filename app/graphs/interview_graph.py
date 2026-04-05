@@ -8,6 +8,8 @@ from app.core.database import SessionLocal
 from app.logging import emit_event, preview_payload
 from app.graphs.interview_nodes import (
     decide_progress,
+    plan_question,
+    review_question_plan_node,
     draft_next_question,
     load_project_context,
     persist_next_step,
@@ -78,6 +80,22 @@ def draft_question_node(state: InterviewGraphState):
         db.close()
 
 
+def plan_question_node(state: InterviewGraphState):
+    db = SessionLocal()
+    try:
+        return _run_logged_node("plan_question", state, lambda: plan_question(state, db))
+    finally:
+        db.close()
+
+
+def review_plan_node(state: InterviewGraphState):
+    db = SessionLocal()
+    try:
+        return _run_logged_node("review_question_plan", state, lambda: review_question_plan_node(state, db))
+    finally:
+        db.close()
+
+
 def persist_node(state: InterviewGraphState):
     db = SessionLocal()
     try:
@@ -89,6 +107,12 @@ def persist_node(state: InterviewGraphState):
 def route_after_decision(state: InterviewGraphState):
     if state.get("interview_finished"):
         return "persist"
+    return "plan_question"
+
+
+def route_after_review(state: InterviewGraphState):
+    if state.get("pending_gate"):
+        return "persist"
     return "draft_question"
 
 
@@ -96,6 +120,8 @@ builder = StateGraph(InterviewGraphState)
 
 builder.add_node("load_context", load_context_node)
 builder.add_node("decide_progress", decide_progress_node)
+builder.add_node("plan_question", plan_question_node)
+builder.add_node("review_question_plan", review_plan_node)
 builder.add_node("draft_question", draft_question_node)
 builder.add_node("persist", persist_node)
 
@@ -104,6 +130,15 @@ builder.add_edge("load_context", "decide_progress")
 builder.add_conditional_edges(
     "decide_progress",
     route_after_decision,
+    {
+        "plan_question": "plan_question",
+        "persist": "persist",
+    },
+)
+builder.add_edge("plan_question", "review_question_plan")
+builder.add_conditional_edges(
+    "review_question_plan",
+    route_after_review,
     {
         "draft_question": "draft_question",
         "persist": "persist",

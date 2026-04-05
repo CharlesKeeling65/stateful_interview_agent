@@ -135,13 +135,6 @@ def decide_next_stage(
         "boundary_conditions_count",
     }
 
-    if wrap_up_ready and remaining_turns <= 1:
-        return {
-            "next_stage": clamp_stage_not_before_current(WRAP_UP_STAGE, current_stage),
-            "reason": "Framework coverage is broadly complete and only the final wrap-up turn remains.",
-            "gaps": [],
-        }
-
     panorama_turns = stage_turn_counts.get(PANORAMA_STAGE, 0)
     panorama_critical_gaps = [gap for gap in panorama_gaps if gap in panorama_required]
     if current_stage == PANORAMA_STAGE and human_phase_ready and panorama_turns >= 2 and len(panorama_critical_gaps) <= 1:
@@ -204,6 +197,13 @@ def decide_next_stage(
                 f"the missing scenario contract: {', '.join(use_case_core_gaps[:3])}."
             ),
             "gaps": use_case_core_gaps,
+        }
+
+    if wrap_up_ready and remaining_turns <= 1 and not use_case_core_gaps:
+        return {
+            "next_stage": clamp_stage_not_before_current(WRAP_UP_STAGE, current_stage),
+            "reason": "Framework coverage is broadly complete and only the final wrap-up turn remains.",
+            "gaps": [],
         }
 
     if code_detail_core_gaps:

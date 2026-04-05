@@ -28,6 +28,9 @@ class ProjectSession(Base):
         Text,
         default='{"version": 1, "branch_count": 0, "updated_through_turn_no": 0, "branches": []}',
     )
+    agent_mode: Mapped[str] = mapped_column(String(50), default="understand_current_code")
+    rubric_task_board: Mapped[str] = mapped_column(Text, default="{}")
+    pending_gate_json: Mapped[str] = mapped_column(Text, default="null")
     created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
     updated_at: Mapped[datetime] = mapped_column(
         DateTime, default=datetime.utcnow, onupdate=datetime.utcnow
@@ -119,3 +122,47 @@ class ProjectSession(Base):
         if not completed_runs:
             return 0
         return int(sum(completed_runs) / len(completed_runs))
+
+    @property
+    def rubric_task_board_data(self) -> dict[str, Any]:
+        try:
+            parsed = json.loads(self.rubric_task_board) if self.rubric_task_board else {}
+        except json.JSONDecodeError:
+            parsed = {}
+        if not isinstance(parsed, dict):
+            parsed = {}
+        parsed.setdefault("version", 1)
+        parsed.setdefault("phases", {})
+        parsed.setdefault("phase_status", {})
+        parsed.setdefault("current_phase", "panorama_mapping")
+        return parsed
+
+    @property
+    def pending_gate(self) -> dict[str, Any] | None:
+        if not self.pending_gate_json or self.pending_gate_json == "null":
+            return None
+        try:
+            parsed = json.loads(self.pending_gate_json)
+        except json.JSONDecodeError:
+            return None
+        return parsed if isinstance(parsed, dict) else None
+
+    @property
+    def rubric_task_board_summary(self) -> dict[str, Any]:
+        board = self.rubric_task_board_data
+        phases = board.get("phases", {})
+        incomplete_task_count = 0
+        completed_task_count = 0
+        for tasks in phases.values():
+            for task in tasks or []:
+                status = (task or {}).get("status")
+                if status == "completed":
+                    completed_task_count += 1
+                else:
+                    incomplete_task_count += 1
+        return {
+            "current_phase": board.get("current_phase", "panorama_mapping"),
+            "phase_status": board.get("phase_status", {}),
+            "incomplete_task_count": incomplete_task_count,
+            "completed_task_count": completed_task_count,
+        }

@@ -8,9 +8,18 @@ from app.models.project import ProjectSession
 from app.models.turn import InterviewTurn
 from app.services.context_engineering import build_generation_context
 from app.services.coverage_service import rebuild_coverage_state, save_coverage_state
+from app.services.human_gate_service import (
+    HumanGate,
+    deserialize_gate,
+    gate_resolution_to_human_review_signal,
+    resolve_gate,
+    serialize_gate,
+)
 from app.services.interview_lifecycle import can_continue_interview, is_minimum_goal_reached
+from app.services.mode_service import AgentMode
 from app.services.question_planner import plan_next_question
 from app.services.question_generator import generate_next_question_from_history
+from app.services.question_reviewer import review_question_plan, review_question_text
 from app.services.question_version_service import append_question_version
 from app.services.question_validator import (
     validate_question_against_repository,
@@ -18,15 +27,32 @@ from app.services.question_validator import (
 )
 from app.services.repetition_guard import build_question_signature, is_question_too_similar
 from app.services.repo_grounding_service import build_repo_grounding_context
+from app.services.rubric_task_service import (
+    deserialize_task_board,
+    serialize_task_board,
+    sync_task_board,
+)
 from app.services.run_trace_service import traced_run_step
+from app.services.scenario_service import check_scenario_completion
 from app.services.summarization_service import ensure_turn_summaries
 from app.services.stage_manager import decide_next_stage
+from app.services.transcript_event_service import (
+    add_event_to_log,
+    deserialize_event_log,
+    emit_ai_question_event,
+    emit_drift_repair_event,
+    emit_human_answer_event,
+    emit_human_gate_event,
+    emit_human_review_event,
+    serialize_event_log,
+)
 from app.services.transcript_service import build_compact_interview_context
 from app.services.usage_service import create_usage_record
 
 
 def build_question_plan_payload(state: dict) -> dict:
     return {
+        "mode": state.get("agent_mode") or state.get("planner_decision", {}).get("mode"),
         "phase": state.get("planner_decision", {}).get("phase"),
         "question_intent": state.get("planner_decision", {}).get("question_intent"),
         "intent_mode": state.get("planner_decision", {}).get("intent_mode"),
@@ -39,6 +65,15 @@ def build_question_plan_payload(state: dict) -> dict:
         "human_review_applied": state.get("planner_decision", {}).get("human_review_applied"),
         "drift_detected": state.get("planner_decision", {}).get("drift_detected"),
         "why_this_question": state.get("planner_decision", {}).get("why_this_question"),
+        "rubric_task_id": state.get("planner_decision", {}).get("rubric_task_id"),
+        "rubric_task_label": state.get("planner_decision", {}).get("rubric_task_label"),
+        "confidence_score": state.get("review_result", {}).get("confidence_score")
+        or state.get("planner_decision", {}).get("confidence"),
+        "human_gate_triggered": state.get("review_result", {}).get("human_gate_triggered"),
+        "reviewer_reason": state.get("review_result", {}).get("review_reason"),
+        "reviewer_modifications": state.get("review_result", {}).get("suggested_modifications", []),
+        "scenario_complete": state.get("scenario_status", {}).get("is_complete"),
+        "scenario_missing_aspects": state.get("scenario_status", {}).get("missing_aspects", []),
         "repo_queries": state.get("repo_grounding_meta", {}).get("queries", []),
         "repo_selected_paths": state.get("repo_grounding_meta", {}).get("selected_paths", []),
         "repo_selected_symbols": state.get("repo_grounding_meta", {}).get("selected_symbols", []),
@@ -55,6 +90,17 @@ def build_question_plan_json(state: dict) -> str:
     )
 
 
+def _merge_human_review_signal(*signals: dict | None) -> dict | None:
+    merged: dict = {}
+    for signal in signals:
+        if not signal:
+            continue
+        for key, value in signal.items():
+            if value is not None:
+                merged[key] = value
+    return merged or None
+
+
 def generate_question_for_state(
     *,
     current_stage: str,
@@ -65,8 +111,16 @@ def generate_question_for_state(
     run_id: int | None,
     turn_no: int,
     turns: list[InterviewTurn],
+    planner_decision_override: dict | None = None,
+    review_result: dict | None = None,
 ) -> dict:
     coverage_state = rebuild_coverage_state(turns)
+    task_board = sync_task_board(
+        deserialize_task_board(project.rubric_task_board),
+        coverage_state=coverage_state,
+        current_stage=current_stage,
+    )
+    scenario_status = check_scenario_completion(coverage_state, turns)
     context_payload = build_generation_context(
         turns=turns,
         current_stage=current_stage,
@@ -76,12 +130,14 @@ def generate_question_for_state(
         project_id=project.id,
         latest_answer_override=latest_answer_override,
     )
-    planner_decision = plan_next_question(
+    planner_decision = planner_decision_override or plan_next_question(
         turns=turns,
         current_stage=current_stage,
         next_turn_no=turn_no,
         coverage_state=coverage_state,
         human_review_signal=human_review_signal,
+        agent_mode=project.agent_mode or AgentMode.UNDERSTAND_CURRENT_CODE.value,
+        task_board_json=serialize_task_board(task_board),
     )
     repo_grounding_payload = build_repo_grounding_context(
         project=project,
@@ -164,6 +220,7 @@ def generate_question_for_state(
         intent_mode=planner_decision.get("intent_mode", "understand_current_code"),
         recent_question_signatures=recent_question_signatures,
         branch_id=planner_decision.get("target_branch_id"),
+        agent_mode=project.agent_mode,
     )
     repo_validation = validate_question_against_repository(
         text=next_question,
@@ -203,6 +260,7 @@ def generate_question_for_state(
             intent_mode=planner_decision.get("intent_mode", "understand_current_code"),
             recent_question_signatures=recent_question_signatures,
             branch_id=planner_decision.get("target_branch_id"),
+            agent_mode=project.agent_mode,
         )
         repo_validation = validate_question_against_repository(
             text=next_question,
@@ -219,6 +277,13 @@ def generate_question_for_state(
                 + "; ".join(validation["reasons"])
             )
 
+    text_review = review_question_text(next_question, project.agent_mode)
+    if not text_review["is_valid"]:
+        raise ValueError(
+            "Generated question failed reviewer text checks: "
+            + "; ".join(text_review["reasons"])
+        )
+
     return {
         "generated_question": next_question,
         "coverage_state": coverage_state,
@@ -230,6 +295,8 @@ def generate_question_for_state(
         "selected_branch_ids": context_payload["selected_branch_ids"],
         "planner_decision": planner_decision,
         "validation_result": validation,
+        "review_result": review_result or {},
+        "scenario_status": scenario_status,
         "prompt_metadata": {
             "prompt_id": next_question_result.get("prompt_id"),
             "prompt_version": next_question_result.get("prompt_version"),
@@ -249,6 +316,8 @@ def draft_question_from_answered_history(
     human_review_signal: dict | None,
     run_id: int | None,
     include_latest_answer_in_coverage: bool = False,
+    planner_decision_override: dict | None = None,
+    review_result: dict | None = None,
 ) -> dict:
     answered_turns = [turn for turn in turns if turn.answer_text]
     with traced_run_step(
@@ -345,6 +414,8 @@ def draft_question_from_answered_history(
         run_id=run_id,
         turn_no=next_turn_no,
         turns=turns,
+        planner_decision_override=planner_decision_override,
+        review_result=review_result,
     )
 
     return {
@@ -357,6 +428,8 @@ def draft_question_from_answered_history(
         "selected_branch_ids": generation_payload["selected_branch_ids"],
         "planner_decision": generation_payload["planner_decision"],
         "validation_result": generation_payload["validation_result"],
+        "review_result": generation_payload["review_result"],
+        "scenario_status": generation_payload["scenario_status"],
         "prompt_metadata": generation_payload["prompt_metadata"],
         "question_usage_metrics": generation_payload["question_usage_metrics"],
     }
@@ -392,7 +465,7 @@ def load_project_context(state, db: Session):
         if project.status == "finished":
             raise ValueError("Project interview is already finished")
 
-        if latest_turn.answer_text is None:
+        if latest_turn.answer_text is None and not state.get("answer_text"):
             raise ValueError("Latest turn does not have a saved answer yet")
 
         turns = (
@@ -401,17 +474,43 @@ def load_project_context(state, db: Session):
             .order_by(InterviewTurn.turn_no.asc())
             .all()
         )
+        task_board = sync_task_board(
+            deserialize_task_board(project.rubric_task_board),
+            coverage_state=project.coverage_state_data,
+            current_stage=project.current_stage,
+        )
+        pending_gate = deserialize_gate(project.pending_gate_json)
+        latest_event_log = deserialize_event_log(latest_turn.event_log_json)
+        human_gate_resolution = state.get("human_gate_resolution")
+        human_review_signal = _merge_human_review_signal(
+            state.get("human_review_signal"),
+            gate_resolution_to_human_review_signal(
+                pending_gate,
+                human_gate_resolution.get("action"),
+                preferred_next_focus=human_gate_resolution.get("preferred_next_focus"),
+                note=human_gate_resolution.get("note"),
+                phase_ready=human_gate_resolution.get("phase_ready"),
+            )
+            if pending_gate and human_gate_resolution
+            else None,
+        )
 
         return {
             "project_status": project.status,
+            "agent_mode": project.agent_mode or AgentMode.UNDERSTAND_CURRENT_CODE.value,
             "current_turn_no": latest_turn.turn_no,
             "current_stage": latest_turn.stage,
             "history_text": build_compact_interview_context(turns),
             "coverage_state": project.coverage_state_data,
+            "task_board": task_board.model_dump(mode="json"),
+            "pending_gate": pending_gate.model_dump(mode="json") if pending_gate else None,
+            "scenario_status": check_scenario_completion(project.coverage_state_data, turns),
+            "event_log": latest_event_log,
             "minimum_goal_reached": is_minimum_goal_reached(project.turn_count),
             "pending_turn_id": latest_turn.id,
             "answer_text": latest_turn.answer_text,
-            "human_review_signal": state.get("human_review_signal"),
+            "human_review_signal": human_review_signal,
+            "human_gate_resolution": human_gate_resolution,
             "next_turn_no": None,
             "next_stage": None,
             "generated_question": None,
@@ -421,6 +520,7 @@ def load_project_context(state, db: Session):
             "selected_branch_ids": [],
             "stage_decision": {},
             "planner_decision": {},
+            "review_result": {},
             "validation_result": {},
             "prompt_metadata": {},
             "question_usage_metrics": [],
@@ -458,6 +558,95 @@ def decide_progress(state):
     }
 
 
+def plan_question(state, db: Session):
+    bind_log_context(project_id=state.get("project_id"))
+    project = (
+        db.query(ProjectSession)
+        .filter(ProjectSession.id == state["project_id"])
+        .first()
+    )
+    turns = (
+        db.query(InterviewTurn)
+        .filter(InterviewTurn.project_id == state["project_id"])
+        .order_by(InterviewTurn.turn_no.asc())
+        .all()
+    )
+    with traced_run_step(
+        run_id=state.get("run_id"),
+        project_id=state["project_id"],
+        turn_no=state["next_turn_no"],
+        step_key="plan_question",
+        description="Plan the next question from mode, rubric, stage, and human input.",
+        next_step_hint="Review question plan",
+    ):
+        planner_decision = plan_next_question(
+            turns=turns,
+            current_stage=state["next_stage"],
+            next_turn_no=state["next_turn_no"],
+            coverage_state=state.get("coverage_state", {}),
+            human_review_signal=state.get("human_review_signal"),
+            agent_mode=project.agent_mode or AgentMode.UNDERSTAND_CURRENT_CODE.value,
+            task_board_json=serialize_task_board(deserialize_task_board(project.rubric_task_board)),
+        )
+    return {"planner_decision": planner_decision}
+
+
+def review_question_plan_node(state, db: Session):
+    bind_log_context(project_id=state.get("project_id"))
+    turns = (
+        db.query(InterviewTurn)
+        .filter(InterviewTurn.project_id == state["project_id"])
+        .order_by(InterviewTurn.turn_no.asc())
+        .all()
+    )
+    coverage_state = state.get("coverage_state", {})
+    task_board = deserialize_task_board(json.dumps(state.get("task_board", {})))
+    drift_detection_result = None
+    if state.get("planner_decision", {}).get("drift_detected"):
+        drift_detection_result = {
+            "detected": True,
+            "reason": state["planner_decision"].get("reasoning"),
+            "branch_id": state["planner_decision"].get("target_branch_id"),
+        }
+    with traced_run_step(
+        run_id=state.get("run_id"),
+        project_id=state["project_id"],
+        turn_no=state["next_turn_no"],
+        step_key="review_question_plan",
+        description="Review the planned question for mode compliance, priority, drift, and human gates.",
+        next_step_hint="Draft question",
+    ):
+        review_result = review_question_plan(
+            planner_decision=state.get("planner_decision", {}),
+            mode=state.get("agent_mode", AgentMode.UNDERSTAND_CURRENT_CODE.value),
+            task_board=task_board,
+            coverage_state=coverage_state,
+            current_stage=state.get("next_stage"),
+            drift_detection_result=drift_detection_result,
+        ).model_dump(mode="json")
+
+    planner_decision = dict(state.get("planner_decision", {}))
+    if review_result.get("alternative_plan"):
+        planner_decision.update(review_result["alternative_plan"])
+        planner_decision["why_this_question"] = (
+            planner_decision.get("why_this_question")
+            or review_result.get("review_reason")
+            or planner_decision.get("reasoning")
+        )
+    pending_gate = None
+    message = None
+    if review_result.get("human_gate_triggered") and review_result.get("human_gate"):
+        pending_gate = review_result["human_gate"]
+        message = review_result.get("review_reason") or "Human decision required before the next question."
+
+    return {
+        "planner_decision": planner_decision,
+        "review_result": review_result,
+        "pending_gate": pending_gate,
+        "message": message,
+    }
+
+
 def draft_next_question(state, db: Session):
     bind_log_context(project_id=state.get("project_id"))
     project = (
@@ -482,6 +671,8 @@ def draft_next_question(state, db: Session):
         human_review_signal=state.get("human_review_signal"),
         run_id=state.get("run_id"),
         include_latest_answer_in_coverage=True,
+        planner_decision_override=state.get("planner_decision"),
+        review_result=state.get("review_result"),
     )
 
     return {
@@ -494,8 +685,11 @@ def draft_next_question(state, db: Session):
         "selected_branch_ids": generation_payload["selected_branch_ids"],
         "planner_decision": generation_payload["planner_decision"],
         "validation_result": generation_payload["validation_result"],
+        "review_result": generation_payload["review_result"],
+        "scenario_status": generation_payload["scenario_status"],
         "prompt_metadata": generation_payload["prompt_metadata"],
         "question_usage_metrics": generation_payload["question_usage_metrics"],
+        "pending_gate": None,
     }
 
 def persist_next_step(state, db: Session):
@@ -524,14 +718,41 @@ def persist_next_step(state, db: Session):
         )
         if not pending_turn:
             raise ValueError("Pending turn no longer exists")
+        existing_next_turn = (
+            db.query(InterviewTurn)
+            .filter(
+                InterviewTurn.project_id == state["project_id"],
+                InterviewTurn.turn_no == state.get("next_turn_no"),
+            )
+            .first()
+        )
+        if existing_next_turn is not None:
+            raise ValueError("Next turn was already generated for this pending turn.")
         if not pending_turn.answer_text:
             pending_turn.answer_text = state["answer_text"]
+        current_event_log = deserialize_event_log(pending_turn.event_log_json)
+        answer_event = emit_human_answer_event(
+            turn_no=pending_turn.turn_no,
+            answer_text=state["answer_text"],
+            answer_summary=pending_turn.answer_summary,
+            project_id=state["project_id"],
+        )
+        current_event_log = add_event_to_log(current_event_log, answer_event)
         if state.get("human_review_signal"):
             pending_turn.human_review_json = json.dumps(
                 state["human_review_signal"],
                 ensure_ascii=True,
                 sort_keys=True,
             )
+            review_event = emit_human_review_event(
+                turn_no=pending_turn.turn_no,
+                verdict=state["human_review_signal"].get("verdict"),
+                direction=state["human_review_signal"].get("direction"),
+                preferred_next_focus=state["human_review_signal"].get("preferred_next_focus"),
+                note=state["human_review_signal"].get("note"),
+                project_id=state["project_id"],
+            )
+            current_event_log = add_event_to_log(current_event_log, review_event)
         all_turns = (
             db.query(InterviewTurn)
             .filter(InterviewTurn.project_id == state["project_id"])
@@ -540,6 +761,12 @@ def persist_next_step(state, db: Session):
         )
         refreshed_coverage_state = rebuild_coverage_state(all_turns)
         save_coverage_state(project, refreshed_coverage_state)
+        task_board = sync_task_board(
+            deserialize_task_board(project.rubric_task_board),
+            coverage_state=refreshed_coverage_state,
+            current_stage=state.get("next_stage") or state.get("current_stage") or project.current_stage,
+        )
+        project.rubric_task_board = serialize_task_board(task_board)
         emit_event(
             "persistence",
             "coverage.persist.complete",
@@ -554,8 +781,31 @@ def persist_next_step(state, db: Session):
             },
         )
 
+        if state.get("pending_gate"):
+            gate = HumanGate.model_validate(state["pending_gate"])
+            project.pending_gate_json = serialize_gate(gate)
+            gate_event = emit_human_gate_event(
+                gate_type=gate.gate_type.value,
+                reason=gate.reason,
+                resolution=None,
+                turn_no=pending_turn.turn_no,
+                project_id=state["project_id"],
+            )
+            current_event_log = add_event_to_log(current_event_log, gate_event)
+            pending_turn.event_log_json = serialize_event_log(current_event_log)
+            db.commit()
+            db.refresh(project)
+            db.refresh(pending_turn)
+            return {
+                "message": state.get("message") or "Human input is required before the next question can be generated.",
+                "minimum_goal_reached": is_minimum_goal_reached(pending_turn.turn_no),
+                "pending_gate_active": True,
+            }
+
         if state.get("interview_finished"):
             project.status = "finished"
+            project.pending_gate_json = "null"
+            pending_turn.event_log_json = serialize_event_log(current_event_log)
             db.commit()
             db.refresh(project)
             db.refresh(pending_turn)
@@ -576,6 +826,7 @@ def persist_next_step(state, db: Session):
 
         current_max_turn_no = max((turn.turn_no for turn in all_turns), default=0)
         safe_next_turn_no = max(state["next_turn_no"], current_max_turn_no + 1)
+        existing_pending_gate = deserialize_gate(project.pending_gate_json)
         next_turn = InterviewTurn(
             project_id=project.id,
             turn_no=safe_next_turn_no,
@@ -608,8 +859,52 @@ def persist_next_step(state, db: Session):
 
         project.turn_count = next_turn.turn_no
         project.current_stage = state["next_stage"]
+        project.agent_mode = state.get("agent_mode", project.agent_mode)
+        project.pending_gate_json = "null"
         refreshed_coverage_state = rebuild_coverage_state([*all_turns, next_turn])
         save_coverage_state(project, refreshed_coverage_state)
+        project.rubric_task_board = serialize_task_board(
+            sync_task_board(
+                deserialize_task_board(project.rubric_task_board),
+                coverage_state=refreshed_coverage_state,
+                current_stage=state["next_stage"],
+            )
+        )
+
+        if state.get("review_result", {}).get("drift_detected"):
+            drift_event = emit_drift_repair_event(
+                drift_reason=state["review_result"].get("review_reason") or state["planner_decision"].get("reasoning", ""),
+                repair_action=state["planner_decision"].get("question_intent", "drift_repair"),
+                turn_no=pending_turn.turn_no,
+                project_id=state["project_id"],
+            )
+            current_event_log = add_event_to_log(current_event_log, drift_event)
+
+        if state.get("human_gate_resolution"):
+            if existing_pending_gate:
+                resolved_gate = resolve_gate(
+                    existing_pending_gate, state["human_gate_resolution"].get("action")
+                )
+                gate_event = emit_human_gate_event(
+                    gate_type=resolved_gate.gate_type.value,
+                    reason=resolved_gate.reason,
+                    resolution=resolved_gate.resolution,
+                    turn_no=pending_turn.turn_no,
+                    project_id=state["project_id"],
+                )
+                current_event_log = add_event_to_log(current_event_log, gate_event)
+
+        pending_turn.event_log_json = serialize_event_log(current_event_log)
+        next_event_log = deserialize_event_log(next_turn.event_log_json)
+        question_event = emit_ai_question_event(
+            turn_no=next_turn.turn_no,
+            question_text=next_turn.question_text,
+            question_plan=next_turn.question_plan or {},
+            mode=project.agent_mode,
+            phase=next_turn.stage,
+            project_id=state["project_id"],
+        )
+        next_turn.event_log_json = serialize_event_log(add_event_to_log(next_event_log, question_event))
 
         db.commit()
         db.refresh(project)

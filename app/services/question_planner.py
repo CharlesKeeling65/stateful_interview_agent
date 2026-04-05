@@ -8,7 +8,19 @@ from app.services.coverage_service import (
     framework_gaps_for_stage,
     normalize_framework_coverage,
 )
+from app.services.mode_service import (
+    AgentMode,
+    get_mode_constraints,
+    is_understanding_mode,
+)
 from app.services.repetition_guard import build_question_signature, normalize_target_label
+from app.services.rubric_task_service import (
+    RubricTaskBoard,
+    get_next_priority_task,
+    phase_name_to_key,
+    initialize_task_board,
+    deserialize_task_board,
+)
 from app.services.stage_manager import (
     ARCHITECTURE_STAGE,
     CODE_DETAIL_STAGE,
@@ -31,7 +43,16 @@ def plan_next_question(
     human_review_signal: dict[str, Any] | None = None,
     excluded_branch_ids: set[str] | None = None,
     excluded_target_signatures: set[str] | None = None,
+    agent_mode: str = "understand_current_code",
+    task_board_json: str | None = None,
 ) -> dict[str, Any]:
+    # Parse mode and get constraints
+    mode = AgentMode(agent_mode) if isinstance(agent_mode, str) else agent_mode
+    mode_constraints = get_mode_constraints(mode)
+
+    # Parse task board
+    task_board = deserialize_task_board(task_board_json) if task_board_json else initialize_task_board()
+
     framework = normalize_framework_coverage(
         coverage_state.get("framework", default_framework_coverage())
     )
@@ -40,6 +61,11 @@ def plan_next_question(
     recent_question_history = question_history[-8:]
     excluded_branch_ids = excluded_branch_ids or set()
     excluded_target_signatures = excluded_target_signatures or set()
+
+    # Get next priority rubric task if applicable
+    phase_key = phase_name_to_key(current_stage)
+    next_rubric_task = get_next_priority_task(task_board, phase_key)
+
     branch = choose_branch_for_stage(
         branches=branches,
         current_stage=current_stage,
@@ -56,7 +82,21 @@ def plan_next_question(
     review = human_review_signal or {}
     preferred_focus = (review.get("preferred_next_focus") or "").strip().lower()
     review_note = (review.get("note") or "").strip()
-    intent_mode = "understand_current_code"
+    intent_mode = agent_mode  # Use the passed mode
+
+    # Build base constraints based on mode
+    base_constraints = []
+    if is_understanding_mode(mode):
+        base_constraints = [
+            "Stay in understand-current-code mode",
+            "Focus on HOW the code currently works, not what should change",
+            "Avoid 'should', 'could we', 'better way' framing",
+        ]
+    else:
+        base_constraints = [
+            f"Stay in {mode.value} mode",
+            mode_constraints.get("description", ""),
+        ]
 
     if review and (
         review.get("direction") == "redirect"
@@ -75,6 +115,7 @@ def plan_next_question(
             "question_intent": "human_guided_redirect",
             "phase": current_stage,
             "intent_mode": intent_mode,
+            "mode": agent_mode,
             "target_type": "human_selected_focus",
             "target_label": target_label,
             "target_identifier": target_label,
@@ -82,11 +123,12 @@ def plan_next_question(
             "selected_framework_gap": selected_framework_gap,
             "selected_branch_ids": [branch.get("branch_id")] if branch and branch.get("branch_id") else [],
             "selected_turn_ids": branch.get("evidence_turn_ids", []) if branch else [],
+            "rubric_task_id": next_rubric_task.task_id if next_rubric_task else None,
+            "rubric_task_label": next_rubric_task.label if next_rubric_task else None,
+            "confidence": 0.7,
             "retrieval_focus": "human redirection first, then stage gaps and strongest branch evidence",
-            "constraints": [
-                "Stay in understand-current-code mode",
+            "constraints": base_constraints + [
                 "Follow the human redirection signal explicitly",
-                "Do not ask what should change or how the code should be redesigned",
             ],
             "prompt_id": prompt_id_for_stage(current_stage),
             "reasoning": review_note or "The human redirected the next question toward a missing understanding target.",
@@ -95,7 +137,7 @@ def plan_next_question(
             "human_review_applied": True,
             "human_review_signal": review,
             "validation_constraints": [
-                "must stay in understand_current_code",
+                f"must stay in {agent_mode}",
                 "must reflect explicit human redirection",
             ],
             "why_this_question": f"The human redirected the interview toward {target_label} to keep the conversation on understanding the current code.",
@@ -113,6 +155,7 @@ def plan_next_question(
             "question_intent": "drift_repair",
             "phase": current_stage,
             "intent_mode": intent_mode,
+            "mode": agent_mode,
             "target_type": "framework_gap",
             "target_label": target_label,
             "target_identifier": target_label,
@@ -120,8 +163,11 @@ def plan_next_question(
             "selected_framework_gap": selected_framework_gap,
             "selected_branch_ids": [drift["branch_id"]] if drift["branch_id"] else [],
             "selected_turn_ids": [],
+            "rubric_task_id": next_rubric_task.task_id if next_rubric_task else None,
+            "rubric_task_label": next_rubric_task.label if next_rubric_task else None,
+            "confidence": 0.65,
             "retrieval_focus": "framework gaps first, then earlier broad branches",
-            "constraints": [
+            "constraints": base_constraints + [
                 "Repair drift and return to the highest-priority framework gap",
                 "Do not continue the narrow branch unless the human explicitly chooses it",
                 "Stay at the current phase-appropriate level of abstraction",
@@ -143,6 +189,7 @@ def plan_next_question(
             "question_intent": "overview_gap_fill",
             "phase": current_stage,
             "intent_mode": intent_mode,
+            "mode": agent_mode,
             "target_type": "framework_gap",
             "target_label": selected_framework_gap or "overall project understanding",
             "target_identifier": selected_framework_gap or "overall_project_understanding",
@@ -150,12 +197,14 @@ def plan_next_question(
             "selected_framework_gap": selected_framework_gap,
             "selected_branch_ids": [branch.get("branch_id")] if branch and branch.get("branch_id") else [],
             "selected_turn_ids": branch.get("evidence_turn_ids", []) if branch else [],
+            "rubric_task_id": next_rubric_task.task_id if next_rubric_task else None,
+            "rubric_task_label": next_rubric_task.label if next_rubric_task else None,
+            "confidence": 0.75 if selected_framework_gap else 0.6,
             "retrieval_focus": "panorama gaps and broad branch clues",
-            "constraints": [
+            "constraints": base_constraints + [
                 "Stay at macro level",
                 "Avoid file/class/method detail",
                 "Prioritize purpose, users, boundaries, modules, or workflow",
-                "If a narrow branch is tempting, redirect back to the missing macro framework gap",
             ],
             "prompt_id": "next_question_panorama",
             "reasoning": f"Panorama gaps remaining: {', '.join(stage_gaps) or 'none detected'}",
@@ -174,6 +223,7 @@ def plan_next_question(
             "question_intent": "architecture_clarification",
             "phase": current_stage,
             "intent_mode": intent_mode,
+            "mode": agent_mode,
             "target_type": "module_or_call_chain",
             "target_label": branch["label"] if branch else "module responsibilities and call chains",
             "target_identifier": branch["label"] if branch else "module responsibilities and call chains",
@@ -181,12 +231,14 @@ def plan_next_question(
             "selected_framework_gap": selected_framework_gap,
             "selected_branch_ids": [branch.get("branch_id")] if branch and branch.get("branch_id") else [],
             "selected_turn_ids": branch.get("evidence_turn_ids", []) if branch else [],
+            "rubric_task_id": next_rubric_task.task_id if next_rubric_task else None,
+            "rubric_task_label": next_rubric_task.label if next_rubric_task else None,
+            "confidence": 0.7,
             "retrieval_focus": "architecture gaps, collaboration mechanisms, and key branch evidence",
-            "constraints": [
+            "constraints": base_constraints + [
                 "Ask about collaboration or call chains",
                 "Avoid shallow overview repetition",
-                "Avoid jumping to file-level implementation detail unless naming a path is necessary",
-                "Stay focused on how the current structure is organized rather than proposing changes",
+                "Stay focused on how the current structure is organized",
             ],
             "prompt_id": "next_question_architecture",
             "reasoning": f"Architecture gaps remaining: {', '.join(stage_gaps) or 'none detected'}",
@@ -217,6 +269,7 @@ def plan_next_question(
                 "question_intent": "human_review",
                 "phase": current_stage,
                 "intent_mode": intent_mode,
+                "mode": agent_mode,
                 "target_type": "prioritization",
                 "target_label": branch["label"] if branch else "which implementation branch to deepen next",
                 "target_identifier": branch["label"] if branch else "which implementation branch to deepen next",
@@ -224,11 +277,13 @@ def plan_next_question(
                 "selected_framework_gap": selected_framework_gap,
                 "selected_branch_ids": [branch.get("branch_id")] if branch and branch.get("branch_id") else [],
                 "selected_turn_ids": branch.get("evidence_turn_ids", []) if branch else [],
+                "rubric_task_id": next_rubric_task.task_id if next_rubric_task else None,
+                "rubric_task_label": next_rubric_task.label if next_rubric_task else None,
+                "confidence": 0.6,
                 "retrieval_focus": "highest-priority branch plus code-detail gaps",
-                "constraints": [
+                "constraints": base_constraints + [
                     "Ask the human to choose which module, file, path, or branch should be deepened next",
                     "Make human prioritization explicit",
-                    "Keep the collaboration visible before deeper code detail begins",
                 ],
                 "prompt_id": "human_review_question",
                 "reasoning": "Code-detail work is about to deepen, but explicit human judgment and prioritization evidence is still thin.",
@@ -237,7 +292,7 @@ def plan_next_question(
                 "human_review_applied": False,
                 "validation_constraints": [
                     "must ask for human prioritization explicitly",
-                    "must stay in understand-current-code mode",
+                    f"must stay in {agent_mode}",
                 ],
                 "why_this_question": "Before going deeper into implementation, the interview should record the human's prioritization choice.",
             }
@@ -256,6 +311,7 @@ def plan_next_question(
             "question_intent": "code_detail_deep_dive",
             "phase": current_stage,
             "intent_mode": intent_mode,
+            "mode": agent_mode,
             "target_type": target_type,
             "target_label": target_label,
             "target_identifier": target_label,
@@ -263,13 +319,14 @@ def plan_next_question(
             "selected_framework_gap": selected_framework_gap,
             "selected_branch_ids": [branch.get("branch_id")] if branch and branch.get("branch_id") else [],
             "selected_turn_ids": branch.get("evidence_turn_ids", []) if branch else [],
+            "rubric_task_id": next_rubric_task.task_id if next_rubric_task else None,
+            "rubric_task_label": next_rubric_task.label if next_rubric_task else None,
+            "confidence": 0.7,
             "retrieval_focus": "code-detail counts, unresolved implementation gaps, and the most evidence-backed branch",
-            "constraints": [
+            "constraints": base_constraints + [
                 "Must reference a specific file, class, method, execution path, library usage, or error path",
                 "Reject broad implementation questions without a concrete target",
                 "Prefer actual code artifact names when available",
-                "Ask how the current implementation works, not what should be changed",
-                "Keep the question focused on the current code artifact rather than redesign ideas",
             ],
             "prompt_id": "next_question_code_detail",
             "reasoning": f"Code-detail gaps remaining: {', '.join(stage_gaps) or 'need more concrete implementation evidence'}",
@@ -278,7 +335,7 @@ def plan_next_question(
             "human_review_applied": False,
             "validation_constraints": [
                 "must be implementation-specific",
-                "must stay in understand_current_code mode",
+                f"must stay in {agent_mode}",
                 "must reference a concrete artifact or execution path",
             ],
             "why_this_question": build_code_detail_why_text(
@@ -294,6 +351,7 @@ def plan_next_question(
             "question_intent": "scenario_completion",
             "phase": current_stage,
             "intent_mode": intent_mode,
+            "mode": agent_mode,
             "target_type": "scenario",
             "target_label": scenario_target,
             "target_identifier": scenario_target,
@@ -301,13 +359,14 @@ def plan_next_question(
             "selected_framework_gap": selected_framework_gap,
             "selected_branch_ids": [branch.get("branch_id")] if branch and branch.get("branch_id") else [],
             "selected_turn_ids": branch.get("evidence_turn_ids", []) if branch else [],
+            "rubric_task_id": next_rubric_task.task_id if next_rubric_task else None,
+            "rubric_task_label": next_rubric_task.label if next_rubric_task else None,
+            "confidence": 0.65,
             "retrieval_focus": "scenario gaps, earlier actor/module evidence, and boundary conditions",
-            "constraints": [
+            "constraints": base_constraints + [
                 "Collect trigger, actors, inputs, process, outputs, and boundary conditions",
                 "Tie the scenario back to real actors and inputs/outputs",
-                "Avoid returning to broad overview",
-                "Avoid purely internal code questions without scenario relevance",
-                "Aim to complete one of the representative scenarios rather than opening a brand-new topic",
+                "Aim to complete one of the representative scenarios",
             ],
             "prompt_id": "next_question_use_cases",
             "reasoning": f"Use-case gaps remaining: {', '.join(stage_gaps) or 'complete one concrete scenario cleanly'}",
@@ -325,6 +384,7 @@ def plan_next_question(
         "question_intent": "wrap_up_readiness",
         "phase": current_stage,
         "intent_mode": intent_mode,
+        "mode": agent_mode,
         "target_type": "coverage_gap",
         "target_label": "remaining evidence needed before delivery",
         "target_identifier": "remaining evidence needed before delivery",
@@ -332,8 +392,11 @@ def plan_next_question(
         "selected_framework_gap": selected_framework_gap,
         "selected_branch_ids": [branch.get("branch_id")] if branch and branch.get("branch_id") else [],
         "selected_turn_ids": branch.get("evidence_turn_ids", []) if branch else [],
+        "rubric_task_id": next_rubric_task.task_id if next_rubric_task else None,
+        "rubric_task_label": next_rubric_task.label if next_rubric_task else None,
+        "confidence": 0.8,
         "retrieval_focus": "small remaining gaps and handoff readiness",
-        "constraints": [
+        "constraints": base_constraints + [
             "Do not reopen large new topics",
             "Ask one final readiness or remaining-gap question",
         ],

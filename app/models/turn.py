@@ -25,6 +25,7 @@ class InterviewTurn(Base):
     answer_summary: Mapped[str | None] = mapped_column(Text, nullable=True)
     answer_analysis_json: Mapped[str | None] = mapped_column(Text, nullable=True)
     human_review_json: Mapped[str | None] = mapped_column(Text, nullable=True)
+    event_log_json: Mapped[str] = mapped_column(Text, default="[]")
 
     created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
 
@@ -84,6 +85,16 @@ class InterviewTurn(Base):
         except json.JSONDecodeError:
             return None
         return parsed if isinstance(parsed, dict) else None
+
+    @property
+    def event_log(self) -> list[dict]:
+        if not self.event_log_json:
+            return []
+        try:
+            parsed = json.loads(self.event_log_json)
+        except json.JSONDecodeError:
+            return []
+        return parsed if isinstance(parsed, list) else []
 
     @property
     def current_question_version_no(self) -> int:

@@ -2,20 +2,53 @@ import re
 
 from app.services.repetition_guard import is_question_semantically_redundant
 
+# Comprehensive change proposal patterns that should be rejected in understand mode
 CHANGE_PROPOSAL_MARKERS = (
     "should be changed",
     "should change",
     "what should be changed",
     "which files should be modified",
     "what code changes",
-    "how should",
+    "how should we",
     "redesign",
     "refactor",
     "improve",
     "update the tests",
     "modify",
     "changes are required",
+    "could we change",
+    "would you change",
+    "better way to",
+    "recommended changes",
+    "suggest improvements",
 )
+
+# Regex patterns for more sophisticated change proposal detection
+CHANGE_PROPOSAL_PATTERNS = [
+    r"should\s+be\s+(changed|modified|updated|refactored)",
+    r"(?:how|what)\s+(?:should|could|would)\s+we\s+(change|modify|fix|implement)",
+    r"suggest\s+(?:changes?|improvements?|refactoring)",
+    r"recommended\s+(?:changes?|approach\s+for)",
+    r"better\s+(?:way|approach)\s+to\s+(implement|handle)",
+    r"redesign\s+the",
+    r"update\s+(?:the\s+)?tests?",
+    r"modify\s+(?:this|the)",
+    r"what\s+changes\s+(?:should|could)",
+    r"improve\s+(?:this|the)\s+(?:code|implementation)",
+]
+
+# Understanding-focused patterns that are encouraged in understand mode
+UNDERSTANDING_PATTERNS = [
+    r"how\s+does\s+(?:this|the)",
+    r"what\s+does\s+(?:this|the)",
+    r"why\s+does\s+(?:this|the)",
+    r"explain\s+(?:how|what|why)",
+    r"describe\s+(?:the|this)",
+    r"current\s+(?:implementation|behavior|flow)",
+    r"what\s+is\s+(?:the\s+)?(?:current|existing)",
+    r"walk\s+through\s+(?:the|this)",
+    r"trace\s+(?:the|this)",
+]
 
 CODE_DETAIL_MARKERS = (
     ".py",
@@ -89,10 +122,14 @@ def validate_question_for_stage(
     intent_mode: str = "understand_current_code",
     recent_question_signatures: list[dict] | None = None,
     branch_id: str | None = None,
+    agent_mode: str | None = None,
 ) -> dict:
     text = text.strip()
     normalized = text.lower()
     reasons: list[str] = []
+
+    # Use agent_mode if provided, otherwise fall back to intent_mode
+    effective_mode = agent_mode or intent_mode
 
     if not text:
         reasons.append("Question text is empty.")
@@ -106,11 +143,24 @@ def validate_question_for_stage(
     if len(text) < 15:
         reasons.append("Question is too short.")
 
-    if intent_mode == "understand_current_code":
+    # Mode-specific validation
+    if effective_mode == "understand_current_code":
+        # Check for change proposal markers
         if any(marker in normalized for marker in CHANGE_PROPOSAL_MARKERS):
             reasons.append(
-                "Understand-mode questions must explain the current code, not ask for changes, redesigns, or test updates."
+                "Questions in understand mode must focus on CURRENT code behavior, not proposed changes."
             )
+
+        # Check for change proposal patterns via regex
+        for pattern in CHANGE_PROPOSAL_PATTERNS:
+            if re.search(pattern, normalized, re.IGNORECASE):
+                reasons.append(
+                    f"Question phrasing suggests change proposals, which is not allowed in understand mode. "
+                    f"Rephrase to ask about current behavior (e.g., 'How does X currently...')."
+                )
+                break
+
+        # Check for semantic redundancy
         if is_question_semantically_redundant(
             text=text,
             stage=current_stage,
@@ -120,6 +170,13 @@ def validate_question_for_stage(
         ):
             reasons.append(
                 "Question is too similar to a recently asked question and should target a different branch or implementation detail."
+            )
+
+    elif effective_mode == "review_current_code":
+        # Review mode allows quality assessment but not implementation details
+        if any(phrase in normalized for phrase in ("implement this", "change this now", "fix by doing")):
+            reasons.append(
+                "Review mode focuses on identifying issues, not proposing implementation details."
             )
 
     if current_stage == "Panorama Mapping":

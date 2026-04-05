@@ -6,6 +6,7 @@ class InterviewGraphState(TypedDict, total=False):
     project_id: int
     answer_text: str
     human_review_signal: dict
+    human_gate_resolution: dict
 
     current_turn_no: int
     next_turn_no: int
@@ -13,6 +14,12 @@ class InterviewGraphState(TypedDict, total=False):
     next_stage: str
 
     project_status: str
+    agent_mode: str
+    task_board: dict
+    pending_gate: dict | None
+    scenario_status: dict
+    review_result: dict
+    event_log: list[dict]
 
     history_text: str
     coverage_state: dict
