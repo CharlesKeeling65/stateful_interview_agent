@@ -1,0 +1,160 @@
+{
+  "id": "2026-04-05-135850",
+  "generated_at": "2026-04-05T05:58:50.049684Z",
+  "language": "zh",
+  "pages": [
+    {
+      "slug": "1-xiang-mu-gai-lan-shi-yao-shi-zhuang-tai-hua-fang-tan-agent",
+      "title": "项目概览：什么是状态化访谈Agent",
+      "file": "1-xiang-mu-gai-lan-shi-yao-shi-zhuang-tai-hua-fang-tan-agent.md",
+      "section": "快速入门",
+      "level": "Beginner"
+    },
+    {
+      "slug": "2-kuai-su-qi-dong-5fen-zhong-da-jian-ben-di-kai-fa-huan-jing",
+      "title": "快速启动：5分钟搭建本地开发环境",
+      "file": "2-kuai-su-qi-dong-5fen-zhong-da-jian-ben-di-kai-fa-huan-jing.md",
+      "section": "快速入门",
+      "level": "Beginner"
+    },
+    {
+      "slug": "3-fang-tan-jie-duan-ti-xi-cong-quan-jing-tu-dao-zui-zhong-shou-kou",
+      "title": "访谈阶段体系：从全景图到最终收口",
+      "file": "3-fang-tan-jie-duan-ti-xi-cong-quan-jing-tu-dao-zui-zhong-shou-kou.md",
+      "section": "快速入门",
+      "group": "核心概念",
+      "level": "Beginner"
+    },
+    {
+      "slug": "4-li-jie-dang-qian-dai-ma-mo-shi-yu-zhong-gou-jian-yi-de-ying-fen-chi",
+      "title": "理解当前代码模式：与重构建议的硬分离",
+      "file": "4-li-jie-dang-qian-dai-ma-mo-shi-yu-zhong-gou-jian-yi-de-ying-fen-chi.md",
+      "section": "快速入门",
+      "group": "核心概念",
+      "level": "Intermediate"
+    },
+    {
+      "slug": "5-hou-duan-jia-gou-gai-lan-fastapi-sqlalchemy-langgraph",
+      "title": "后端架构概览：FastAPI + SQLAlchemy + LangGraph",
+      "file": "5-hou-duan-jia-gou-gai-lan-fastapi-sqlalchemy-langgraph.md",
+      "section": "技术架构",
+      "level": "Intermediate"
+    },
+    {
+      "slug": "6-langgraphgong-zuo-liu-fang-tan-tu-de-jie-dian-yu-bian-she-ji",
+      "title": "LangGraph工作流：访谈图的节点与边设计",
+      "file": "6-langgraphgong-zuo-liu-fang-tan-tu-de-jie-dian-yu-bian-she-ji.md",
+      "section": "技术架构",
+      "level": "Intermediate"
+    },
+    {
+      "slug": "7-zhuang-tai-guan-li-interviewgraphstateshe-ji-yu-chi-jiu-hua",
+      "title": "状态管理：InterviewGraphState设计与持久化",
+      "file": "7-zhuang-tai-guan-li-interviewgraphstateshe-ji-yu-chi-jiu-hua.md",
+      "section": "技术架构",
+      "level": "Advanced"
+    },
+    {
+      "slug": "8-sqlalchemymo-xing-ceng-xiang-mu-hui-hua-yu-lun-ci-guan-li",
+      "title": "SQLAlchemy模型层：项目、会话与轮次管理",
+      "file": "8-sqlalchemymo-xing-ceng-xiang-mu-hui-hua-yu-lun-ci-guan-li.md",
+      "section": "技术架构",
+      "group": "数据模型",
+      "level": "Intermediate"
+    },
+    {
+      "slug": "9-yun-xing-gui-ji-mo-xing-agent-runyu-stepde-zhui-zong-she-ji",
+      "title": "运行轨迹模型：Agent Run与Step的追踪设计",
+      "file": "9-yun-xing-gui-ji-mo-xing-agent-runyu-stepde-zhui-zong-she-ji.md",
+      "section": "技术架构",
+      "group": "数据模型",
+      "level": "Intermediate"
+    },
+    {
+      "slug": "10-wen-ti-gui-hua-qi-questionplannerde-sheng-cheng-ce-lue",
+      "title": "问题规划器：QuestionPlanner的生成策略",
+      "file": "10-wen-ti-gui-hua-qi-questionplannerde-sheng-cheng-ce-lue.md",
+      "section": "核心服务",
+      "level": "Advanced"
+    },
+    {
+      "slug": "11-wen-ti-xiao-yan-qi-validatorde-jie-duan-yue-shu-yu-mo-shi-jian-cha",
+      "title": "问题校验器：Validator的阶段约束与模式检查",
+      "file": "11-wen-ti-xiao-yan-qi-validatorde-jie-duan-yue-shu-yu-mo-shi-jian-cha.md",
+      "section": "核心服务",
+      "level": "Advanced"
+    },
+    {
+      "slug": "12-fu-gai-du-fu-wu-coveragestatede-fen-zhi-yu-zhu-ti-zhui-zong",
+      "title": "覆盖度服务：CoverageState的分支与主题追踪",
+      "file": "12-fu-gai-du-fu-wu-coveragestatede-fen-zhi-yu-zhu-ti-zhui-zong.md",
+      "section": "核心服务",
+      "level": "Advanced"
+    },
+    {
+      "slug": "13-shang-xia-wen-gong-cheng-chang-fang-tan-xia-de-ji-yi-ya-suo-yu-jian-suo",
+      "title": "上下文工程：长访谈下的记忆压缩与检索",
+      "file": "13-shang-xia-wen-gong-cheng-chang-fang-tan-xia-de-ji-yi-ya-suo-yu-jian-suo.md",
+      "section": "核心服务",
+      "level": "Intermediate"
+    },
+    {
+      "slug": "14-human-in-the-loop-ping-shen-xin-hao-ru-he-ying-xiang-gong-zuo-liu",
+      "title": "Human-in-the-Loop：评审信号如何影响工作流",
+      "file": "14-human-in-the-loop-ping-shen-xin-hao-ru-he-ying-xiang-gong-zuo-liu.md",
+      "section": "核心服务",
+      "group": "人机协作",
+      "level": "Intermediate"
+    },
+    {
+      "slug": "15-wen-ti-zhong-xie-ji-zhi-ji-yu-shang-lun-hui-da-de-ban-ben-guan-li",
+      "title": "问题重写机制：基于上一轮回答的版本管理",
+      "file": "15-wen-ti-zhong-xie-ji-zhi-ji-yu-shang-lun-hui-da-de-ban-ben-guan-li.md",
+      "section": "核心服务",
+      "group": "人机协作",
+      "level": "Advanced"
+    },
+    {
+      "slug": "16-ri-zhi-zi-xi-tong-jsonljie-gou-hua-ri-zhi-she-ji",
+      "title": "日志子系统：JSONL结构化日志设计",
+      "file": "16-ri-zhi-zi-xi-tong-jsonljie-gou-hua-ri-zhi-she-ji.md",
+      "section": "可观测性与调试",
+      "level": "Intermediate"
+    },
+    {
+      "slug": "17-zhi-xing-gui-ji-api-run-tracede-qian-hou-duan-qi-yue",
+      "title": "执行轨迹API：Run Trace的前后端契约",
+      "file": "17-zhi-xing-gui-ji-api-run-tracede-qian-hou-duan-qi-yue.md",
+      "section": "可观测性与调试",
+      "level": "Intermediate"
+    },
+    {
+      "slug": "18-diao-shi-jie-kou-debuglu-you-yu-zhuang-tai-jian-cha",
+      "title": "调试接口：Debug路由与状态检查",
+      "file": "18-diao-shi-jie-kou-debuglu-you-yu-zhuang-tai-jian-cha.md",
+      "section": "可观测性与调试",
+      "level": "Beginner"
+    },
+    {
+      "slug": "19-reactqian-duan-jia-gou-zu-jian-yu-zhuang-tai-guan-li",
+      "title": "React前端架构：组件与状态管理",
+      "file": "19-reactqian-duan-jia-gou-zu-jian-yu-zhuang-tai-guan-li.md",
+      "section": "前端与部署",
+      "level": "Intermediate"
+    },
+    {
+      "slug": "20-huan-jing-pei-zhi-envbian-liang-yu-apimi-yao-she-zhi",
+      "title": "环境配置：.env变量与API密钥设置",
+      "file": "20-huan-jing-pei-zhi-envbian-liang-yu-apimi-yao-she-zhi.md",
+      "section": "前端与部署",
+      "level": "Beginner"
+    },
+    {
+      "slug": "21-shuang-yu-zhi-chi-i18nguo-ji-hua-shi-xian",
+      "title": "双语支持：i18n国际化实现",
+      "file": "21-shuang-yu-zhi-chi-i18nguo-ji-hua-shi-xian.md",
+      "section": "前端与部署",
+      "level": "Intermediate"
+    }
+  ]
+}
