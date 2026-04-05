@@ -185,17 +185,31 @@ def rebuild_coverage_state(turns: list[InterviewTurn]) -> dict[str, Any]:
             continue
 
         summary = turn.answer_summary or turn.answer_text
+        answer_analysis = turn.answer_analysis or {}
+        answer_memory_text = " ".join(
+            [
+                *answer_analysis.get("key_points", []),
+                *answer_analysis.get("follow_up_anchors", []),
+                *[chunk.get("text", "") for chunk in answer_analysis.get("rag_chunks", []) if isinstance(chunk, dict)],
+            ]
+        )
         candidate_keywords = extract_keywords(
             turn.question_text,
             summary,
             turn.answer_text,
+            answer_memory_text,
         )
         if not candidate_keywords:
             candidate_keywords = [f"turn-{turn.turn_no}"]
 
-        unresolved_points = extract_unresolved_points(summary)
+        unresolved_points = merge_unique(
+            answer_analysis.get("follow_up_anchors", []),
+            extract_unresolved_points(summary),
+            limit=5,
+        )
         label = build_branch_label(turn, candidate_keywords)
         branch_id = build_branch_id(turn, candidate_keywords)
+        branch_key_points = answer_analysis.get("key_points", [])[:5]
 
         matching_branch = find_matching_branch(branches, candidate_keywords)
         if matching_branch is None:
@@ -211,6 +225,7 @@ def rebuild_coverage_state(turns: list[InterviewTurn]) -> dict[str, Any]:
                     "evidence_turn_nos": [turn.turn_no],
                     "summary": summary,
                     "unresolved_points": unresolved_points,
+                    "key_points": branch_key_points,
                     "last_turn_no": turn.turn_no,
                 }
             )
@@ -228,6 +243,9 @@ def rebuild_coverage_state(turns: list[InterviewTurn]) -> dict[str, Any]:
         matching_branch["summary"] = summary
         matching_branch["unresolved_points"] = merge_unique(
             matching_branch["unresolved_points"], unresolved_points, limit=5
+        )
+        matching_branch["key_points"] = merge_unique(
+            matching_branch.get("key_points", []), branch_key_points, limit=6
         )
         matching_branch["last_turn_no"] = turn.turn_no
         if matching_branch["unresolved_points"]:
@@ -410,7 +428,13 @@ def rebuild_framework_coverage(turns: list[InterviewTurn]) -> dict[str, Any]:
         text = " ".join(
             filter(
                 None,
-                [turn.question_text, turn.answer_text, turn.answer_summary],
+                [
+                    turn.question_text,
+                    turn.answer_text,
+                    turn.answer_summary,
+                    " ".join((turn.answer_analysis or {}).get("key_points", [])),
+                    " ".join((turn.answer_analysis or {}).get("follow_up_anchors", [])),
+                ],
             )
         ).lower()
 

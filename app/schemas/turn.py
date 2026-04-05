@@ -36,6 +36,19 @@ class QuestionPlanRead(BaseModel):
     repo_tool_calls: list[dict] = Field(default_factory=list)
 
 
+class AnswerAnalysisChunkRead(BaseModel):
+    index: int
+    text: str
+
+
+class AnswerAnalysisRead(BaseModel):
+    stage_focus: str | None = None
+    summary_source: str | None = None
+    key_points: list[str] = Field(default_factory=list)
+    follow_up_anchors: list[str] = Field(default_factory=list)
+    rag_chunks: list[AnswerAnalysisChunkRead] = Field(default_factory=list)
+
+
 class TurnRead(BaseModel):
     id: int
     project_id: int
@@ -45,6 +58,7 @@ class TurnRead(BaseModel):
     question_text_for_copy: str
     answer_text: str | None
     answer_summary: str | None
+    answer_analysis: AnswerAnalysisRead | None = None
     human_review: HumanReviewInput | None = None
     question_plan: QuestionPlanRead | None = None
     current_question_version_no: int = 1

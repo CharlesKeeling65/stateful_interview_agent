@@ -148,6 +148,17 @@ def build_recent_context(
         f"Latest turn question: {latest_question}",
         f"Latest turn answer: {latest_answer}",
     ]
+    latest_analysis = latest_turn.answer_analysis or {}
+    if latest_analysis.get("key_points"):
+        lines.append(
+            "Latest answer key points: "
+            + " | ".join(latest_analysis.get("key_points", [])[:4])
+        )
+    if latest_analysis.get("follow_up_anchors"):
+        lines.append(
+            "Latest answer follow-up anchors: "
+            + " | ".join(latest_analysis.get("follow_up_anchors", [])[:3])
+        )
 
     prior_completed_turns = [turn for turn in turns[:-1] if turn.answer_text]
     if prior_completed_turns:
@@ -157,6 +168,12 @@ def build_recent_context(
             lines.append(f"Previous summary: {previous_turn.answer_summary}")
         else:
             lines.append(f"Previous answer: {previous_turn.answer_text}")
+        previous_analysis = previous_turn.answer_analysis or {}
+        if previous_analysis.get("key_points"):
+            lines.append(
+                "Previous key points: "
+                + " | ".join(previous_analysis.get("key_points", [])[:3])
+            )
     return "\n".join(lines)
 
 
@@ -267,6 +284,9 @@ def build_retrieved_branch_context(branches: list[dict[str, Any]]) -> str:
             f"  Evidence turns: {', '.join(str(turn_no) for turn_no in branch.get('evidence_turn_nos', [])) or 'None'}"
         )
         lines.append(f"  Latest summary: {branch.get('summary', 'None')}")
+        key_points = branch.get("key_points", [])
+        if key_points:
+            lines.append(f"  Key points: {' | '.join(key_points[:4])}")
         unresolved_points = branch.get("unresolved_points", [])
         if unresolved_points:
             lines.append(f"  Unresolved: {' | '.join(unresolved_points)}")

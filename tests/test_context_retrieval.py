@@ -17,6 +17,7 @@ class ContextEngineeringTests(unittest.TestCase):
                 question_text="Q1: What does the project do?",
                 answer_text="It supports operators, customers, and internal admins.",
                 answer_summary="Users include operators, customers, and admins. Boundaries touch ingestion, APIs, and dashboards.",
+                answer_analysis_json='{"stage_focus":"Panorama Mapping","key_points":["Primary users: operators, customers, and internal admins.","System boundaries: ingestion, APIs, and dashboards."],"follow_up_anchors":["Clarify how dashboards differ for operators and admins."],"rag_chunks":[{"index":1,"text":"It supports operators, customers, and internal admins. Users include operators, customers, and admins. Boundaries touch ingestion, APIs, and dashboards."}]}',
             ),
             InterviewTurn(
                 id=2,
@@ -25,6 +26,7 @@ class ContextEngineeringTests(unittest.TestCase):
                 question_text="Q2: Which modules coordinate the core workflow?",
                 answer_text="The API gateway hands requests to auth and orchestration services.",
                 answer_summary="API gateway routes to auth and orchestration services. Session handoff is still unclear.",
+                answer_analysis_json='{"stage_focus":"Architecture Understanding","key_points":["Core workflow path: API gateway -> auth service -> orchestration service.","Module responsibility split: gateway routes, auth checks identity, orchestration coordinates downstream work."],"follow_up_anchors":["Session handoff between gateway and auth service remains unclear."],"rag_chunks":[{"index":1,"text":"The API gateway hands requests to auth and orchestration services. API gateway routes to auth and orchestration services. Session handoff is still unclear."}]}',
             ),
             InterviewTurn(
                 id=3,
@@ -82,6 +84,8 @@ class ContextEngineeringTests(unittest.TestCase):
             "The latest answer focuses on API gateway routing, auth checks, and session propagation into orchestration.",
             result["context_text"],
         )
+        self.assertIn("Core workflow path: API gateway -> auth service -> orchestration service.", result["context_text"])
+        self.assertIn("Session handoff between gateway and auth service is not yet explained.", result["context_text"])
         self.assertIn("auth_handoff", result["selected_branch_ids"])
         self.assertIn(2, result["selected_turn_ids"])
         self.assertNotIn("deployment", result["selected_branch_ids"])

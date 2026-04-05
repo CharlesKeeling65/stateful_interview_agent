@@ -23,6 +23,7 @@ class InterviewTurn(Base):
     question_plan_json: Mapped[str | None] = mapped_column(Text, nullable=True)
     answer_text: Mapped[str | None] = mapped_column(Text, nullable=True)
     answer_summary: Mapped[str | None] = mapped_column(Text, nullable=True)
+    answer_analysis_json: Mapped[str | None] = mapped_column(Text, nullable=True)
     human_review_json: Mapped[str | None] = mapped_column(Text, nullable=True)
 
     created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
@@ -70,6 +71,16 @@ class InterviewTurn(Base):
             return None
         try:
             parsed = json.loads(self.question_plan_json)
+        except json.JSONDecodeError:
+            return None
+        return parsed if isinstance(parsed, dict) else None
+
+    @property
+    def answer_analysis(self) -> dict | None:
+        if not self.answer_analysis_json:
+            return None
+        try:
+            parsed = json.loads(self.answer_analysis_json)
         except json.JSONDecodeError:
             return None
         return parsed if isinstance(parsed, dict) else None

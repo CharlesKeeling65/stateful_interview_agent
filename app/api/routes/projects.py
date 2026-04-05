@@ -46,7 +46,8 @@ from app.services.repository_service import (
 )
 from app.services.run_trace_service import create_run, finalize_run, serialize_run
 from app.services.stage_manager import decide_next_stage, normalize_stage_name
-from app.services.coverage_service import rebuild_coverage_state
+from app.services.coverage_service import rebuild_coverage_state, save_coverage_state
+from app.services.summarization_service import refresh_turn_answer_memory
 from app.services.transcript_service import build_project_transcript
 from app.services.usage_service import aggregate_project_usage, create_usage_record
 
@@ -262,6 +263,20 @@ def submit_answer(
         raise HTTPException(status_code=400, detail="Project interview has not started")
     previous_answer = latest_turn.answer_text
     latest_turn.answer_text = payload.answer_text
+    refresh_turn_answer_memory(
+        db=db,
+        project_id=project_id,
+        system_prompt=project.system_prompt,
+        turn=latest_turn,
+    )
+    turns = (
+        db.query(InterviewTurn)
+        .filter(InterviewTurn.project_id == project_id)
+        .order_by(InterviewTurn.turn_no.asc())
+        .all()
+    )
+    refreshed_coverage_state = rebuild_coverage_state(turns)
+    save_coverage_state(project, refreshed_coverage_state)
     db.commit()
     db.refresh(latest_turn)
     emit_event(

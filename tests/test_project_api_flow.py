@@ -21,7 +21,7 @@ class _FakeChatCompletions:
     def create(self, *, messages, **_kwargs):
         user_content = messages[-1]["content"]
 
-        if "Summarize this answered interview turn." in user_content:
+        if "Summarize this answered interview turn" in user_content:
             content = "Concise summary with architecture detail and unresolved integration point."
         elif "Start the interview" in user_content:
             content = "Q1: What is the project trying to achieve for its primary users?"
@@ -30,7 +30,7 @@ class _FakeChatCompletions:
         elif "Next question number: Q2" in user_content:
             content = "Q2: Which modules coordinate the core workflow end to end?"
         elif "Next question number: Q3" in user_content:
-            content = "Q3: Where are the main extension points or unresolved design tradeoffs?"
+            content = "Q3: Along the main request path, how do auth and orchestration modules coordinate responsibilities and handoffs?"
         else:
             content = "Q9: Placeholder follow-up question?"
 
@@ -135,6 +135,13 @@ class ProjectApiFlowTests(unittest.TestCase):
         )
         self.assertEqual(saved_one.status_code, 200)
         self.assertTrue(saved_one.json()["can_generate_next"])
+        self.assertTrue(saved_one.json()["updated_turn"]["answer_summary"])
+        self.assertTrue(saved_one.json()["updated_turn"]["answer_analysis"]["key_points"])
+        self.assertTrue(saved_one.json()["updated_turn"]["answer_analysis"]["rag_chunks"])
+        self.assertEqual(
+            saved_one.json()["updated_turn"]["answer_analysis"]["stage_focus"],
+            "Panorama Mapping",
+        )
 
         next_one = self.client.post(
             f"/projects/{project_id}/next",
@@ -181,6 +188,8 @@ class ProjectApiFlowTests(unittest.TestCase):
             turns_payload[0]["answer_text"],
             "Long answer one with product goals, user roles, data flow, and module boundaries.",
         )
+        self.assertTrue(turns_payload[0]["answer_analysis"]["key_points"])
+        self.assertTrue(turns_payload[0]["answer_analysis"]["follow_up_anchors"])
         self.assertEqual(turns_payload[0]["human_review"]["verdict"], "insufficient")
         self.assertEqual(turns_payload[0]["human_review"]["preferred_next_focus"], "architecture")
         self.assertTrue(turns_payload[0]["answer_summary"])
@@ -197,7 +206,7 @@ class ProjectApiFlowTests(unittest.TestCase):
         self.assertEqual(status.status_code, 200)
         self.assertEqual(
             status.json()["latest_question_text_for_copy"],
-            "Where are the main extension points or unresolved design tradeoffs?",
+            "Along the main request path, how do auth and orchestration modules coordinate responsibilities and handoffs?",
         )
         self.assertGreater(status.json()["usage_summary"]["total_tokens"], 0)
         self.assertFalse(status.json()["latest_turn_ready_for_next_generation"])
