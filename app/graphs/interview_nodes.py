@@ -198,6 +198,18 @@ def generate_question_for_state(
             excluded_branch_ids=blocked_branch_ids,
             excluded_target_signatures=blocked_target_signatures,
         )
+        repo_grounding_payload = build_repo_grounding_context(
+            project=project,
+            turns=turns,
+            current_stage=current_stage,
+            next_turn_no=turn_no,
+            planner_decision=planner_decision,
+            latest_answer_override=latest_answer_override,
+            project_id=project.id,
+            run_id=run_id,
+        )
+        context_payload["repo_grounding_context"] = repo_grounding_payload["repo_grounding_context"]
+        context_payload["repo_grounding_meta"] = repo_grounding_payload["repo_grounding_meta"]
         retried_question_result = generate_next_question_from_history(
             system_prompt=project.system_prompt,
             recent_context=context_payload["recent_context"],

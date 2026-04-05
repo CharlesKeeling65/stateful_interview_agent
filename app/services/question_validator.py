@@ -1,4 +1,5 @@
 import re
+from pathlib import Path
 
 from app.services.repetition_guard import is_question_semantically_redundant
 
@@ -246,10 +247,16 @@ def validate_question_against_repository(
         )
     }
     known_symbols = {str(symbol) for symbol in repo_grounding_meta.get("selected_symbols", [])}
+    root_path_text = str(repo_manifest.get("root_path") or "").strip()
+    repo_root = Path(root_path_text).expanduser().resolve() if root_path_text else None
 
     mentioned_paths = QUESTION_FILE_PATTERN.findall(normalized)
     if mentioned_paths:
-        missing_paths = [path for path in mentioned_paths if path not in known_paths]
+        missing_paths = [
+            path
+            for path in mentioned_paths
+            if path not in known_paths and not _repository_path_exists(repo_root, path)
+        ]
         if missing_paths:
             reasons.append(
                 "Question references repository paths that were not found in the current evidence bundle: "
@@ -268,3 +275,12 @@ def validate_question_against_repository(
         "is_valid": len(reasons) == 0,
         "reasons": reasons,
     }
+
+
+def _repository_path_exists(repo_root: Path | None, relative_path: str) -> bool:
+    if repo_root is None or not repo_root.exists():
+        return False
+    normalized = Path(relative_path)
+    if normalized.is_absolute() or ".." in normalized.parts:
+        return False
+    return (repo_root / normalized).is_file()

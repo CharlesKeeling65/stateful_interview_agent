@@ -125,3 +125,20 @@ class RepositoryGroundingTests(unittest.TestCase):
         )
         self.assertFalse(validation["is_valid"])
         self.assertIn("missing_file.py", " ".join(validation["reasons"]))
+
+    def test_repository_validator_accepts_real_repo_path_outside_selected_bundle(self):
+        validation = validate_question_against_repository(
+            text="Q4: In frontend/src/App.tsx, how is the current UI shell wired?",
+            current_stage="Code Detail Completion",
+            repo_grounding_meta={
+                "enabled": True,
+                "selected_paths": ["app/services/question_generator.py"],
+                "selected_symbols": ["QuestionGenerator", "generate_next_question_from_history"],
+            },
+            repo_manifest={
+                "root_path": str(self.repo_root),
+                "key_files": ["README.md"],
+            },
+        )
+        self.assertTrue(validation["is_valid"])
+        self.assertEqual(validation["reasons"], [])
