@@ -79,6 +79,19 @@ export type QuestionPlanRead = {
   repo_tool_calls?: Array<Record<string, unknown>>
 }
 
+export type AnswerAnalysisChunkRead = {
+  index: number
+  text: string
+}
+
+export type AnswerAnalysisRead = {
+  stage_focus?: string | null
+  summary_source?: string | null
+  key_points?: string[]
+  follow_up_anchors?: string[]
+  rag_chunks?: AnswerAnalysisChunkRead[]
+}
+
 export type RunStepRead = {
   id: number
   step_index: number
@@ -142,6 +155,7 @@ export type TurnRead = {
   question_text_for_copy: string
   answer_text: string | null
   answer_summary: string | null
+  answer_analysis?: AnswerAnalysisRead | null
   human_review: HumanReviewInput | null
   question_plan: QuestionPlanRead | null
   current_question_version_no: number

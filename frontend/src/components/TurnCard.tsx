@@ -259,6 +259,42 @@ export const TurnCard = memo(function TurnCard({
               </div>
             ) : null}
           </div>
+          {turn.answer_analysis && !waitingForAnswer ? (
+            <div className="mt-3 rounded-2xl border border-violet-200 bg-violet-50/70 px-4 py-3">
+              <div className="flex flex-wrap items-center justify-between gap-2">
+                <p className="text-[0.64rem] font-semibold uppercase tracking-[0.22em] text-violet-700">
+                  {t('transcript.answerMemory')}
+                </p>
+                <span className="rounded-full bg-white/80 px-3 py-1 text-[0.72rem] font-semibold text-violet-800">
+                  {t('transcript.ragChunks')}: {turn.answer_analysis.rag_chunks?.length ?? 0}
+                </span>
+              </div>
+              {turn.answer_analysis.key_points?.length ? (
+                <div className="mt-3">
+                  <p className="text-[0.64rem] font-semibold uppercase tracking-[0.18em] text-violet-700">
+                    {t('transcript.answerKeyPoints')}
+                  </p>
+                  <div className="mt-2 flex flex-wrap gap-2">
+                    {turn.answer_analysis.key_points.slice(0, 5).map((point) => (
+                      <span key={point} className="rounded-full bg-white px-3 py-1 text-xs font-medium leading-5 text-violet-950">
+                        {point}
+                      </span>
+                    ))}
+                  </div>
+                </div>
+              ) : null}
+              {turn.answer_analysis.follow_up_anchors?.length ? (
+                <div className="mt-3">
+                  <p className="text-[0.64rem] font-semibold uppercase tracking-[0.18em] text-violet-700">
+                    {t('transcript.answerFollowUps')}
+                  </p>
+                  <p className="mt-1 whitespace-pre-wrap break-words text-xs leading-6 text-violet-950">
+                    {turn.answer_analysis.follow_up_anchors.slice(0, 3).join(' | ')}
+                  </p>
+                </div>
+              ) : null}
+            </div>
+          ) : null}
         </div>
 
         {turn.question_versions.length > 1 ? (

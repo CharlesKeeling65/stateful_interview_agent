@@ -14,6 +14,7 @@ const turn: TurnRead = {
   question_text_for_copy: 'Which modules coordinate the request path?',
   answer_text: null,
   answer_summary: null,
+  answer_analysis: null,
   human_review: {
     verdict: 'drifted',
     direction: 'redirect',
@@ -54,5 +55,33 @@ describe('TurnCard', () => {
     )
 
     expect(screen.getByText('Stage correction: Architecture Understanding')).toBeInTheDocument()
+  })
+
+  it('shows saved answer memory key points and chunk count for answered turns', () => {
+    render(
+      <TurnCard
+        locale="en"
+        t={createTranslator('en')}
+        turn={{
+          ...turn,
+          answer_text: 'The API gateway hands requests to auth and orchestration services.',
+          answer_summary: 'API gateway routes to auth and orchestration services.',
+          answer_analysis: {
+            stage_focus: 'Architecture Understanding',
+            summary_source: 'llm',
+            key_points: [
+              'Core workflow path: API gateway -> auth service -> orchestration service.',
+              'Module responsibility split: gateway routes, auth checks identity, orchestration coordinates downstream work.',
+            ],
+            follow_up_anchors: ['Session handoff between gateway and auth service is not yet explained.'],
+            rag_chunks: [{ index: 1, text: 'The API gateway hands requests to auth and orchestration services.' }],
+          },
+        }}
+      />,
+    )
+
+    expect(screen.getByText('Saved answer memory')).toBeInTheDocument()
+    expect(screen.getByText('Core workflow path: API gateway -> auth service -> orchestration service.')).toBeInTheDocument()
+    expect(screen.getByText('RAG chunks: 1')).toBeInTheDocument()
   })
 })
