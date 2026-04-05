@@ -1,5 +1,7 @@
+import { useState } from 'react'
+
 import type { Locale, Translator } from '../i18n'
-import type { ProjectRead, ProjectStatusResponse, TranscriptResponse } from '../types/api'
+import type { ProjectRead, ProjectStatusResponse, TranscriptResponse, UpdateProjectPayload } from '../types/api'
 import { getDisplayStageLabel } from '../i18n'
 import { formatDurationMs } from '../utils/format'
 import {
@@ -21,6 +23,7 @@ type StatusPanelProps = {
   onExportMarkdown: () => void
   onExportText: () => void
   onStart: () => Promise<void> | void
+  onUpdateRepository?: (payload: UpdateProjectPayload) => Promise<void> | void
   project: ProjectRead | null
   status: ProjectStatusResponse | null
   t: Translator
@@ -47,6 +50,7 @@ export function StatusPanel({
   onExportMarkdown,
   onExportText,
   onStart,
+  onUpdateRepository,
   project,
   status,
   t,
@@ -58,6 +62,46 @@ export function StatusPanel({
   const started = hasInterviewStarted(project)
   const canExport = Boolean(transcript?.transcript)
   const repositoryProject = project && project.repository.source_type !== 'none' ? project : null
+  const [repositoryEditorOpen, setRepositoryEditorOpen] = useState(false)
+  const [repoSourceType, setRepoSourceType] = useState<'none' | 'local_path' | 'git_url'>('none')
+  const [repoLocalPath, setRepoLocalPath] = useState('')
+  const [repoGitUrl, setRepoGitUrl] = useState('')
+  const [repoGitRef, setRepoGitRef] = useState('')
+
+  function resetRepositoryEditor() {
+    if (!project) {
+      setRepoSourceType('none')
+      setRepoLocalPath('')
+      setRepoGitUrl('')
+      setRepoGitRef('')
+      return
+    }
+    setRepoSourceType((project.repository.source_type as 'none' | 'local_path' | 'git_url') ?? 'none')
+    setRepoLocalPath(project.repository.local_path ?? '')
+    setRepoGitUrl(project.repository.git_url ?? '')
+    setRepoGitRef(project.repository.git_ref ?? '')
+  }
+
+  function handleRepositorySave() {
+    if (!project || !onUpdateRepository) {
+      return
+    }
+
+    void onUpdateRepository({
+      repository: {
+        source_type: repoSourceType,
+        local_path: repoSourceType === 'local_path' ? repoLocalPath.trim() || null : null,
+        git_url: repoSourceType === 'git_url' ? repoGitUrl.trim() || null : null,
+        git_ref: repoSourceType === 'git_url' ? repoGitRef.trim() || null : null,
+      },
+    })
+    setRepositoryEditorOpen(false)
+  }
+
+  function openRepositoryEditor() {
+    resetRepositoryEditor()
+    setRepositoryEditorOpen(true)
+  }
 
   return (
     <aside className="flex h-full flex-col gap-4">
@@ -167,6 +211,126 @@ export function StatusPanel({
               <p className="mt-2 text-xs leading-6 text-slate-500">
                 {t('status.repoKeyFiles')}: {repositoryProject.repository_manifest.key_files.slice(0, 4).join(', ')}
               </p>
+            ) : null}
+          </div>
+        ) : null}
+
+        {project ? (
+          <div className="mt-5 rounded-[1.5rem] border border-slate-200 bg-slate-50/70 px-4 py-4">
+            <div className="flex flex-wrap items-center justify-between gap-3">
+              <div>
+                <p className="text-[0.64rem] font-semibold uppercase tracking-[0.22em] text-slate-500">
+                  {t('status.repositorySettings')}
+                </p>
+                <p className="mt-1 text-sm leading-6 text-slate-600">
+                  {t('status.repositorySettingsHint')}
+                </p>
+              </div>
+              <ActionButton
+                aria-label={t('status.editRepository')}
+                disabled={working || !onUpdateRepository}
+                label={repositoryEditorOpen ? t('sidebar.cancel') : t('status.editRepository')}
+                onClick={() => {
+                  if (repositoryEditorOpen) {
+                    resetRepositoryEditor()
+                    setRepositoryEditorOpen(false)
+                    return
+                  }
+                  openRepositoryEditor()
+                }}
+                type="button"
+              />
+            </div>
+
+            {repositoryEditorOpen ? (
+              <div className="mt-4 grid gap-3">
+                <label className="block space-y-2">
+                  <span className="text-xs font-medium uppercase tracking-[0.2em] text-slate-500">
+                    {t('sidebar.repositorySource')}
+                  </span>
+                  <select
+                    aria-label={t('sidebar.repositorySource')}
+                    className="w-full rounded-2xl border border-slate-200 bg-white px-4 py-3 text-sm text-slate-950 outline-none transition focus:border-amber-500 focus:ring-2 focus:ring-amber-200"
+                    value={repoSourceType}
+                    onChange={(event) => setRepoSourceType(event.target.value as 'none' | 'local_path' | 'git_url')}
+                    disabled={working}
+                  >
+                    <option value="none">{t('sidebar.repositoryNone')}</option>
+                    <option value="local_path">{t('sidebar.repositoryLocal')}</option>
+                    <option value="git_url">{t('sidebar.repositoryGit')}</option>
+                  </select>
+                </label>
+
+                {repoSourceType === 'local_path' ? (
+                  <label className="block space-y-2">
+                    <span className="text-xs font-medium uppercase tracking-[0.2em] text-slate-500">
+                      {t('sidebar.repositoryPath')}
+                    </span>
+                    <input
+                      aria-label={t('sidebar.repositoryPath')}
+                      className="w-full rounded-2xl border border-slate-200 bg-white px-4 py-3 text-sm text-slate-950 outline-none transition focus:border-amber-500 focus:ring-2 focus:ring-amber-200"
+                      value={repoLocalPath}
+                      onChange={(event) => setRepoLocalPath(event.target.value)}
+                      disabled={working}
+                    />
+                  </label>
+                ) : null}
+
+                {repoSourceType === 'git_url' ? (
+                  <>
+                    <label className="block space-y-2">
+                      <span className="text-xs font-medium uppercase tracking-[0.2em] text-slate-500">
+                        {t('sidebar.repositoryUrl')}
+                      </span>
+                      <input
+                        aria-label={t('sidebar.repositoryUrl')}
+                        className="w-full rounded-2xl border border-slate-200 bg-white px-4 py-3 text-sm text-slate-950 outline-none transition focus:border-amber-500 focus:ring-2 focus:ring-amber-200"
+                        value={repoGitUrl}
+                        onChange={(event) => setRepoGitUrl(event.target.value)}
+                        disabled={working}
+                      />
+                    </label>
+                    <label className="block space-y-2">
+                      <span className="text-xs font-medium uppercase tracking-[0.2em] text-slate-500">
+                        {t('sidebar.repositoryRef')}
+                      </span>
+                      <input
+                        aria-label={t('sidebar.repositoryRef')}
+                        className="w-full rounded-2xl border border-slate-200 bg-white px-4 py-3 text-sm text-slate-950 outline-none transition focus:border-amber-500 focus:ring-2 focus:ring-amber-200"
+                        value={repoGitRef}
+                        onChange={(event) => setRepoGitRef(event.target.value)}
+                        disabled={working}
+                      />
+                    </label>
+                  </>
+                ) : null}
+
+                <div className="flex flex-wrap gap-2">
+                  <ActionButton
+                    aria-label={t('status.saveRepository')}
+                    disabled={
+                      working
+                      || !onUpdateRepository
+                      || (repoSourceType === 'local_path' && !repoLocalPath.trim())
+                      || (repoSourceType === 'git_url' && !repoGitUrl.trim())
+                    }
+                    label={t('status.saveRepository')}
+                    onClick={handleRepositorySave}
+                    type="button"
+                    variant="primary"
+                  />
+                  <ActionButton
+                    aria-label={t('sidebar.cancel')}
+                    disabled={working}
+                    label={t('sidebar.cancel')}
+                    onClick={() => {
+                      resetRepositoryEditor()
+                      setRepositoryEditorOpen(false)
+                    }}
+                    type="button"
+                  />
+                </div>
+              </div>
             ) : null}
           </div>
         ) : null}

@@ -299,6 +299,9 @@ function App() {
                   onExportMarkdown={handleExportMarkdown}
                   onExportText={handleExportText}
                   onStart={startProject}
+                  onUpdateRepository={
+                    project ? async (payload) => updateProject(project.id, payload) : undefined
+                  }
                   project={project}
                   status={status}
                   t={t}

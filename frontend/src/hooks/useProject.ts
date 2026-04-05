@@ -25,6 +25,7 @@ import type {
   RunRead,
   TranscriptResponse,
   TurnRead,
+  UpdateProjectPayload,
 } from '../types/api'
 import { parseApiDateMs } from '../utils/format'
 import { estimateNextOutputTokens, estimateNextPromptTokens, estimateTokenCount } from '../utils/tokens'
@@ -388,7 +389,7 @@ export function useProject() {
     }
   }
 
-  async function handleUpdateProject(projectId: number, payload: { project_name?: string }) {
+  async function handleUpdateProject(projectId: number, payload: UpdateProjectPayload) {
     setBusyAction('updating')
     setLoading(true)
     setError('')
