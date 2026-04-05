@@ -155,6 +155,11 @@ export const TurnCard = memo(function TurnCard({
                 {t('transcript.whyThisQuestion')}
               </p>
               <div className="mt-2 flex flex-wrap gap-2 text-[0.7rem] font-semibold uppercase tracking-[0.16em] text-sky-800">
+                {turn.question_plan.mode ? (
+                  <span className="rounded-full bg-white/80 px-3 py-1">
+                    {locale === 'zh-CN' ? '模式' : 'Mode'}: {turn.question_plan.mode}
+                  </span>
+                ) : null}
                 {turn.question_plan.phase ? (
                   <span className="rounded-full bg-white/80 px-3 py-1">
                     {getDisplayStageLabel(turn.question_plan.phase, locale)}
@@ -206,6 +211,20 @@ export const TurnCard = memo(function TurnCard({
                   <p className="mt-2 text-xs leading-6 text-sky-900">
                     {turn.question_plan.repo_selected_paths.slice(0, 4).join(', ')}
                   </p>
+                </div>
+              ) : null}
+              {turn.event_log?.length ? (
+                <div className="mt-3 rounded-2xl border border-sky-100 bg-white/70 px-3 py-3">
+                  <p className="text-[0.64rem] font-semibold uppercase tracking-[0.18em] text-sky-700">
+                    {locale === 'zh-CN' ? '协作事件' : 'Collaboration Events'}
+                  </p>
+                  <div className="mt-2 flex flex-wrap gap-2">
+                    {turn.event_log.map((event) => (
+                      <span key={event.event_id} className="rounded-full bg-sky-100 px-3 py-1 text-[0.68rem] font-semibold text-sky-950">
+                        {event.event_type}
+                      </span>
+                    ))}
+                  </div>
                 </div>
               ) : null}
             </div>

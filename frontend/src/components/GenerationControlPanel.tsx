@@ -1,7 +1,7 @@
 import { useState } from 'react'
 
 import type { Locale, Translator } from '../i18n'
-import type { HumanReviewInput } from '../types/api'
+import type { HumanGateRead, HumanReviewInput, NextQuestionRequestPayload } from '../types/api'
 import { formatTokenCount } from '../utils/tokens'
 import { ChevronDownIcon } from './Icons'
 
@@ -14,11 +14,12 @@ type GenerationControlPanelProps = {
     estimatedNextOutputTokens: number
   }
   locale?: Locale
+  pendingGate?: HumanGateRead | null
   projectFinished?: boolean
   projectStarted?: boolean
   savedAnswer?: string | null
   workingLabel?: string | null
-  onGenerateNext: (humanReview?: HumanReviewInput | null) => Promise<void> | void
+  onGenerateNext: (payload?: NextQuestionRequestPayload) => Promise<void> | void
   t: Translator
 }
 
@@ -27,6 +28,7 @@ export function GenerationControlPanel({
   disabled = false,
   estimateDraftUsage,
   locale = 'en',
+  pendingGate = null,
   projectFinished = false,
   projectStarted = false,
   savedAnswer = null,
@@ -41,6 +43,9 @@ export function GenerationControlPanel({
   const [reviewNote, setReviewNote] = useState('')
   const [phaseCorrection, setPhaseCorrection] = useState('')
   const [phaseReady, setPhaseReady] = useState(false)
+  const [gateAction, setGateAction] = useState('')
+  const [gateFocus, setGateFocus] = useState('')
+  const [gateNote, setGateNote] = useState('')
 
   function buildHumanReviewSignal(): HumanReviewInput | null {
     if (!reviewVerdict && !preferredNextFocus.trim() && !reviewNote.trim() && !phaseReady && !phaseCorrection) {
@@ -58,6 +63,27 @@ export function GenerationControlPanel({
   }
 
   const estimate = estimateDraftUsage(savedAnswer ?? '')
+  const hasPendingGate = Boolean(pendingGate)
+  const effectiveCanGenerateNext = hasPendingGate ? true : canGenerateNext
+
+  function buildNextPayload(): NextQuestionRequestPayload {
+    if (pendingGate) {
+      const fallbackAction = pendingGate.default_action || pendingGate.options[0]?.action || 'continue'
+      return {
+        human_gate: {
+          gate_id: pendingGate.gate_id,
+          action: gateAction || fallbackAction,
+          preferred_next_focus: gateFocus.trim() || null,
+          note: gateNote.trim() || null,
+          phase_ready: phaseReady || null,
+        },
+      }
+    }
+
+    return {
+      human_review: buildHumanReviewSignal(),
+    }
+  }
 
   return (
     <section className="rounded-[2rem] border border-white/60 bg-white/85 p-5 shadow-[0_20px_50px_rgba(148,163,184,0.16)] backdrop-blur">
@@ -76,12 +102,62 @@ export function GenerationControlPanel({
         <button
           type="button"
           className="rounded-full bg-slate-950 px-5 py-2.5 text-sm font-medium text-white transition hover:bg-slate-800 disabled:cursor-not-allowed disabled:bg-slate-400"
-          onClick={() => void onGenerateNext(buildHumanReviewSignal())}
-          disabled={disabled || !canGenerateNext}
+          onClick={() => void onGenerateNext(buildNextPayload())}
+          disabled={disabled || !effectiveCanGenerateNext}
         >
           {workingLabel ?? t('generation.submit')}
         </button>
       </div>
+
+      {pendingGate ? (
+        <div className="mt-4 rounded-[1.5rem] border border-amber-200 bg-amber-50/80 px-4 py-4">
+          <p className="text-[0.64rem] font-semibold uppercase tracking-[0.22em] text-amber-700">
+            {locale === 'zh-CN' ? '人工决策关卡' : 'Human Decision Gate'}
+          </p>
+          <p className="mt-2 text-sm leading-6 text-amber-950">{pendingGate.reason}</p>
+          <div className="mt-4 grid gap-4 md:grid-cols-2">
+            <label className="text-sm text-slate-700">
+              <span className="text-[0.64rem] font-semibold uppercase tracking-[0.18em] text-slate-500">
+                {locale === 'zh-CN' ? '决策' : 'Decision'}
+              </span>
+              <select
+                className="mt-2 w-full rounded-2xl border border-amber-200 bg-white px-3 py-2.5 outline-none focus:border-amber-500 focus:ring-2 focus:ring-amber-200"
+                value={gateAction}
+                onChange={(event) => setGateAction(event.target.value)}
+              >
+                <option value="">{locale === 'zh-CN' ? '使用默认决策' : 'Use default action'}</option>
+                {pendingGate.options.map((option) => (
+                  <option key={option.action} value={option.action}>
+                    {option.label}
+                  </option>
+                ))}
+              </select>
+            </label>
+            <label className="text-sm text-slate-700">
+              <span className="text-[0.64rem] font-semibold uppercase tracking-[0.18em] text-slate-500">
+                {t('composer.focus')}
+              </span>
+              <input
+                className="mt-2 w-full rounded-2xl border border-amber-200 bg-white px-3 py-2.5 outline-none focus:border-amber-500 focus:ring-2 focus:ring-amber-200"
+                placeholder={locale === 'zh-CN' ? '可选：下一问聚焦点' : 'Optional next focus'}
+                value={gateFocus}
+                onChange={(event) => setGateFocus(event.target.value)}
+              />
+            </label>
+            <label className="md:col-span-2 text-sm text-slate-700">
+              <span className="text-[0.64rem] font-semibold uppercase tracking-[0.18em] text-slate-500">
+                {t('composer.note')}
+              </span>
+              <textarea
+                className="mt-2 min-h-24 w-full rounded-[1.25rem] border border-amber-200 bg-white px-3 py-3 outline-none focus:border-amber-500 focus:ring-2 focus:ring-amber-200"
+                placeholder={locale === 'zh-CN' ? '记录你的判断或重定向理由' : 'Capture the decision or redirection rationale'}
+                value={gateNote}
+                onChange={(event) => setGateNote(event.target.value)}
+              />
+            </label>
+          </div>
+        </div>
+      ) : null}
 
       <div className="mt-4 rounded-[1.5rem] border border-slate-200 bg-white/80">
         <button
@@ -221,7 +297,7 @@ export function GenerationControlPanel({
           ? t('composer.finishedHint')
           : !projectStarted
             ? t('composer.lockedHint')
-            : canGenerateNext
+            : effectiveCanGenerateNext
               ? t('generation.readyHint')
               : t('generation.lockedHint')}
       </p>

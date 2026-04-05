@@ -20,6 +20,7 @@ import type {
   CreateProjectPayload,
   CurrentQuestionRegenerateResponse,
   HumanReviewInput,
+  NextQuestionRequestPayload,
   ProjectRead,
   ProjectStatusResponse,
   RunRead,
@@ -245,7 +246,7 @@ export function useProject() {
     }
   }
 
-  async function handleGenerateNext(humanReview?: HumanReviewInput | null) {
+  async function handleGenerateNext(payload?: NextQuestionRequestPayload) {
     if (!project) {
       return
     }
@@ -293,7 +294,10 @@ export function useProject() {
         }
       })()
 
-      const result = await submitNext(project.id, { human_review: humanReview ?? null })
+      const result = await submitNext(project.id, {
+        human_review: payload?.human_review ?? null,
+        human_gate: payload?.human_gate ?? null,
+      })
       settled = true
       await pollActiveRun
       startTransition(() => {

@@ -45,6 +45,14 @@ export type HumanReviewInput = {
   phase_ready?: boolean | null
 }
 
+export type HumanGateResolutionInput = {
+  gate_id: string
+  action: string
+  preferred_next_focus?: string | null
+  note?: string | null
+  phase_ready?: boolean | null
+}
+
 export type QuestionVersionRead = {
   id: number
   version_no: number
@@ -60,6 +68,7 @@ export type QuestionVersionRead = {
 }
 
 export type QuestionPlanRead = {
+  mode?: string | null
   phase?: string | null
   intent_mode?: string | null
   question_intent?: string | null
@@ -72,11 +81,51 @@ export type QuestionPlanRead = {
   human_review_applied?: boolean | null
   drift_detected?: boolean | null
   why_this_question?: string | null
+  rubric_task_id?: string | null
+  rubric_task_label?: string | null
+  confidence_score?: number | null
+  human_gate_triggered?: boolean | null
+  reviewer_reason?: string | null
+  reviewer_modifications?: string[]
+  scenario_complete?: boolean | null
+  scenario_missing_aspects?: string[]
   repo_queries?: string[]
   repo_selected_paths?: string[]
   repo_selected_symbols?: string[]
   repo_commit_sha?: string | null
   repo_tool_calls?: Array<Record<string, unknown>>
+}
+
+export type TranscriptEventRead = {
+  event_id: string
+  event_type: string
+  turn_no: number | null
+  timestamp: string
+  payload: Record<string, unknown>
+}
+
+export type HumanGateOption = {
+  action: string
+  label: string
+  description?: string | null
+}
+
+export type HumanGateRead = {
+  gate_id: string
+  gate_type: string
+  phase?: string | null
+  reason: string
+  options: HumanGateOption[]
+  default_action: string
+  resolved: boolean
+  resolution?: string | null
+}
+
+export type RubricTaskBoardSummary = {
+  current_phase: string
+  phase_status: Record<string, string>
+  incomplete_task_count: number
+  completed_task_count: number
 }
 
 export type AnswerAnalysisChunkRead = {
@@ -136,12 +185,15 @@ export type ProjectRead = {
   current_stage: string
   turn_count: number
   status: string
+  agent_mode?: string
   total_prompt_tokens: number
   total_completion_tokens: number
   total_tokens: number
   estimated_total_tokens: number
   repository: RepositorySourceConfig
   repository_manifest: RepositoryManifestRead
+  rubric_task_board_summary?: RubricTaskBoardSummary | null
+  pending_gate?: HumanGateRead | null
   created_at: string
   updated_at: string
 }
@@ -158,6 +210,7 @@ export type TurnRead = {
   answer_analysis?: AnswerAnalysisRead | null
   human_review: HumanReviewInput | null
   question_plan: QuestionPlanRead | null
+  event_log?: TranscriptEventRead[]
   current_question_version_no: number
   question_regeneration_count: number
   human_intervention_regeneration_usage_summary: TokenUsageSummary
@@ -232,6 +285,7 @@ export type CreateProjectPayload = {
     git_url?: string | null
     git_ref?: string | null
   }
+  agent_mode?: string
 }
 
 export type UpdateProjectPayload = {
@@ -243,10 +297,12 @@ export type UpdateProjectPayload = {
     git_url?: string | null
     git_ref?: string | null
   }
+  agent_mode?: string
 }
 
 export type NextQuestionRequestPayload = {
   human_review?: HumanReviewInput | null
+  human_gate?: HumanGateResolutionInput | null
 }
 
 export type CurrentQuestionRegenerateResponse = {

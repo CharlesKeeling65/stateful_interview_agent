@@ -64,7 +64,10 @@ export async function submitNext(projectId: number, payload?: NextQuestionReques
   return request<ProjectNextResponse>(`/projects/${projectId}/next`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ human_review: payload?.human_review ?? null }),
+    body: JSON.stringify({
+      human_review: payload?.human_review ?? null,
+      human_gate: payload?.human_gate ?? null,
+    }),
   })
 }
 

@@ -134,6 +134,26 @@ export function StatusPanel({
                 <ProjectStatusBadge locale={locale} project={project} status={status} />
               </div>
             </div>
+            <div className="rounded-2xl border border-slate-200 bg-white px-4 py-3">
+              <p className="text-[0.64rem] font-semibold uppercase tracking-[0.22em] text-slate-500">
+                {locale === 'zh-CN' ? '运行模式' : 'Agent Mode'}
+              </p>
+              <div className="mt-2">
+                <span className={`inline-flex items-center rounded-full px-2.5 py-0.5 text-xs font-medium ${
+                  (project.agent_mode === 'understand_current_code' || !project.agent_mode)
+                    ? 'bg-blue-100 text-blue-800'
+                    : project.agent_mode === 'review_current_code'
+                      ? 'bg-amber-100 text-amber-800'
+                      : 'bg-purple-100 text-purple-800'
+                }`}>
+                  {project.agent_mode === 'understand_current_code' || !project.agent_mode
+                    ? (locale === 'zh-CN' ? '理解模式' : 'Understand')
+                    : project.agent_mode === 'review_current_code'
+                      ? (locale === 'zh-CN' ? '审查模式' : 'Review')
+                      : (locale === 'zh-CN' ? '提议模式' : 'Propose')}
+                </span>
+              </div>
+            </div>
             <StatusItem
               label={t('status.currentStage')}
               value={getDisplayStageLabel(status?.current_stage ?? project.current_stage, locale)}
@@ -185,12 +205,36 @@ export function StatusPanel({
               label={t('status.repoSymbols')}
               value={String(project.repository_manifest.symbol_count ?? 0)}
             />
+            {project.rubric_task_board_summary ? (
+              <>
+                <StatusItem
+                  label={locale === 'zh-CN' ? '任务阶段' : 'Task Phase'}
+                  value={project.rubric_task_board_summary.current_phase}
+                />
+                <StatusItem
+                  label={locale === 'zh-CN' ? '未完成任务' : 'Open Tasks'}
+                  value={String(project.rubric_task_board_summary.incomplete_task_count)}
+                />
+              </>
+            ) : null}
           </div>
         ) : (
           <p className="mt-5 text-sm leading-7 text-slate-600">
             {t('status.noProject')}
           </p>
         )}
+
+        {project?.pending_gate ? (
+          <div className="mt-5 rounded-[1.5rem] border border-amber-200 bg-amber-50/80 px-4 py-4">
+            <p className="text-[0.64rem] font-semibold uppercase tracking-[0.22em] text-amber-700">
+              {locale === 'zh-CN' ? '待处理人工决策' : 'Pending Human Gate'}
+            </p>
+            <p className="mt-2 text-sm leading-6 text-amber-950">{project.pending_gate.reason}</p>
+            <p className="mt-2 text-xs leading-6 text-amber-800">
+              {(project.pending_gate.options ?? []).map((option) => option.label).join(' / ')}
+            </p>
+          </div>
+        ) : null}
 
         {repositoryProject ? (
           <div className="mt-5 rounded-[1.5rem] border border-slate-200 bg-slate-50/70 px-4 py-4">

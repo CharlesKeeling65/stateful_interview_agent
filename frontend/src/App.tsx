@@ -264,6 +264,7 @@ function App() {
                     estimateDraftUsage={estimateDraftUsage}
                     locale={locale}
                     onGenerateNext={submitNext}
+                    pendingGate={project?.pending_gate ?? null}
                     projectFinished={projectFinished}
                     projectStarted={projectStarted}
                     savedAnswer={latestTurn?.answer_text ?? null}
