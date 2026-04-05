@@ -5,6 +5,7 @@
 > 怎样把“系统内部执行过程”变成用户能看懂、前后端都稳定的产品契约？
 
 这个项目已经走到比较成熟的一步：
+
 - 后端有 `AgentRun` / `AgentRunStep`
 - 前端有 execution trace panel
 - 中间不是直接传日志，而是走独立 run-trace contract
@@ -16,17 +17,20 @@
 ## 1. 为什么不能直接把日志喂给前端
 
 很多初学者会有个自然想法：
+
 - 后端不是已经有日志了吗？
 - 直接把日志展示出来不就行了？
 
 这在工程上通常不是好方案。
 
 因为日志是面向：
+
 - 开发者
 - 追踪
 - 排障
 
 而前端 trace 是面向：
+
 - 用户
 - operator
 - 产品内执行体验
@@ -43,12 +47,12 @@
 
 至少要回答：
 
-1. 这是哪一次 run？  
-2. 当前 run 是 running / completed / failed？  
-3. 当前正在执行哪一步？  
-4. 已完成了哪些步骤？  
-5. 每一步用了多久？  
-6. 整个 run 用了多久？  
+1. 这是哪一次 run？
+2. 当前 run 是 running / completed / failed？
+3. 当前正在执行哪一步？
+4. 已完成了哪些步骤？
+5. 每一步用了多久？
+6. 整个 run 用了多久？
 
 这个项目里的 contract 基本都覆盖了。
 
@@ -57,6 +61,7 @@
 ## 3. 本项目的 contract 是怎么设计的
 
 关键代码：
+
 - [`app/models/agent_run.py`](../app/models/agent_run.py)
 - [`app/models/agent_run_step.py`](../app/models/agent_run_step.py)
 - [`app/services/run_trace_service.py`](../app/services/run_trace_service.py)
@@ -102,14 +107,17 @@
 这是一个很通用的好设计。
 
 ### `step_key`
+
 - 稳定的内部标识
 - 适合程序逻辑和判断
 
 ### `label`
+
 - 面向用户展示
 - 适合在前端直接呈现
 
 如果只有一个字段，就很容易在：
+
 - 内部语义稳定性
 - UI 友好性
 
@@ -122,9 +130,11 @@
 `method` 不是必须字段，但很有价值。
 
 它回答的是：
+
 - “这一步大概是通过什么方式完成的？”
 
 例如：
+
 - `database lookup`
 - `rule-based retrieval`
 - `prompt asset renderer`
@@ -139,11 +149,13 @@
 因为它天然支持两种状态：
 
 ### 运行中
+
 - `status=running`
 - `current_step_*` 可更新
 - steps 列表不断增长/更新
 
 ### 已结束
+
 - `status=completed` 或 `failed`
 - `duration_ms` 固定
 - 前端停止 polling
@@ -158,9 +170,9 @@ execution trace 是高价值信息，但不能占满整个 transcript。
 
 所以一个好的 UI 策略通常是：
 
-1. 当前 active run 更突出  
-2. 历史 run 默认折叠  
-3. 只展开用户关心的那一条  
+1. 当前 active run 更突出
+2. 历史 run 默认折叠
+3. 只展开用户关心的那一条
 
 这就是这个项目 execution trace UI 的方向。
 
@@ -171,6 +183,7 @@ execution trace 是高价值信息，但不能占满整个 transcript。
 最小版建议：
 
 ### run
+
 - id
 - status
 - started_at
@@ -179,6 +192,7 @@ execution trace 是高价值信息，但不能占满整个 transcript。
 - current_step
 
 ### step
+
 - step_index
 - step_key
 - label
@@ -186,20 +200,37 @@ execution trace 是高价值信息，但不能占满整个 transcript。
 - duration_ms
 
 然后再逐步加：
+
 - method
 - description
 - next_step_hint
 - token usage
 - meta
 
+补充：建议同时维护一份稳定的 `step_key` 枚举（和后端执行步骤对齐）。
+
+当前仓库里可直接参考这些 key：
+
+1. `load_project_context`
+2. `refresh_summaries`
+3. `build_compact_context`
+4. `refresh_coverage`
+5. `retrieve_relevant_branches`
+6. `render_prompt`
+7. `call_llm`
+8. `validate_question`
+9. `persist_result`
+
 ---
 
 ## 9. 一个最值得你动手做的练习
 
 练习目标：
+
 - 给某个 step 增加一个 `meta` 字段展示，例如 retrieval 选中的 branch 数
 
 你会同时练到：
+
 - 后端 trace 写入
 - API contract
 - 前端 trace 渲染

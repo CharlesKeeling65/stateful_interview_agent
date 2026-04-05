@@ -6,3 +6,7 @@ data/*.db
 logs/
 .DS_Store
 .ref_docs/
+.gitnexus
+.claude
+AGENTS.md
+CLAUDE.md

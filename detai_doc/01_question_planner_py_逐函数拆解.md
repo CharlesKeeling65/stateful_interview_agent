@@ -3,6 +3,7 @@
 本文专门拆 [`app/services/question_planner.py`](../app/services/question_planner.py)。
 
 目标不是解释“这个模块大概做什么”，而是直接回答下面这些问题：
+
 - `plan_next_question()` 到底按什么顺序做决策
 - human review、drift repair、stage gap、branch 选择谁优先
 - Code Detail 阶段怎样被强行限制成“理解当前实现”而不是“提修改方案”
@@ -19,14 +20,22 @@
 ```mermaid
 flowchart TD
     A[load coverage_state / turns] --> B[stage_manager 决定当前阶段]
-    B --> C[question_planner.plan_next_question]
-    C --> D[得到 planner 决策 dict]
-    D --> E[context_engineering 检索上下文]
-    E --> F[question_generator 渲染 stage prompt]
-    F --> G[question_validator 再做约束校验]
+  B --> C[rebuild_coverage_state 刷新覆盖状态]
+  C --> D[context_engineering 检索上下文]
+  D --> E[question_planner.plan_next_question]
+  E --> F[repo_grounding 构建仓库证据]
+  F --> G[question_generator 渲染 stage prompt]
+  G --> H[question_validator 再做约束校验]
 ```
 
+补充说明：
+
+1. 在当前实现里，`generate_question_for_state()` 会先 `rebuild_coverage_state()`，再进入 planner。
+2. planner 决策输出后，会继续走 `build_repo_grounding_context()`，最后才进入 question generator。
+3. 因此 planner 不是“紧挨着 stage_manager 的唯一决策点”，而是处在覆盖状态刷新与仓库证据增强之间。
+
 所以这个文件决定的是：
+
 - 问题意图 `question_intent`
 - 问题目标 `target_type / target_label`
 - 该阶段应该用哪类 prompt
@@ -40,6 +49,7 @@ flowchart TD
 ## 2. 文件顶部正则：它们不是工具函数，而是 target 提取规则
 
 源码位置：
+
 - [`question_planner.py:20`](../app/services/question_planner.py#L20)
 - [`question_planner.py:21`](../app/services/question_planner.py#L21)
 - [`question_planner.py:22`](../app/services/question_planner.py#L22)
@@ -49,6 +59,11 @@ FILE_PATTERN = re.compile(r"\b[\w./-]+\.(?:py|ts|tsx|js|jsx|java|go|rb|yaml|yml|
 CLASS_PATTERN = re.compile(r"\b[A-Z][A-Za-z0-9_]{2,}\b")
 METHOD_PATTERN = re.compile(r"\b[a-z_][a-z0-9_]{2,}\s*\(")
 ```
+
+补充说明：
+
+1. 这组正则并不只在 planner 语义上有意义，`coverage_service.py` 也使用了同类模式来累计 code_detail 覆盖度。
+2. 可以把它视作“跨服务共享的代码目标识别约定”，而不是某个函数的私有技巧。
 
 ### 含义
 
@@ -69,6 +84,7 @@ METHOD_PATTERN = re.compile(r"\b[a-z_][a-z0-9_]{2,}\s*\(")
 Code Detail 阶段“是否够具体”很大程度取决于这里。
 
 如果你的项目主要语言不是 Python/TS，而是：
+
 - Rust
 - C#
 - Kotlin
@@ -79,9 +95,11 @@ Code Detail 阶段“是否够具体”很大程度取决于这里。
 ### 修改切入点
 
 如果你发现系统老是问：
+
 - “这个执行路径如何工作”
 
 却很少问：
+
 - “`FooService.handle()` 在 `foo_service.py` 里是如何处理请求的”
 
 第一步先扩展这里的正则，而不是先调 prompt。
@@ -91,6 +109,7 @@ Code Detail 阶段“是否够具体”很大程度取决于这里。
 ## 3. `plan_next_question()`：整个 planner 的主控函数
 
 源码位置：
+
 - [`question_planner.py:25-349`](../app/services/question_planner.py#L25)
 
 这是最关键的函数。它本质上是一个“有优先级的规则决策树”。
@@ -100,6 +119,7 @@ Code Detail 阶段“是否够具体”很大程度取决于这里。
 ### 3.1 输入参数逐个解释
 
 源码位置：
+
 - [`question_planner.py:25-34`](../app/services/question_planner.py#L25)
 
 ```python
@@ -116,11 +136,13 @@ def plan_next_question(
 ```
 
 #### `turns`
+
 - 当前项目全部 turn 列表
 - 这个函数本身没有深度遍历 `turns` 内容，主要依赖 `coverage_state`
 - 但保留 `turns` 参数是为了未来 planner 需要更细的历史时能直接用
 
 #### `current_stage`
+
 - 当前阶段名
 - 值通常是：
   - `Panorama Mapping`
@@ -130,11 +152,13 @@ def plan_next_question(
   - `Final Wrap-up`
 
 #### `next_turn_no`
+
 - 下一题的 turn 编号
 - 当前实现里几乎没直接用它做逻辑判断
 - 更多是接口保留和未来扩展位
 
 #### `coverage_state`
+
 - planner 的主数据源
 - 里面至少包含：
   - `framework`
@@ -142,6 +166,7 @@ def plan_next_question(
   - `question_history`
 
 #### `human_review_signal`
+
 - 来自前端的人类输入信号
 - 例如：
   - `verdict`
@@ -151,10 +176,12 @@ def plan_next_question(
   - `phase_ready`
 
 #### `excluded_branch_ids`
+
 - 用于重试时屏蔽某些 branch
 - 典型场景：上一轮 planner 选了这个 branch，但验证器判为重复或不合适，需要重新规划
 
 #### `excluded_target_signatures`
+
 - 用于屏蔽已经被证明“太像旧问题”的 target
 - 这是重复问题治理的重要入口
 
@@ -163,6 +190,7 @@ def plan_next_question(
 ### 3.2 开头预处理：把状态整理成 planner 可直接使用的局部变量
 
 源码位置：
+
 - [`question_planner.py:35-59`](../app/services/question_planner.py#L35)
 
 ```python
@@ -184,29 +212,35 @@ intent_mode = "understand_current_code"
 ### 这一段逐句意义
 
 #### `normalize_framework_coverage(...)`
+
 - 先把 coverage 的旧字段名/新字段名统一
 - 避免 planner 读到不一致 schema
 
 #### `recent_question_history = question_history[-8:]`
+
 - 只取最近 8 个问题来做“近期重复”判断
 - 这是一个典型的工程折中：
   - 全历史太重
   - 只看最近 2 个又太短
 
 #### `branch = choose_branch_for_stage(...)`
+
 - 先选当前阶段最可能值得追问的 branch
 - 注意：这个时候还没决定到底要问 branch 里的哪个具体 target
 
 #### `stage_gaps = prioritized_stage_gaps(...)`
+
 - 先取当前阶段的 coverage gaps
 - 再按阶段专属顺序排序
 - 这一步很重要，因为它把“缺什么”变成“先补什么”
 
 #### `drift = detect_topic_drift(...)`
+
 - 在真正规划问题前先做跑题检测
 - 这是 planner 比单纯 prompt 更强的地方
 
 #### `intent_mode = "understand_current_code"`
+
 - 这里直接把默认模式钉死
 - 这就是为什么默认主流程不会自然滑进“应该怎么改”
 
@@ -215,6 +249,7 @@ intent_mode = "understand_current_code"
 ## 4. human review 分支：为什么它永远优先于普通 planner
 
 源码位置：
+
 - [`question_planner.py:61-102`](../app/services/question_planner.py#L61)
 
 这段逻辑的优先级是整个函数里最高的。
@@ -239,6 +274,7 @@ if review and (
 ### 触发条件
 
 只要用户给了以下任一信号就会触发：
+
 - `direction == redirect`
 - `verdict == insufficient`
 - `verdict == drifted`
@@ -256,6 +292,7 @@ if review and (
 - `why_this_question = ...`
 
 这决定了：
+
 - transcript 可以显示“这题为什么是跟着人类重定向出来的”
 - 后续 debug 接口也能看见这题不是系统自己决定的
 
@@ -264,12 +301,14 @@ if review and (
 这里并不直接把用户输入原样塞进去，而是通过 helper 归一化成更稳定的 target 文本。
 
 比如：
+
 - `preferred_focus = architecture`
   - 会转成 `the main module responsibilities and call chain`
 - `preferred_focus = scenario`
   - 会转成 `a representative current usage scenario`
 
 这样做的好处是：
+
 - prompt 更稳定
 - validator 更容易判断这题是否符合阶段
 
@@ -278,6 +317,7 @@ if review and (
 ## 5. drift repair 分支：什么时候 planner 会主动打断当前 branch
 
 源码位置：
+
 - [`question_planner.py:104-139`](../app/services/question_planner.py#L104)
 
 ```python
@@ -304,6 +344,7 @@ if drift["detected"] and (current_stage != PANORAMA_STAGE or panorama_repeated_d
 Panorama 阶段有时会出现正常的局部展开。如果一检测到窄话题就强制打断，整体会显得机械。
 
 所以这里的策略是：
+
 - 第一次偏一点，允许
 - 连续两次都还在这个窄 branch 上，才判定为真正 drift
 
@@ -314,6 +355,7 @@ Panorama 阶段有时会出现正常的局部展开。如果一检测到窄话�
 - `target_label = 当前最高优先级 framework gap`
 
 这意味着 drift repair 的核心不是“换个问法”，而是：
+
 - 回到 rubric 缺口
 - 而不是继续当前 branch
 
@@ -322,6 +364,7 @@ Panorama 阶段有时会出现正常的局部展开。如果一检测到窄话�
 ## 6. Panorama 分支：为什么它故意不够“聪明”
 
 源码位置：
+
 - [`question_planner.py:141-170`](../app/services/question_planner.py#L141)
 
 这段逻辑返回得非常直接：
@@ -335,6 +378,7 @@ Panorama 阶段有时会出现正常的局部展开。如果一检测到窄话�
 因为 Panorama 的目标不是挖 branch，而是建立全局认知框架。
 
 这里真正优先的是：
+
 - purpose
 - users
 - boundaries
@@ -357,6 +401,7 @@ Panorama 阶段有时会出现正常的局部展开。如果一检测到窄话�
 不要直接把它改成提文件名。
 
 更合理的改法是：
+
 - 让 `selected_framework_gap` 更准
 - 让 `why_this_question` 更具体
 - 让 prompt 要求“用模块关系或工作流回答宏观问题”
@@ -368,6 +413,7 @@ Panorama 阶段有时会出现正常的局部展开。如果一检测到窄话�
 ## 7. Architecture 分支：它问的是“组织方式”，不是“代码细节”
 
 源码位置：
+
 - [`question_planner.py:172-201`](../app/services/question_planner.py#L172)
 
 Architecture 分支的关键字段：
@@ -390,15 +436,19 @@ Architecture 分支的关键字段：
 ### 真正的设计意图
 
 Architecture 阶段不是：
+
 - 再问一遍全局是什么
 
 也不是：
+
 - 立刻切到某个文件函数
 
 而是：
+
 - 站在系统组织视角解释“模块如何协作”
 
 如果你发现 Architecture 阶段老是两头不到岸，就优先调整这部分的：
+
 - `target_type`
 - `retrieval_focus`
 - `why_this_question`
@@ -408,6 +458,7 @@ Architecture 阶段不是：
 ## 8. Code Detail 分支：最复杂，也最值得你重点读
 
 源码位置：
+
 - [`question_planner.py:203-289`](../app/services/question_planner.py#L203)
 
 这一段决定了后期绝大多数问题。
@@ -417,6 +468,7 @@ Architecture 阶段不是：
 ### 8.1 先看 human gate，而不是直接深挖代码
 
 源码位置：
+
 - [`question_planner.py:203-243`](../app/services/question_planner.py#L203)
 
 ```python
@@ -433,24 +485,29 @@ if (
 ### 这段不是“多余的人类交互”
 
 它的真实作用是：
+
 - 防止 transcript 看起来像 AI 在自问自答
 - 在即将深入实现细节前，插入一次真实的人类优先级选择
 
 ### 触发条件拆解
 
 #### `collaboration_gap_count >= 3`
+
 - 说明 human collaboration 证据仍然偏薄
 
 #### `framework_gaps_for_stage(..., CODE_DETAIL_STAGE)`
+
 - 说明 code detail 还没补全，继续往下问是合理的
 
 #### `code_detail_turns >= 4 or branch_requests_human_choice`
+
 - 避免太早打断
 - 但如果 unresolved points 里明确写了“human should choose / prioritize”，也可以提前触发
 
 ### 什么时候应该改这里
 
 如果你觉得系统：
+
 - 人机协作太少
   - 降低 `collaboration_gap_count` 门槛
 - 协作问题太多，妨碍主线
@@ -461,6 +518,7 @@ if (
 ### 8.2 真正的 code-detail 目标选择
 
 源码位置：
+
 - [`question_planner.py:245-289`](../app/services/question_planner.py#L245)
 
 ```python
@@ -481,9 +539,11 @@ return {
 2. 再做“非重复目标”替换
 
 所以 planner 不是简单问：
+
 - “这个 branch 详细说说”
 
 而是尽量问：
+
 - 文件
 - 类
 - 方法
@@ -508,13 +568,16 @@ return {
 ## 9. Use Cases 分支：它不是收尾闲聊，而是 scenario contract 收集器
 
 源码位置：
+
 - [`question_planner.py:291-322`](../app/services/question_planner.py#L291)
 
 它固定返回：
+
 - `question_intent = "scenario_completion"`
 - `target_type = "scenario"`
 
 并硬编码要求问题必须收集：
+
 - trigger
 - actor
 - inputs
@@ -525,10 +588,11 @@ return {
 ### 为什么要这么硬
 
 因为如果只靠“自由发挥式 use-case prompt”，很容易出现：
+
 - 又回去问架构
 - 又回去问代码细节
 - 问了一个宽泛“典型场景是什么”
-但没有真正形成可交付的场景结构
+  但没有真正形成可交付的场景结构
 
 这里的写法就是在强制把 use-case 变成一个 contract。
 
@@ -537,6 +601,7 @@ return {
 ## 10. Wrap-up 分支：为什么它几乎什么都不做
 
 源码位置：
+
 - [`question_planner.py:324-349`](../app/services/question_planner.py#L324)
 
 这个阶段的约束很少，但很硬：
@@ -549,6 +614,7 @@ return {
 ```
 
 这说明 wrap-up 不是新阶段的深挖，而是：
+
 - 判断是否还缺最后一块证据
 - 做交付前补洞
 
@@ -559,11 +625,13 @@ return {
 ## 11. `prioritized_stage_gaps()`：决定“同一阶段里先补什么”
 
 源码位置：
+
 - [`question_planner.py:352-389`](../app/services/question_planner.py#L352)
 
 这个函数的价值不是排序本身，而是把 rubric 转成明确优先级。
 
 ### Panorama 的顺序
+
 - purpose
 - target_users
 - boundaries
@@ -572,6 +640,7 @@ return {
 - initial_module_relationships
 
 ### Code Detail 的顺序
+
 - `specific_files_count`
 - `specific_methods_count`
 - `execution_paths_count`
@@ -584,6 +653,7 @@ return {
 ### 为什么 `specific_classes_count` 反而更后
 
 因为当前系统默认认为：
+
 - 文件
 - 方法
 - 执行路径
@@ -597,11 +667,13 @@ return {
 ## 12. `resolve_human_review_target()`：把用户输入转成 planner 能用的标准目标
 
 源码位置：
+
 - [`question_planner.py:404-429`](../app/services/question_planner.py#L404)
 
 这个函数的设计很实际：
 
 优先级是：
+
 1. `preferred_focus` 命中预设映射
 2. `review_note`
 3. `stage_gaps[0]`
@@ -613,9 +685,11 @@ return {
 因为自由文本 note 太不稳定。
 
 如果用户只是选择了：
+
 - `architecture`
 
 那系统应该生成稳定目标：
+
 - `the main module responsibilities and call chain`
 
 而不是生成一个过于随意的短语。
@@ -625,6 +699,7 @@ return {
 ## 13. `pick_use_case_target()`：Use Case 阶段的缺口转问题目标
 
 源码位置：
+
 - [`question_planner.py:432-443`](../app/services/question_planner.py#L432)
 
 它的规则很清晰：
@@ -638,6 +713,7 @@ return {
 这是 Use Case 阶段稳定性的关键。
 
 如果你发现 use-case 总是问得太空，可以在这里把目标变得更细，比如：
+
 - trigger
 - actor
 - input payload
@@ -649,6 +725,7 @@ return {
 ## 14. `choose_code_detail_target()`：从 branch 文本里猜具体代码目标
 
 源码位置：
+
 - [`question_planner.py:446-473`](../app/services/question_planner.py#L446)
 
 ### 规则顺序
@@ -665,14 +742,17 @@ return {
 当前项目更偏服务式和流程式实现，文件路径往往最稳定。
 
 对这个仓库来说，问：
+
 - `app/services/question_generator.py`
 
 通常比问：
+
 - `QuestionGenerator`
 
 更靠谱，因为很多逻辑是函数级而不是重类封装。
 
 如果你后续项目主要是 Java / Spring / C# 服务，就可以改成：
+
 - 类 > 方法 > 文件
 
 ---
@@ -680,6 +760,7 @@ return {
 ## 15. `choose_branch_for_stage()`：branch 层面的第一道去重
 
 源码位置：
+
 - [`question_planner.py:476-500`](../app/services/question_planner.py#L476)
 
 这个函数很短，但意义很大。
@@ -695,6 +776,7 @@ return {
 注意它不是语义相似度判断，只是 branch recurrence penalty。
 
 所以它更适合解决：
+
 - “连续好几轮总是在同一模块/同一路径上打转”
 
 ---
@@ -702,14 +784,17 @@ return {
 ## 16. `choose_non_redundant_code_detail_target()`：target 层面的第二道去重
 
 源码位置：
+
 - [`question_planner.py:503` 起](../app/services/question_planner.py#L503)
 
 这段代码是 Code Detail 质量提升的关键。
 
 它的作用不是换 branch，而是：
+
 - 在允许的 branches 中，挑一个 target signature 不重复的具体目标
 
 它依赖：
+
 - `recent_question_history`
 - `excluded_target_signatures`
 - `build_question_signature()`
@@ -718,9 +803,11 @@ return {
 ### 你应该如何理解它
 
 上一层 `choose_branch_for_stage()` 解决的是：
+
 - 最近不要总选同一 branch
 
 这一层解决的是：
+
 - 即使 branch 不同，如果最后问出来的 target 本质上还是同一个，也不要重复
 
 这就是为什么系统现在比只做 `SequenceMatcher` 文本比对更稳。
@@ -730,14 +817,17 @@ return {
 ## 17. `build_code_detail_why_text()`：给 transcript/debug 一个可读的解释
 
 源码位置：
+
 - 这个 helper 定义在文件更后面，和 `choose_non_redundant_code_detail_target()` 配套
 
 它的价值不在业务逻辑，而在可解释性。
 
 当前系统不是只把 planner 当内部状态，而是把：
+
 - `why_this_question`
 
 暴露给：
+
 - debug 接口
 - transcript turn card
 
@@ -752,6 +842,7 @@ return {
 ### 场景 A：Panorama 老是太快掉进细节
 
 优先改：
+
 1. `plan_next_question()` 的 Panorama 分支
 2. `detect_topic_drift()`
 3. `prioritized_stage_gaps()` 的 Panorama 顺序
@@ -761,6 +852,7 @@ return {
 ### 场景 B：Code Detail 还是不够具体
 
 优先改：
+
 1. `choose_code_detail_target()`
 2. `choose_non_redundant_code_detail_target()`
 3. Code Detail 分支的 `constraints`
@@ -768,6 +860,7 @@ return {
 ### 场景 C：human review 明明输入了，但规划没变
 
 优先排查：
+
 1. 前端是否真的传了 `human_review_signal`
 2. `plan_next_question()` 第一个 `if review and (...)`
 3. `resolve_human_review_target()`
@@ -775,6 +868,7 @@ return {
 ### 场景 D：老是重复问差不多的问题
 
 优先改：
+
 1. `choose_branch_for_stage()`
 2. `choose_non_redundant_code_detail_target()`
 3. `excluded_target_signatures` 的传递链
@@ -788,21 +882,25 @@ return {
 现在返回的是大 dict，很灵活，但也容易字段漂移。
 
 可升级为：
+
 - Pydantic `QuestionPlan`
 - `ValidationConstraint`
 - `RetrievalSelection`
 
 这样：
+
 - 更好测
 - 前后端 contract 更稳定
 
 ### 方向 2：把 branch 选择从“单 branch”升级成“多候选 + 打分”
 
 现在更像是：
+
 - 选一个 branch
 - 再做 target 去重
 
 可升级成：
+
 - planner 先产出 top-k branch candidates
 - 再根据 novelty / stage fit / human review 打分
 
@@ -811,6 +909,7 @@ return {
 现在 `note` 还是自由文本。
 
 可升级成：
+
 - `preferred_module`
 - `preferred_file`
 - `preferred_path`
