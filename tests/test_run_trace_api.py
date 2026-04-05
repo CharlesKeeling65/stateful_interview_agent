@@ -125,6 +125,8 @@ class RunTraceApiTests(unittest.TestCase):
 
         step_keys = [step["step_key"] for step in latest_run["steps"]]
         self.assertIn("load_project_context", step_keys)
+        self.assertIn("plan_question", step_keys)
+        self.assertIn("review_question_plan", step_keys)
         self.assertIn("persist_result", step_keys)
 
         latest = self.client.get(f"/projects/{project_id}/runs/latest")
@@ -135,6 +137,41 @@ class RunTraceApiTests(unittest.TestCase):
         self.assertEqual(status.status_code, 200)
         self.assertGreaterEqual(status.json()["cumulative_generation_time_ms"], 0)
         self.assertEqual(status.json()["run_count"], 1)
+
+    def test_debug_state_exposes_mode_task_board_reviewer_and_scenarios(self):
+        created = self.client.post(
+            "/projects",
+            json={
+                "project_name": "Trace Debug Project",
+                "system_prompt": "You are a stateful interview agent.",
+            },
+        )
+        self.assertEqual(created.status_code, 200)
+        project_id = created.json()["id"]
+
+        started = self.client.post(f"/projects/{project_id}/start")
+        self.assertEqual(started.status_code, 200)
+
+        saved = self.client.post(
+            f"/projects/{project_id}/answer",
+            json={"answer_text": "Long answer about users, modules, workflow, and missing scenario boundaries."},
+        )
+        self.assertEqual(saved.status_code, 200)
+
+        advanced = self.client.post(f"/projects/{project_id}/next", json={})
+        self.assertEqual(advanced.status_code, 200)
+
+        debug_state = self.client.get(f"/debug/projects/{project_id}/state")
+        self.assertEqual(debug_state.status_code, 200)
+        payload = debug_state.json()
+
+        self.assertEqual(payload["mode"]["current_mode"], "understand_current_code")
+        self.assertIn("allow_change_proposals", payload["mode"]["mode_constraints"])
+        self.assertIsNotNone(payload["task_board"]["current_phase"])
+        self.assertIn("question_intent", payload["question_plan"])
+        self.assertIn("why_this_question", payload["question_plan"])
+        self.assertIn("is_complete", payload["scenario"])
+        self.assertIsInstance(payload["recent_events"], list)
 
     def test_failed_next_call_marks_latest_run_failed(self):
         created = self.client.post(

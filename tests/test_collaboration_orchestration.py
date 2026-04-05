@@ -6,6 +6,7 @@ os.environ.setdefault("OPENAI_API_KEY", "test-key")
 from app.models.turn import InterviewTurn
 from app.services.coverage_service import rebuild_coverage_state
 from app.services.question_planner import plan_next_question
+from app.services.rubric_task_service import initialize_task_board, mark_task_completed
 from app.services.stage_manager import decide_next_stage
 
 
@@ -46,6 +47,40 @@ class CollaborationCoverageTests(unittest.TestCase):
 
 
 class PlannerGateTests(unittest.TestCase):
+    def test_planner_uses_task_board_priority_when_runtime_supplies_it(self):
+        coverage_state = {
+            "branches": [],
+            "framework": {
+                "panorama": {
+                    "purpose": True,
+                    "target_users": False,
+                    "boundaries": False,
+                    "major_modules": True,
+                    "high_level_workflow": False,
+                },
+                "architecture": {},
+                "code_detail": {},
+                "use_cases": {},
+                "human_collaboration": {},
+                "stage_turn_counts": {"Panorama Mapping": 1},
+                "gaps": {"panorama": ["target_users", "high_level_workflow"]},
+                "wrap_up_ready": False,
+            },
+        }
+        task_board = initialize_task_board()
+        task_board = mark_task_completed(task_board, "pan_purpose")
+
+        planner = plan_next_question(
+            turns=[],
+            current_stage="Panorama Mapping",
+            next_turn_no=2,
+            coverage_state=coverage_state,
+            task_board_json=task_board.model_dump_json(),
+        )
+
+        self.assertEqual(planner["rubric_task_id"], "pan_modules")
+        self.assertEqual(planner["rubric_task_label"], "Major Modules")
+
     def test_planner_applies_explicit_human_redirection_signal(self):
         coverage_state = {
             "branches": [
@@ -490,6 +525,60 @@ class StageGateTests(unittest.TestCase):
 
         self.assertEqual(decision["next_stage"], "Use Cases & Scenarios")
         self.assertIn("use-case", decision["reason"].lower())
+
+    def test_stage_controller_blocks_wrap_up_until_scenario_contract_is_complete(self):
+        coverage_state = {
+            "framework": {
+                "panorama": {
+                    "purpose": True,
+                    "target_users": True,
+                    "boundaries": True,
+                    "major_modules": True,
+                    "high_level_workflow": True,
+                },
+                "architecture": {
+                    "architecture_style_or_organization": True,
+                    "module_responsibilities": True,
+                    "collaboration_mechanisms": True,
+                    "key_call_chains": True,
+                    "system_structure": True,
+                },
+                "code_detail": {
+                    "specific_files_count": 4,
+                    "specific_methods_count": 5,
+                    "execution_paths_count": 3,
+                    "error_handling_points_count": 2,
+                },
+                "use_cases": {
+                    "representative_scenarios_count": 1,
+                    "actors_roles_count": 1,
+                    "input_output_patterns_count": 0,
+                    "boundary_conditions_count": 0,
+                },
+                "human_collaboration": {},
+                "stage_turn_counts": {
+                    "Panorama Mapping": 2,
+                    "Architecture Understanding": 3,
+                    "Code Detail Completion": 10,
+                    "Use Cases & Scenarios": 1,
+                    "Final Wrap-up": 0,
+                },
+                "gaps": {
+                    "use_cases": ["input_output_patterns_count", "boundary_conditions_count"],
+                },
+                "wrap_up_ready": True,
+            }
+        }
+
+        decision = decide_next_stage(
+            next_turn_no=17,
+            coverage_state=coverage_state,
+            current_stage="Use Cases & Scenarios",
+            max_turns=18,
+        )
+
+        self.assertEqual(decision["next_stage"], "Use Cases & Scenarios")
+        self.assertTrue(decision["gaps"])
 
 
 if __name__ == "__main__":

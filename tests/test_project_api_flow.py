@@ -1,6 +1,7 @@
 import os
 import tempfile
 import unittest
+from unittest.mock import patch
 from pathlib import Path
 from types import SimpleNamespace
 
@@ -13,6 +14,8 @@ from sqlalchemy.orm import sessionmaker
 from app.api.routes import projects as project_routes
 from app.core.database import Base, get_db
 from app.graphs import interview_graph as graph_module
+from app.services.human_gate_service import create_low_confidence_gate
+from app.services.question_reviewer import ReviewResult
 from app.main import app
 from app.services import question_generator, summarization_service
 
@@ -267,6 +270,88 @@ class ProjectApiFlowTests(unittest.TestCase):
         started = self.client.post(f"/projects/{payload['id']}/start")
         self.assertEqual(started.status_code, 200)
         self.assertEqual(started.json()["project"]["repository"]["source_type"], "local_path")
+
+    def test_project_create_persists_explicit_agent_mode_and_task_board_summary(self):
+        created = self.client.post(
+            "/projects",
+            json={
+                "project_name": "Modeful Session",
+                "system_prompt": "You are a stateful interview agent.",
+                "agent_mode": "propose_changes",
+            },
+        )
+        self.assertEqual(created.status_code, 200)
+        payload = created.json()
+
+        self.assertEqual(payload["agent_mode"], "propose_changes")
+        self.assertIsNotNone(payload["rubric_task_board_summary"])
+        self.assertEqual(
+            payload["rubric_task_board_summary"]["current_phase"],
+            "panorama_mapping",
+        )
+        self.assertGreater(payload["rubric_task_board_summary"]["incomplete_task_count"], 0)
+
+    def test_next_call_can_pause_for_human_gate_and_resume_after_resolution(self):
+        created = self.client.post(
+            "/projects",
+            json={
+                "project_name": "Gate Session",
+                "system_prompt": "You are a stateful interview agent.",
+            },
+        )
+        self.assertEqual(created.status_code, 200)
+        project_id = created.json()["id"]
+
+        started = self.client.post(f"/projects/{project_id}/start")
+        self.assertEqual(started.status_code, 200)
+
+        saved = self.client.post(
+            f"/projects/{project_id}/answer",
+            json={"answer_text": "Answer with enough detail to require prioritization."},
+        )
+        self.assertEqual(saved.status_code, 200)
+
+        forced_gate = create_low_confidence_gate(
+            {
+                "confidence": 0.18,
+                "question_intent": "code_detail_deep_dive",
+                "target_label": "authentication and orchestration handoff",
+            }
+        )
+        review_result = ReviewResult(
+            approved=False,
+            review_reason="Need explicit human prioritization before deepening.",
+            human_gate_triggered=True,
+            human_gate=forced_gate,
+            human_gate_reason=forced_gate.reason,
+        )
+
+        with patch("app.graphs.interview_nodes.review_question_plan", return_value=review_result):
+            gated = self.client.post(f"/projects/{project_id}/next", json={})
+
+        self.assertEqual(gated.status_code, 200)
+        gated_payload = gated.json()
+        self.assertIsNone(gated_payload["next_turn"])
+        self.assertFalse(gated_payload["interview_finished"])
+        self.assertEqual(gated_payload["project"]["pending_gate"]["gate_id"], forced_gate.gate_id)
+
+        resumed = self.client.post(
+            f"/projects/{project_id}/next",
+            json={
+                "human_gate": {
+                    "gate_id": forced_gate.gate_id,
+                    "action": forced_gate.default_action,
+                    "preferred_next_focus": "authentication flow",
+                    "note": "Continue with the current branch and prioritize the auth path.",
+                }
+            },
+        )
+        self.assertEqual(resumed.status_code, 200)
+        resumed_payload = resumed.json()
+        self.assertIsNotNone(resumed_payload["next_turn"])
+        self.assertIsNone(resumed_payload["project"]["pending_gate"])
+        self.assertTrue(resumed_payload["next_turn"]["question_plan"]["human_review_applied"])
+        self.assertTrue(resumed_payload["next_turn"]["event_log"])
 
     def test_regenerate_current_question_tracks_versions_and_usage(self):
         created = self.client.post(
