@@ -393,8 +393,11 @@ def gate_resolution_to_human_review_signal(
         signal["phase_ready"] = phase_ready
 
     if gate.gate_type == GateType.DRIFT_REDIRECTION:
-        signal["direction"] = "redirect" if action == "redirect" else "continue"
-        signal["verdict"] = "drifted"
+        signal["direction"] = "redirect" if action in {"redirect", "new_branch"} else "continue"
+        # Preserve drift verdict only when explicitly choosing redirect.
+        # For continue/new_branch, drop drift verdict to avoid re-triggering the same gate loop.
+        if action == "redirect":
+            signal["verdict"] = "drifted"
     elif gate.gate_type == GateType.PHASE_COMPLETION:
         signal["phase_ready"] = action == "confirm"
         if action == "review":

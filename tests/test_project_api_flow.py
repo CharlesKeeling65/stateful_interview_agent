@@ -14,7 +14,11 @@ from sqlalchemy.orm import sessionmaker
 from app.api.routes import projects as project_routes
 from app.core.database import Base, get_db
 from app.graphs import interview_graph as graph_module
-from app.services.human_gate_service import create_low_confidence_gate
+from app.services.human_gate_service import (
+    create_drift_redirection_gate,
+    create_low_confidence_gate,
+    gate_resolution_to_human_review_signal,
+)
 from app.services.question_reviewer import ReviewResult
 from app.main import app
 from app.services import question_generator, summarization_service
@@ -352,6 +356,25 @@ class ProjectApiFlowTests(unittest.TestCase):
         self.assertIsNone(resumed_payload["project"]["pending_gate"])
         self.assertTrue(resumed_payload["next_turn"]["question_plan"]["human_review_applied"])
         self.assertTrue(resumed_payload["next_turn"]["event_log"])
+
+    def test_drift_gate_resolution_does_not_force_drifted_on_continue_or_new_branch(self):
+        drift_gate = create_drift_redirection_gate({
+            "detected": True,
+            "reason": "Narrow branch drift detected",
+            "branch_id": "depth-network-generator",
+        })
+
+        continue_signal = gate_resolution_to_human_review_signal(drift_gate, "continue")
+        self.assertEqual(continue_signal["direction"], "continue")
+        self.assertNotIn("verdict", continue_signal)
+
+        new_branch_signal = gate_resolution_to_human_review_signal(drift_gate, "new_branch")
+        self.assertEqual(new_branch_signal["direction"], "redirect")
+        self.assertNotIn("verdict", new_branch_signal)
+
+        redirect_signal = gate_resolution_to_human_review_signal(drift_gate, "redirect")
+        self.assertEqual(redirect_signal["direction"], "redirect")
+        self.assertEqual(redirect_signal.get("verdict"), "drifted")
 
     def test_regenerate_current_question_tracks_versions_and_usage(self):
         created = self.client.post(
