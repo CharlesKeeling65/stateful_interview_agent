@@ -114,6 +114,8 @@ def decide_next_stage(
     collaboration_gaps = framework.get("gaps", {}).get("human_collaboration", [])
     human_phase_ready = bool((human_review_signal or {}).get("phase_ready"))
     human_direction = (human_review_signal or {}).get("direction")
+    preferred_focus = ((human_review_signal or {}).get("preferred_next_focus") or "").strip().lower()
+    explicit_use_case_request = preferred_focus in {"scenario", "use_case", "use cases", "actors", "inputs", "outputs", "boundary"}
 
     panorama_required = {"purpose", "target_users", "major_modules", "high_level_workflow"}
     architecture_required = {
@@ -165,7 +167,7 @@ def decide_next_stage(
             "gaps": architecture_gaps,
         }
 
-    if remaining_turns <= 2 and use_case_gaps:
+    if remaining_turns <= 2 and use_case_gaps and (current_stage != ARCHITECTURE_STAGE or explicit_use_case_request):
         return {
             "next_stage": clamp_stage_not_before_current(USE_CASE_STAGE, current_stage),
             "reason": f"Only a few turns remain, so use-case coverage must be completed: {', '.join(use_case_gaps[:3])}.",
@@ -188,8 +190,14 @@ def decide_next_stage(
     code_detail_is_dominant = code_detail_turns >= 8 and code_detail_share >= 0.55
     code_detail_core_gaps = [gap for gap in code_detail_gaps if gap in code_detail_required]
     use_case_core_gaps = [gap for gap in use_case_gaps if gap in use_case_required]
+    architecture_can_enter_use_cases = (
+          current_stage != ARCHITECTURE_STAGE
+          or explicit_use_case_request
+          or code_detail_is_dominant
+          or code_detail_turns >= target_code_detail_turns
+      )
 
-    if use_case_core_gaps and (remaining_turns <= max(4, len(use_case_core_gaps) + 1)):
+    if use_case_core_gaps and (remaining_turns <= max(4, len(use_case_core_gaps) + 1)) and architecture_can_enter_use_cases:
         return {
             "next_stage": clamp_stage_not_before_current(USE_CASE_STAGE, current_stage),
             "reason": (
@@ -241,7 +249,7 @@ def decide_next_stage(
             "gaps": code_detail_gaps,
         }
 
-    if use_case_core_gaps:
+    if use_case_core_gaps and architecture_can_enter_use_cases:
         return {
             "next_stage": clamp_stage_not_before_current(USE_CASE_STAGE, current_stage),
             "reason": f"Use-case and scenario coverage is still incomplete: {', '.join(use_case_core_gaps[:3])}.",
@@ -256,7 +264,10 @@ def decide_next_stage(
         }
 
     return {
-        "next_stage": clamp_stage_not_before_current(USE_CASE_STAGE if use_case_gaps else CODE_DETAIL_STAGE, current_stage),
+        "next_stage": clamp_stage_not_before_current(
+            USE_CASE_STAGE if (use_case_gaps and architecture_can_enter_use_cases) else CODE_DETAIL_STAGE,
+            current_stage,
+        ),
         "reason": (
             "Human collaboration gaps remain visible in the record and the remaining turns should stay inspectable."
             if collaboration_gaps and use_case_gaps

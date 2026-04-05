@@ -174,6 +174,127 @@ class StageControllerTests(unittest.TestCase):
         self.assertEqual(decision["next_stage"], "Code Detail Completion")
         self.assertIn("code detail", decision["reason"].lower())
 
+    def test_stage_controller_keeps_code_detail_after_architecture_when_use_case_gaps_exist(self):
+        coverage_state = {
+            "framework": {
+                "panorama": {
+                    "purpose": True,
+                    "target_users": True,
+                    "boundaries": True,
+                    "major_modules": True,
+                    "high_level_workflow": True,
+                    "initial_module_relationships": True,
+                },
+                "architecture": {
+                    "architecture_style_or_organization": True,
+                    "module_responsibilities": True,
+                    "collaboration_mechanisms": True,
+                    "key_call_chains": True,
+                    "system_structure": True,
+                    "design_rationale_or_quality_attributes": True,
+                },
+                "code_detail": {
+                    "specific_files_count": 1,
+                    "specific_classes_count": 0,
+                    "specific_methods_count": 1,
+                    "execution_paths_count": 1,
+                    "library_usage_points_count": 0,
+                    "error_handling_points_count": 0,
+                    "protocol_implementation_points_count": 0,
+                    "state_management_points_count": 0,
+                },
+                "use_cases": {
+                    "representative_scenarios_count": 0,
+                    "actors_roles_count": 0,
+                    "input_output_patterns_count": 0,
+                    "boundary_conditions_count": 0,
+                },
+                "stage_turn_counts": {
+                    "Panorama Mapping": 3,
+                    "Architecture Understanding": 3,
+                    "Code Detail Completion": 2,
+                    "Use Cases & Scenarios": 0,
+                },
+                "gaps": {
+                    "panorama": [],
+                    "architecture": [],
+                    "code_detail": ["specific_classes_count", "error_handling_points_count"],
+                    "use_cases": ["representative_scenarios_count", "actors_roles_count"],
+                },
+                "wrap_up_ready": False,
+            }
+        }
+
+        decision = decide_next_stage(
+            next_turn_no=10,
+            coverage_state=coverage_state,
+            current_stage="Architecture Understanding",
+            max_turns=40,
+        )
+
+        self.assertEqual(decision["next_stage"], "Code Detail Completion")
+
+    def test_stage_controller_allows_architecture_to_use_case_when_human_explicitly_requests_it(self):
+        coverage_state = {
+            "framework": {
+                "panorama": {
+                    "purpose": True,
+                    "target_users": True,
+                    "boundaries": True,
+                    "major_modules": True,
+                    "high_level_workflow": True,
+                    "initial_module_relationships": True,
+                },
+                "architecture": {
+                    "architecture_style_or_organization": True,
+                    "module_responsibilities": True,
+                    "collaboration_mechanisms": True,
+                    "key_call_chains": True,
+                    "system_structure": True,
+                    "design_rationale_or_quality_attributes": True,
+                },
+                "code_detail": {
+                    "specific_files_count": 1,
+                    "specific_classes_count": 0,
+                    "specific_methods_count": 1,
+                    "execution_paths_count": 1,
+                    "library_usage_points_count": 0,
+                    "error_handling_points_count": 0,
+                    "protocol_implementation_points_count": 0,
+                    "state_management_points_count": 0,
+                },
+                "use_cases": {
+                    "representative_scenarios_count": 0,
+                    "actors_roles_count": 0,
+                    "input_output_patterns_count": 0,
+                    "boundary_conditions_count": 0,
+                },
+                "stage_turn_counts": {
+                    "Panorama Mapping": 3,
+                    "Architecture Understanding": 3,
+                    "Code Detail Completion": 2,
+                    "Use Cases & Scenarios": 0,
+                },
+                "gaps": {
+                    "panorama": [],
+                    "architecture": [],
+                    "code_detail": ["specific_classes_count", "error_handling_points_count"],
+                    "use_cases": ["representative_scenarios_count", "actors_roles_count"],
+                },
+                "wrap_up_ready": False,
+            }
+        }
+
+        decision = decide_next_stage(
+            next_turn_no=10,
+            coverage_state=coverage_state,
+            current_stage="Architecture Understanding",
+            max_turns=40,
+            human_review_signal={"preferred_next_focus": "use_case"},
+        )
+
+        self.assertEqual(decision["next_stage"], "Use Cases & Scenarios")
+
     def test_stage_controller_can_move_to_use_cases_before_hardcoded_turn_32_when_code_detail_is_already_dominant(self):
         coverage_state = {
             "framework": {
