@@ -44,6 +44,7 @@ from app.services.repository_service import (
     format_repository_manifest,
     resolve_project_repository,
 )
+from app.services.rubric_task_service import initialize_task_board, serialize_task_board
 from app.services.run_trace_service import create_run, finalize_run, serialize_run
 from app.services.stage_manager import decide_next_stage, normalize_stage_name
 from app.services.coverage_service import rebuild_coverage_state, save_coverage_state
@@ -66,6 +67,8 @@ def create_project(payload: ProjectCreate, db: Session = Depends(get_db)):
     project = ProjectSession(
         project_name=payload.project_name,
         system_prompt=payload.system_prompt,
+        agent_mode=payload.agent_mode,
+        rubric_task_board=serialize_task_board(initialize_task_board()),
     )
     db.add(project)
     db.flush()
@@ -528,6 +531,14 @@ def submit_answer_and_generate_next(
             status_code=400,
             detail="Save an answer for the current question before generating the next one.",
         )
+    if project.pending_gate and not payload.human_gate:
+        raise HTTPException(
+            status_code=409,
+            detail="Resolve the pending human gate before generating the next question.",
+        )
+    if payload.human_gate and project.pending_gate:
+        if payload.human_gate.gate_id != project.pending_gate.get("gate_id"):
+            raise HTTPException(status_code=400, detail="Human gate resolution does not match the active gate.")
     run = create_run(
         project_id=project_id,
         turn_no=(latest_turn.turn_no + 1) if latest_turn else None,
@@ -549,6 +560,7 @@ def submit_answer_and_generate_next(
                 "project_id": project_id,
                 "answer_text": latest_turn.answer_text,
                 "human_review_signal": payload.human_review.model_dump() if payload.human_review else None,
+                "human_gate_resolution": payload.human_gate.model_dump() if payload.human_gate else None,
             },
             config={"configurable": {"thread_id": f"project-{project_id}"}},
         )
@@ -577,6 +589,7 @@ def submit_answer_and_generate_next(
         )
         raise
 
+    db.expire_all()
     updated_project = (
         db.query(ProjectSession).filter(ProjectSession.id == project_id).first()
     )
@@ -599,6 +612,13 @@ def submit_answer_and_generate_next(
     if result.get("interview_finished"):
         previous_turn = latest_turn
         next_turn = None
+    elif (
+        result.get("pending_gate_active")
+        or updated_project.pending_gate
+        or (latest_turn and latest_turn.answer_text is not None)
+    ):
+        previous_turn = latest_turn
+        next_turn = None
     else:
         next_turn = latest_turn
         previous_turn = (
@@ -609,6 +629,8 @@ def submit_answer_and_generate_next(
             )
             .first()
         )
+    if previous_turn is None:
+        previous_turn = latest_turn
 
     emit_event(
         "workflow",

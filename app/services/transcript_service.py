@@ -5,8 +5,21 @@ def format_turn_history(turns: list[InterviewTurn]) -> str:
     lines = []
     for turn in turns:
         lines.append(f"Turn {turn.turn_no}")
+        if turn.question_plan:
+            lines.append(f"Mode: {(turn.question_plan or {}).get('mode') or (turn.question_plan or {}).get('intent_mode') or 'understand_current_code'}")
+            lines.append(f"Phase: {turn.stage}")
+            if (turn.question_plan or {}).get("question_intent"):
+                lines.append(f"Intent: {(turn.question_plan or {}).get('question_intent')}")
+            if (turn.question_plan or {}).get("selected_framework_gap"):
+                lines.append(f"Framework gap: {(turn.question_plan or {}).get('selected_framework_gap')}")
+            if (turn.question_plan or {}).get("why_this_question"):
+                lines.append(f"Why this question: {(turn.question_plan or {}).get('why_this_question')}")
         lines.append(f"Question: {turn.question_text}")
         lines.append(f"Answer: {turn.answer_text or '[No answer yet]'}")
+        if turn.human_review:
+            lines.append(f"Human review: {turn.human_review}")
+        if turn.event_log:
+            lines.append(f"Events: {', '.join(event.get('event_type', 'unknown') for event in turn.event_log)}")
         lines.append("")
     return "\n".join(lines).strip()
 

@@ -16,7 +16,16 @@ class HumanReviewInput(BaseModel):
     phase_ready: bool | None = None
 
 
+class HumanGateResolutionInput(BaseModel):
+    gate_id: str = Field(..., min_length=1, max_length=80)
+    action: str = Field(..., min_length=1, max_length=80)
+    preferred_next_focus: str | None = Field(default=None, max_length=120)
+    note: str | None = Field(default=None, max_length=500)
+    phase_ready: bool | None = None
+
+
 class QuestionPlanRead(BaseModel):
+    mode: str | None = None
     phase: str | None = None
     intent_mode: str | None = None
     question_intent: str | None = None
@@ -29,11 +38,27 @@ class QuestionPlanRead(BaseModel):
     human_review_applied: bool | None = None
     drift_detected: bool | None = None
     why_this_question: str | None = None
+    rubric_task_id: str | None = None
+    rubric_task_label: str | None = None
+    confidence_score: float | None = None
+    human_gate_triggered: bool | None = None
+    reviewer_reason: str | None = None
+    reviewer_modifications: list[str] = Field(default_factory=list)
+    scenario_complete: bool | None = None
+    scenario_missing_aspects: list[str] = Field(default_factory=list)
     repo_queries: list[str] = Field(default_factory=list)
     repo_selected_paths: list[str] = Field(default_factory=list)
     repo_selected_symbols: list[str] = Field(default_factory=list)
     repo_commit_sha: str | None = None
     repo_tool_calls: list[dict] = Field(default_factory=list)
+
+
+class TranscriptEventRead(BaseModel):
+    event_id: str
+    event_type: str
+    turn_no: int | None = None
+    timestamp: str
+    payload: dict = Field(default_factory=dict)
 
 
 class AnswerAnalysisChunkRead(BaseModel):
@@ -61,6 +86,7 @@ class TurnRead(BaseModel):
     answer_analysis: AnswerAnalysisRead | None = None
     human_review: HumanReviewInput | None = None
     question_plan: QuestionPlanRead | None = None
+    event_log: list[TranscriptEventRead] = Field(default_factory=list)
     current_question_version_no: int = 1
     question_regeneration_count: int = 0
     human_intervention_regeneration_usage_summary: TokenUsageSummary = Field(
@@ -95,6 +121,7 @@ class AnswerSubmitResponse(BaseModel):
 
 class NextQuestionRequest(BaseModel):
     human_review: HumanReviewInput | None = None
+    human_gate: HumanGateResolutionInput | None = None
 
 
 class QuestionVersionRead(BaseModel):

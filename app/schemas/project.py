@@ -25,16 +25,49 @@ class RepositoryManifestRead(BaseModel):
     last_indexed_at: str | None = None
 
 
+class HumanGateOption(BaseModel):
+    action: str
+    label: str
+    description: str | None = None
+
+
+class HumanGateRead(BaseModel):
+    gate_id: str
+    gate_type: str
+    phase: str | None = None
+    reason: str
+    options: list[HumanGateOption] = Field(default_factory=list)
+    default_action: str
+    resolved: bool = False
+    resolution: str | None = None
+
+
+class RubricTaskSummary(BaseModel):
+    task_id: str
+    label: str
+    status: str
+    phase: str
+
+
+class RubricTaskBoardSummary(BaseModel):
+    current_phase: str
+    phase_status: dict[str, str] = Field(default_factory=dict)
+    incomplete_task_count: int = 0
+    completed_task_count: int = 0
+
+
 class ProjectCreate(BaseModel):
     project_name: str = Field(..., min_length=1, max_length=255)
     system_prompt: str = Field(..., min_length=1)
     repository: RepositorySourceConfig | None = None
+    agent_mode: str = "understand_current_code"
 
 
 class ProjectUpdate(BaseModel):
     project_name: str | None = Field(default=None, min_length=1, max_length=255)
     system_prompt: str | None = Field(default=None, min_length=1)
     repository: RepositorySourceConfig | None = None
+    agent_mode: str | None = None
 
 
 class ProjectRead(BaseModel):
@@ -44,12 +77,15 @@ class ProjectRead(BaseModel):
     current_stage: str
     turn_count: int
     status: str
+    agent_mode: str = "understand_current_code"
     total_prompt_tokens: int = 0
     total_completion_tokens: int = 0
     total_tokens: int = 0
     estimated_total_tokens: int = 0
     repository: RepositorySourceConfig = Field(default_factory=RepositorySourceConfig)
     repository_manifest: RepositoryManifestRead = Field(default_factory=RepositoryManifestRead)
+    rubric_task_board_summary: RubricTaskBoardSummary | None = None
+    pending_gate: HumanGateRead | None = None
     created_at: datetime
     updated_at: datetime
 
