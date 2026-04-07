@@ -1,5 +1,6 @@
 from collections.abc import Iterable
 
+from app.core.llm_types import LLMGenerateResult
 from app.models.llm_usage import LLMUsage
 
 
@@ -9,25 +10,21 @@ def estimate_token_count(text: str) -> int:
     return max(1, len(text) // 4)
 
 
-def extract_usage_metrics(response, *, prompt_text: str = "", completion_text: str = ""):
-    usage = getattr(response, "usage", None)
-    prompt_tokens = getattr(usage, "prompt_tokens", None) if usage else None
-    if prompt_tokens is None and usage:
-        prompt_tokens = getattr(usage, "input_tokens", None)
-
-    completion_tokens = getattr(usage, "completion_tokens", None) if usage else None
-    if completion_tokens is None and usage:
-        completion_tokens = getattr(usage, "output_tokens", None)
-
-    total_tokens = getattr(usage, "total_tokens", None) if usage else None
-
-    if prompt_tokens is not None and completion_tokens is not None and total_tokens is not None:
-        return {
-            "prompt_tokens": int(prompt_tokens),
-            "completion_tokens": int(completion_tokens),
-            "total_tokens": int(total_tokens),
-            "is_estimated": False,
-        }
+def extract_usage_metrics(
+    response: LLMGenerateResult | None = None,
+    *,
+    prompt_text: str = "",
+    completion_text: str = "",
+):
+    if response is not None:
+        usage = response.usage
+        if usage.prompt_tokens and usage.completion_tokens and usage.total_tokens:
+            return {
+                "prompt_tokens": int(usage.prompt_tokens),
+                "completion_tokens": int(usage.completion_tokens),
+                "total_tokens": int(usage.total_tokens),
+                "is_estimated": bool(usage.is_estimated),
+            }
 
     estimated_prompt = estimate_token_count(prompt_text)
     estimated_completion = estimate_token_count(completion_text)

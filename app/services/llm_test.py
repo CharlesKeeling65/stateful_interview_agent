@@ -1,42 +1,33 @@
-from openai import APIError, OpenAI
-
 from app.core.config import settings
-from app.core.llm_client import get_openai_client
+from app.core.llm_client import get_llm_provider
 
 
 def test_llm_call() -> dict:
-    client: OpenAI = get_openai_client()
+    provider = get_llm_provider()
 
     try:
-        response = client.chat.completions.create(
-            model=settings.openai_model,
+        response = provider.generate_text(
+            model=settings.openai_model if settings.llm_provider == "openai_compatible" else None,
             messages=[
                 {"role": "system", "content": "You are a helpful assistant"},
                 {"role": "user", "content": "Hello"},
             ],
-            stream=False,
+            temperature=0,
         )
 
         return {
             "ok": True,
-            "model": settings.openai_model,
-            "base_url": settings.openai_base_url,
-            "content": response.choices[0].message.content,
+            "provider": response.provider,
+            "model": response.model,
+            "base_url": settings.openai_base_url if settings.llm_provider == "openai_compatible" else settings.opencode_base_url if settings.llm_provider == "opencode" else None,
+            "content": response.text,
         }
 
-    except APIError as e:
-        return {
-            "ok": False,
-            "error_type": type(e).__name__,
-            "message": str(e),
-            "base_url": settings.openai_base_url,
-            "model": settings.openai_model,
-        }
     except Exception as e:
         return {
             "ok": False,
             "error_type": type(e).__name__,
             "message": str(e),
-            "base_url": settings.openai_base_url,
-            "model": settings.openai_model,
+            "provider": settings.llm_provider,
+            "model": settings.anthropic_model if settings.llm_provider == "anthropic" else settings.openai_model,
         }

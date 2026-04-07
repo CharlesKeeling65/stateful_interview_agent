@@ -39,7 +39,7 @@ STEP_DEFINITIONS = {
     },
     "call_llm": {
         "label": "Call model",
-        "method": "OpenAI-compatible chat.completions",
+        "method": "provider-backed text generation",
     },
     "validate_question": {
         "label": "Validate question",

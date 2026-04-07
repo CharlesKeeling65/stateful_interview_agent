@@ -5,6 +5,7 @@ description = "Instead of 'answering project questions', it is necessary to cont
 readme = "README.md"
 requires-python = ">=3.10"
 dependencies = [
+    "anthropic>=0.52.0",
     "fastapi>=0.135.3",
     "langchain>=1.2.14",
     "langgraph>=1.1.4",

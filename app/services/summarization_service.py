@@ -5,7 +5,7 @@ import time
 from sqlalchemy.orm import Session
 
 from app.core.config import settings
-from app.core.llm_client import get_openai_client
+from app.core.llm_client import get_llm_provider
 from app.logging import emit_event, preview_payload
 from app.models.turn import InterviewTurn
 from app.prompts import get_prompt_manager
@@ -46,7 +46,7 @@ def summarize_answer(
     turn: InterviewTurn,
     system_prompt: str,
 ):
-    client = get_openai_client()
+    provider = get_llm_provider()
     prompt = get_prompt_manager().render(
         "answer_summary",
         {
@@ -70,7 +70,11 @@ def summarize_answer(
         input={
             "prompt_id": prompt.prompt_id,
             "prompt_version": prompt.version,
-            "model": settings.openai_model,
+            "model": (
+                settings.anthropic_model if settings.llm_provider == "anthropic"
+                else "opencode-http" if settings.llm_provider == "opencode"
+                else settings.openai_model
+            ),
             "messages": preview_payload(
                 prompt.messages,
                 artifact_category="llm",
@@ -80,11 +84,10 @@ def summarize_answer(
     )
 
     try:
-        response = client.chat.completions.create(
-            model=settings.openai_model,
+        response = provider.generate_text(
+            model=settings.openai_model if settings.llm_provider == "openai_compatible" else None,
             messages=prompt.messages,
             temperature=0.2,
-            stream=False,
         )
     except Exception as exc:
         emit_event(
@@ -102,7 +105,7 @@ def summarize_answer(
         )
         raise
 
-    content = response.choices[0].message.content
+    content = response.text
     if not content:
         error = ValueError("Model returned empty summary content.")
         emit_event(

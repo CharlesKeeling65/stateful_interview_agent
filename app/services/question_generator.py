@@ -1,7 +1,7 @@
 import time
 
 from app.core.config import settings
-from app.core.llm_client import get_openai_client
+from app.core.llm_client import get_llm_provider
 from app.logging import emit_event, preview_payload
 from app.prompts import get_prompt_manager
 from app.services.question_postprocessor import clean_generated_question
@@ -21,8 +21,16 @@ def generate_first_question(system_prompt: str) -> str:
     return generate_first_question_result(system_prompt)["question_text"]
 
 
+def response_model_label() -> str:
+    if settings.llm_provider == "anthropic":
+        return settings.anthropic_model
+    if settings.llm_provider == "opencode":
+        return "opencode-http"
+    return settings.openai_model
+
+
 def generate_first_question_result(system_prompt: str, repository_context: str = "No repository source configured for this project.") -> dict:
-    client = get_openai_client()
+    provider = get_llm_provider()
     prompt = get_prompt_manager().render(
         "first_question",
         {
@@ -43,7 +51,7 @@ def generate_first_question_result(system_prompt: str, repository_context: str =
         input={
             "prompt_id": prompt.prompt_id,
             "prompt_version": prompt.version,
-            "model": settings.openai_model,
+            "model": response_model_label(),
             "messages": preview_payload(
                 prompt.messages,
                 artifact_category="llm",
@@ -53,11 +61,10 @@ def generate_first_question_result(system_prompt: str, repository_context: str =
     )
 
     try:
-        response = client.chat.completions.create(
-            model=settings.openai_model,
+        response = provider.generate_text(
+            model=settings.openai_model if settings.llm_provider == "openai_compatible" else None,
             messages=prompt.messages,
             temperature=0.3,
-            stream=False,
         )
     except Exception as exc:
         emit_event(
@@ -72,7 +79,7 @@ def generate_first_question_result(system_prompt: str, repository_context: str =
         )
         raise
 
-    content = response.choices[0].message.content
+    content = response.text
     if not content:
         error = ValueError("Model returned empty content.")
         emit_event(
@@ -137,7 +144,7 @@ def generate_next_question_from_history(
     project_id: int | None = None,
     run_id: int | None = None,
 ) -> dict:
-    client = get_openai_client()
+    provider = get_llm_provider()
 
     stage_instruction = get_stage_instruction(current_stage)
     is_near_end = next_turn_no >= settings.interview_min_turns
@@ -192,7 +199,7 @@ def generate_next_question_from_history(
         input={
             "prompt_id": prompt.prompt_id,
             "prompt_version": prompt.version,
-            "model": settings.openai_model,
+            "model": response_model_label(),
             "messages": preview_payload(
                 prompt.messages,
                 artifact_category="llm",
@@ -207,18 +214,17 @@ def generate_next_question_from_history(
             project_id=project_id or 0,
             turn_no=next_turn_no,
             step_key="call_llm",
-            description=f"Call {settings.openai_model} to draft the next question.",
+            description=f"Call {response_model_label()} to draft the next question.",
             next_step_hint="Validate question",
         ) as llm_step:
-            response = client.chat.completions.create(
-                model=settings.openai_model,
+            response = provider.generate_text(
+                model=settings.openai_model if settings.llm_provider == "openai_compatible" else None,
                 messages=prompt.messages,
                 temperature=0.4,
-                stream=False,
             )
             if llm_step:
-                llm_step.set_meta(model=settings.openai_model, prompt_id=prompt.prompt_id)
-            content = response.choices[0].message.content
+                llm_step.set_meta(model=response.model, prompt_id=prompt.prompt_id)
+            content = response.text
             if not content:
                 raise ValueError("Model returned empty content.")
             cleaned = clean_generated_question(content, next_turn_no)
