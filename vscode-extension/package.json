@@ -1,0 +1,39 @@
+{
+  "name": "stateful-interview-agent-vscode",
+  "displayName": "Stateful Interview Agent",
+  "version": "0.0.1",
+  "publisher": "local",
+  "engines": {
+    "vscode": "^1.96.0"
+  },
+  "activationEvents": [
+    "onCommand:statefulInterview.openPanel"
+  ],
+  "main": "./dist/extension.js",
+  "contributes": {
+    "commands": [
+      {
+        "command": "statefulInterview.openPanel",
+        "title": "Stateful Interview: Open Panel"
+      }
+    ],
+    "configuration": {
+      "title": "Stateful Interview Agent",
+      "properties": {
+        "statefulInterview.apiBaseUrl": {
+          "type": "string",
+          "default": "http://127.0.0.1:8000",
+          "description": "Base URL for the Stateful Interview Agent backend API."
+        }
+      }
+    }
+  },
+  "scripts": {
+    "build": "tsc -p ./tsconfig.json"
+  },
+  "devDependencies": {
+    "@types/node": "^24.12.0",
+    "@types/vscode": "^1.96.0",
+    "typescript": "~5.9.3"
+  }
+}
