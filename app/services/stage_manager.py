@@ -1,6 +1,5 @@
 from app.services.coverage_service import (
     default_framework_coverage,
-    framework_gaps_for_stage,
     normalize_framework_coverage,
 )
 
@@ -44,6 +43,47 @@ STAGE_SEQUENCE = [
 CODE_DETAIL_MIN_EXIT_TURN_NO = 35
 CODE_DETAIL_FORCE_EXIT_TURN_NO = 40
 
+PANORAMA_MIN_TURNS = 2
+ARCHITECTURE_MIN_TURNS = 3
+
+PANORAMA_REQUIRED: frozenset[str] = frozenset({
+    "purpose", "target_users", "major_modules", "high_level_workflow"
+})
+ARCHITECTURE_REQUIRED: frozenset[str] = frozenset({
+    "module_responsibilities",
+    "collaboration_mechanisms",
+    "key_call_chains",
+    "system_structure",
+})
+CODE_DETAIL_REQUIRED: frozenset[str] = frozenset({
+    "specific_files_count",
+    "specific_methods_count",
+    "execution_paths_count",
+    "error_handling_points_count",
+})
+USE_CASE_REQUIRED: frozenset[str] = frozenset({
+    "representative_scenarios_count",
+    "actors_roles_count",
+    "input_output_patterns_count",
+    "boundary_conditions_count",
+})
+
+EXPLICIT_USE_CASE_FOCUS: frozenset[str] = frozenset({
+    "scenario", "use_case", "use cases", "actors", "inputs", "outputs", "boundary"
+})
+
+ALL_STAGES: frozenset[str] = frozenset({
+    PANORAMA_STAGE,
+    ARCHITECTURE_STAGE,
+    CODE_DETAIL_STAGE,
+    USE_CASE_STAGE,
+    WRAP_UP_STAGE,
+})
+
+
+def _get_critical_gaps(gaps: list[str], required: frozenset[str]) -> list[str]:
+    return [gap for gap in gaps if gap in required]
+
 
 def normalize_stage_name(value: str | None) -> str | None:
     if not value:
@@ -53,17 +93,11 @@ def normalize_stage_name(value: str | None) -> str | None:
     if not candidate:
         return None
 
+    if candidate in ALL_STAGES:
+        return candidate
+
     normalized = candidate.lower().replace("-", " ").replace("_", " ")
     normalized = " ".join(normalized.split())
-
-    if candidate in {
-        PANORAMA_STAGE,
-        ARCHITECTURE_STAGE,
-        CODE_DETAIL_STAGE,
-        USE_CASE_STAGE,
-        WRAP_UP_STAGE,
-    }:
-        return candidate
 
     return STAGE_ALIASES.get(normalized) or STAGE_ALIASES.get(normalized.replace(" ", "_"))
 
@@ -110,45 +144,27 @@ def decide_next_stage(
     remaining_turns = max_turns - next_turn_no + 1
     wrap_up_ready = framework.get("wrap_up_ready", False)
 
-    panorama_gaps = framework_gaps_for_stage(coverage_state, PANORAMA_STAGE)
-    architecture_gaps = framework_gaps_for_stage(coverage_state, ARCHITECTURE_STAGE)
-    code_detail_gaps = framework_gaps_for_stage(coverage_state, CODE_DETAIL_STAGE)
-    use_case_gaps = framework_gaps_for_stage(coverage_state, USE_CASE_STAGE)
-    collaboration_gaps = framework.get("gaps", {}).get("human_collaboration", [])
+    gaps = framework.get("gaps", {})
+    panorama_gaps = gaps.get("panorama", [])
+    architecture_gaps = gaps.get("architecture", [])
+    code_detail_gaps = gaps.get("code_detail", [])
+    use_case_gaps = gaps.get("use_cases", [])
+    collaboration_gaps = gaps.get("human_collaboration", [])
+
     human_phase_ready = bool((human_review_signal or {}).get("phase_ready"))
     human_direction = (human_review_signal or {}).get("direction")
     preferred_focus = ((human_review_signal or {}).get("preferred_next_focus") or "").strip().lower()
-    explicit_use_case_request = preferred_focus in {"scenario", "use_case", "use cases", "actors", "inputs", "outputs", "boundary"}
-
-    panorama_required = {"purpose", "target_users", "major_modules", "high_level_workflow"}
-    architecture_required = {
-        "module_responsibilities",
-        "collaboration_mechanisms",
-        "key_call_chains",
-        "system_structure",
-    }
-    code_detail_required = {
-        "specific_files_count",
-        "specific_methods_count",
-        "execution_paths_count",
-        "error_handling_points_count",
-    }
-    use_case_required = {
-        "representative_scenarios_count",
-        "actors_roles_count",
-        "input_output_patterns_count",
-        "boundary_conditions_count",
-    }
+    explicit_use_case_request = preferred_focus in EXPLICIT_USE_CASE_FOCUS
 
     panorama_turns = stage_turn_counts.get(PANORAMA_STAGE, 0)
-    panorama_critical_gaps = [gap for gap in panorama_gaps if gap in panorama_required]
-    if current_stage == PANORAMA_STAGE and human_phase_ready and panorama_turns >= 2 and len(panorama_critical_gaps) <= 1:
+    panorama_critical_gaps = _get_critical_gaps(panorama_gaps, PANORAMA_REQUIRED)
+    if current_stage == PANORAMA_STAGE and human_phase_ready and panorama_turns >= PANORAMA_MIN_TURNS and len(panorama_critical_gaps) <= 1:
         return {
             "next_stage": clamp_stage_not_before_current(ARCHITECTURE_STAGE, current_stage),
             "reason": "A human marked panorama coverage as sufficiently complete, so the interview can move into architecture understanding.",
             "gaps": architecture_gaps,
         }
-    if panorama_turns < 2 or panorama_critical_gaps or len(panorama_gaps) > 1:
+    if panorama_turns < PANORAMA_MIN_TURNS or panorama_critical_gaps or len(panorama_gaps) > 1:
         return {
             "next_stage": clamp_stage_not_before_current(PANORAMA_STAGE, current_stage),
             "reason": f"Panorama coverage still has macro gaps: {', '.join((panorama_critical_gaps or panorama_gaps)[:3]) or 'need at least two panorama turns'}.",
@@ -156,14 +172,14 @@ def decide_next_stage(
         }
 
     architecture_turns = stage_turn_counts.get(ARCHITECTURE_STAGE, 0)
-    architecture_critical_gaps = [gap for gap in architecture_gaps if gap in architecture_required]
-    if current_stage == ARCHITECTURE_STAGE and human_phase_ready and architecture_turns >= 3 and len(architecture_critical_gaps) <= 1:
+    architecture_critical_gaps = _get_critical_gaps(architecture_gaps, ARCHITECTURE_REQUIRED)
+    if current_stage == ARCHITECTURE_STAGE and human_phase_ready and architecture_turns >= ARCHITECTURE_MIN_TURNS and len(architecture_critical_gaps) <= 1:
         return {
             "next_stage": clamp_stage_not_before_current(CODE_DETAIL_STAGE, current_stage),
             "reason": "A human marked architecture coverage as sufficiently complete, so the interview can move into code detail.",
             "gaps": code_detail_gaps,
         }
-    if architecture_turns < 3 or architecture_critical_gaps or len(architecture_gaps) > 1:
+    if architecture_turns < ARCHITECTURE_MIN_TURNS or architecture_critical_gaps or len(architecture_gaps) > 1:
         return {
             "next_stage": clamp_stage_not_before_current(ARCHITECTURE_STAGE, current_stage),
             "reason": f"Architecture understanding is not complete yet: {', '.join((architecture_critical_gaps or architecture_gaps)[:3]) or 'need more architecture turns'}.",
@@ -184,8 +200,8 @@ def decide_next_stage(
             "gaps": [],
         }
 
-    code_detail_core_gaps = [gap for gap in code_detail_gaps if gap in code_detail_required]
-    use_case_core_gaps = [gap for gap in use_case_gaps if gap in use_case_required]
+    code_detail_core_gaps = _get_critical_gaps(code_detail_gaps, CODE_DETAIL_REQUIRED)
+    use_case_core_gaps = _get_critical_gaps(use_case_gaps, USE_CASE_REQUIRED)
     in_hard_coded_code_detail_window = (
         current_stage == CODE_DETAIL_STAGE and next_turn_no < CODE_DETAIL_MIN_EXIT_TURN_NO
     )
