@@ -61,6 +61,8 @@ class ProjectCreate(BaseModel):
     system_prompt: str = Field(..., min_length=1)
     repository: RepositorySourceConfig | None = None
     agent_mode: str = "understand_current_code"
+    answer_provider_type: str = "manual"
+    answer_automation_enabled: bool = False
 
 
 class ProjectUpdate(BaseModel):
@@ -68,6 +70,8 @@ class ProjectUpdate(BaseModel):
     system_prompt: str | None = Field(default=None, min_length=1)
     repository: RepositorySourceConfig | None = None
     agent_mode: str | None = None
+    answer_provider_type: str | None = None
+    answer_automation_enabled: bool | None = None
 
 
 class ProjectRead(BaseModel):
@@ -78,6 +82,9 @@ class ProjectRead(BaseModel):
     turn_count: int
     status: str
     agent_mode: str = "understand_current_code"
+    answer_provider_type: str = "manual"
+    answer_automation_enabled: bool = False
+    opencode_session_id: str | None = None
     total_prompt_tokens: int = 0
     total_completion_tokens: int = 0
     total_tokens: int = 0
@@ -114,6 +121,8 @@ class ProjectStatusResponse(BaseModel):
     status: str
     current_stage: str
     turn_count: int
+    answer_provider_type: str = "manual"
+    answer_automation_enabled: bool = False
     minimum_goal_reached: bool
     max_turn_limit: int
     latest_turn_no: int | None

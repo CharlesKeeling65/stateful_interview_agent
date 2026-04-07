@@ -186,6 +186,9 @@ export type ProjectRead = {
   turn_count: number
   status: string
   agent_mode?: string
+  answer_provider_type?: string
+  answer_automation_enabled?: boolean
+  opencode_session_id?: string | null
   total_prompt_tokens: number
   total_completion_tokens: number
   total_tokens: number
@@ -244,6 +247,8 @@ export type ProjectStatusResponse = {
   status: string
   current_stage: string
   turn_count: number
+  answer_provider_type?: string
+  answer_automation_enabled?: boolean
   minimum_goal_reached: boolean
   max_turn_limit: number
   latest_turn_no: number | null
@@ -298,6 +303,8 @@ export type UpdateProjectPayload = {
     git_ref?: string | null
   }
   agent_mode?: string
+  answer_provider_type?: string
+  answer_automation_enabled?: boolean
 }
 
 export type NextQuestionRequestPayload = {

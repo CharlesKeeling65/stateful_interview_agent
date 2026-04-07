@@ -1,6 +1,8 @@
 import { startTransition, useEffect, useEffectEvent, useState } from 'react'
 
 import {
+  autoAnswerLatest,
+  autoStep,
   createProject,
   deleteProject,
   getProject,
@@ -246,6 +248,31 @@ export function useProject() {
     }
   }
 
+  async function handleAutoAnswerLatest() {
+    if (!project) {
+      return
+    }
+
+    setBusyAction('saving_answer')
+    setLoading(true)
+    setError('')
+    setLastMessageKey('status.savingAnswer')
+    setLastRegenerationFeedback(null)
+
+    try {
+      await autoAnswerLatest(project.id)
+      startTransition(() => {
+        setLastMessageKey('status.answerSaved')
+      })
+      await refreshSelected(project.id)
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Unable to auto-answer the latest question.')
+    } finally {
+      setBusyAction(null)
+      setLoading(false)
+    }
+  }
+
   async function handleGenerateNext(payload?: NextQuestionRequestPayload) {
     if (!project) {
       return
@@ -311,6 +338,81 @@ export function useProject() {
         await pollActiveRun
       }
       setError(err instanceof Error ? err.message : 'Unable to generate the next question.')
+    } finally {
+      settled = true
+      startTransition(() => {
+        setActiveRun(null)
+      })
+      setBusyAction(null)
+      setLoading(false)
+    }
+  }
+
+  async function handleAutoStep(payload?: NextQuestionRequestPayload) {
+    if (!project) {
+      return
+    }
+
+    setBusyAction('generating_next')
+    setLoading(true)
+    setError('')
+    setLastMessageKey('status.generating')
+    setLastRegenerationFeedback(null)
+
+    let settled = false
+    let pollActiveRun: Promise<void> | null = null
+
+    try {
+      pollActiveRun = (async () => {
+        while (!settled) {
+          try {
+            const latestRun = await getLatestProjectRun(project.id)
+            startTransition(() => {
+              setActiveRun(latestRun.status === 'running' ? latestRun : null)
+              setRuns((current) => {
+                const nextRuns = current.filter((run) => run.id !== latestRun.id)
+                return [latestRun, ...nextRuns].toSorted((a, b) => b.id - a.id)
+              })
+            })
+          } catch {
+            // Ignore until the backend creates or updates the run trace.
+          }
+          await new Promise((resolve) => window.setTimeout(resolve, 700))
+        }
+
+        try {
+          const latestRun = await getLatestProjectRun(project.id)
+          startTransition(() => {
+            setRuns((current) => {
+              const nextRuns = current.filter((run) => run.id !== latestRun.id)
+              return [latestRun, ...nextRuns].toSorted((a, b) => b.id - a.id)
+            })
+            setActiveRun(latestRun.status === 'running' ? latestRun : null)
+          })
+        } catch {
+          startTransition(() => {
+            setActiveRun(null)
+          })
+        }
+      })()
+
+      const result = await autoStep(project.id, {
+        human_review: payload?.human_review ?? null,
+        human_gate: payload?.human_gate ?? null,
+      })
+      settled = true
+      await pollActiveRun
+      startTransition(() => {
+        setProject(result.project)
+        setLastMessageKey(result.interview_finished ? 'status.finished' : 'status.generated')
+      })
+      await refreshSelected(project.id)
+    } catch (err) {
+      settled = true
+      if (pollActiveRun) {
+        await pollActiveRun
+      }
+      setError(err instanceof Error ? err.message : 'Unable to auto-run the next step.')
     } finally {
       settled = true
       startTransition(() => {
@@ -503,7 +605,9 @@ export function useProject() {
     selectProject,
     startProject: handleStart,
     saveAnswer: handleSaveAnswer,
+    autoAnswerLatest: handleAutoAnswerLatest,
     submitNext: handleGenerateNext,
+    autoStep: handleAutoStep,
     regenerateCurrentQuestion: handleRegenerateCurrentQuestion,
     deleteProject: handleDeleteProject,
     updateProject: handleUpdateProject,

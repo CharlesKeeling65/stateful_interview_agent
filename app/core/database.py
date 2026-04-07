@@ -117,9 +117,19 @@ def ensure_database_schema():
                         "ALTER TABLE project_sessions ADD COLUMN rubric_task_board TEXT DEFAULT '{}'"
                     )
                 )
-            if "pending_gate_json" not in existing_columns:
+            if "answer_provider_type" not in existing_columns:
                 connection.execute(
                     text(
-                        "ALTER TABLE project_sessions ADD COLUMN pending_gate_json TEXT DEFAULT 'null'"
+                        "ALTER TABLE project_sessions ADD COLUMN answer_provider_type TEXT DEFAULT 'manual'"
                     )
+                )
+            if "answer_automation_enabled" not in existing_columns:
+                connection.execute(
+                    text(
+                        "ALTER TABLE project_sessions ADD COLUMN answer_automation_enabled BOOLEAN DEFAULT 0"
+                    )
+                )
+            if "opencode_session_id" not in existing_columns:
+                connection.execute(
+                    text("ALTER TABLE project_sessions ADD COLUMN opencode_session_id TEXT")
                 )

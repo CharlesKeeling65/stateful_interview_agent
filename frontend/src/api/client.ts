@@ -71,6 +71,23 @@ export async function submitNext(projectId: number, payload?: NextQuestionReques
   })
 }
 
+export async function autoAnswerLatest(projectId: number) {
+  return request<AnswerSubmitResponse>(`/projects/${projectId}/auto-answer-latest`, {
+    method: 'POST',
+  })
+}
+
+export async function autoStep(projectId: number, payload?: NextQuestionRequestPayload) {
+  return request<ProjectNextResponse>(`/projects/${projectId}/auto-step`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      human_review: payload?.human_review ?? null,
+      human_gate: payload?.human_gate ?? null,
+    }),
+  })
+}
+
 export async function regenerateCurrentQuestion(projectId: number, turnId: number, human_review?: HumanReviewInput | null) {
   return request<CurrentQuestionRegenerateResponse>(`/projects/${projectId}/turns/${turnId}/regenerate-question`, {
     method: 'POST',

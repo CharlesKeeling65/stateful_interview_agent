@@ -30,7 +30,7 @@ from app.schemas.turn import (
     NextQuestionRequest,
     TurnRead,
 )
-from app.services.interview_lifecycle import is_minimum_goal_reached
+from app.services.opencode_execution_service import auto_answer_turn
 from app.services.question_generator import generate_first_question_result
 from app.services.question_version_service import (
     append_question_version,
@@ -68,6 +68,8 @@ def create_project(payload: ProjectCreate, db: Session = Depends(get_db)):
         project_name=payload.project_name,
         system_prompt=payload.system_prompt,
         agent_mode=payload.agent_mode,
+        answer_provider_type=payload.answer_provider_type,
+        answer_automation_enabled=payload.answer_automation_enabled,
         rubric_task_board=serialize_task_board(initialize_task_board()),
     )
     db.add(project)
@@ -228,7 +230,11 @@ def start_project_interview(project_id: int, db: Session = Depends(get_db)):
 
     db.commit()
     db.refresh(project)
-    db.refresh(first_turn)
+    if project.answer_provider_type == "opencode" and project.answer_automation_enabled:
+        auto_answer_turn(db=db, project=project, turn=first_turn)
+        db.commit()
+        db.refresh(project)
+        db.refresh(first_turn)
     emit_event(
         "persistence",
         "project.start.complete",
@@ -301,6 +307,50 @@ def submit_answer(
         "can_generate_next": True,
         "message": "Answer saved. You can now generate the next question separately.",
     }
+
+
+@router.post("/{project_id}/auto-answer-latest", response_model=AnswerSubmitResponse)
+def auto_answer_latest_turn(project_id: int, db: Session = Depends(get_db)):
+    bind_log_context(project_id=project_id)
+    project = db.query(ProjectSession).filter(ProjectSession.id == project_id).first()
+    if not project:
+        raise HTTPException(status_code=404, detail="Project not found")
+
+    latest_turn = (
+        db.query(InterviewTurn)
+        .filter(InterviewTurn.project_id == project_id)
+        .order_by(InterviewTurn.turn_no.desc())
+        .first()
+    )
+    if not latest_turn:
+        raise HTTPException(status_code=400, detail="Project interview has not started")
+    if latest_turn.answer_text is not None:
+        raise HTTPException(status_code=400, detail="Latest turn already has an answer")
+
+    auto_answer_turn(db=db, project=project, turn=latest_turn)
+    db.commit()
+    db.refresh(latest_turn)
+    db.refresh(project)
+    return {
+        "project_id": project_id,
+        "updated_turn": latest_turn,
+        "can_generate_next": True,
+        "message": "OpenCode answer saved for the latest turn.",
+    }
+
+
+@router.post("/{project_id}/auto-step", response_model=ProjectNextResponse)
+def auto_step_project(project_id: int, payload: NextQuestionRequest, db: Session = Depends(get_db)):
+    result = submit_answer_and_generate_next(project_id=project_id, payload=payload, db=db)
+    if result["next_turn"] is not None and result["project"].answer_provider_type == "opencode" and result["project"].answer_automation_enabled:
+        auto_answer_turn(db=db, project=result["project"], turn=result["next_turn"])
+        db.commit()
+        db.refresh(result["project"])
+        db.refresh(result["next_turn"])
+        result["previous_turn"] = result["next_turn"]
+        result["next_turn"] = None
+        result["message"] = f"{result['message']} OpenCode auto-answered the generated turn.".strip()
+    return result
 
 
 @router.post(
@@ -784,6 +834,8 @@ def get_project_status(project_id: int, db: Session = Depends(get_db)):
         "status": project.status,
         "current_stage": project.current_stage,
         "turn_count": project.turn_count,
+        "answer_provider_type": project.answer_provider_type,
+        "answer_automation_enabled": project.answer_automation_enabled,
         "minimum_goal_reached": is_minimum_goal_reached(project.turn_count),
         "max_turn_limit": settings.interview_max_turns,
         "latest_turn_no": latest_turn.turn_no if latest_turn else None,

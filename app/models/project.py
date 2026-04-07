@@ -2,7 +2,7 @@ import json
 from datetime import datetime
 from typing import Any
 
-from sqlalchemy import DateTime, Integer, String, Text
+from sqlalchemy import Boolean, DateTime, Integer, String, Text
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.core.database import Base
@@ -29,6 +29,9 @@ class ProjectSession(Base):
         default='{"version": 1, "branch_count": 0, "updated_through_turn_no": 0, "branches": []}',
     )
     agent_mode: Mapped[str] = mapped_column(String(50), default="understand_current_code")
+    answer_provider_type: Mapped[str] = mapped_column(String(32), default="manual")
+    answer_automation_enabled: Mapped[bool] = mapped_column(Boolean, default=False)
+    opencode_session_id: Mapped[str | None] = mapped_column(String(255), nullable=True)
     rubric_task_board: Mapped[str] = mapped_column(Text, default="{}")
     pending_gate_json: Mapped[str] = mapped_column(Text, default="null")
     created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
