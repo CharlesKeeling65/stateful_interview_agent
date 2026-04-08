@@ -49,6 +49,7 @@ from app.services.rubric_task_service import initialize_task_board, serialize_ta
 from app.services.run_trace_service import create_run, finalize_run, serialize_run
 from app.services.stage_manager import decide_next_stage, normalize_stage_name
 from app.services.coverage_service import rebuild_coverage_state, save_coverage_state
+from app.services.interview_lifecycle import is_minimum_goal_reached
 from app.services.summarization_service import refresh_turn_answer_memory
 from app.services.transcript_service import build_project_transcript
 from app.services.usage_service import aggregate_project_usage, create_usage_record
