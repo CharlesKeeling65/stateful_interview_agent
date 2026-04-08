@@ -82,6 +82,7 @@ class TurnRead(BaseModel):
     question_text: str
     question_text_for_copy: str
     answer_text: str | None
+    answer_text_for_display: str | None = None
     answer_summary: str | None
     answer_analysis: AnswerAnalysisRead | None = None
     human_review: HumanReviewInput | None = None
@@ -119,9 +120,20 @@ class AnswerSubmitResponse(BaseModel):
     message: str
 
 
+class OpenCodeSessionResponse(BaseModel):
+    project_id: int
+    session_id: str
+    created: bool = False
+    mode: str = "plan"
+
+
 class NextQuestionRequest(BaseModel):
     human_review: HumanReviewInput | None = None
     human_gate: HumanGateResolutionInput | None = None
+
+
+class OpenCodePlanStepRequest(BaseModel):
+    human_review: HumanReviewInput | None = None
 
 
 class QuestionVersionRead(BaseModel):

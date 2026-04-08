@@ -13,6 +13,7 @@ from app.models.agent_run import AgentRun
 from app.models.project import ProjectSession
 from app.models.turn import InterviewTurn
 from app.schemas.project import (
+    OpenCodePlanStepResponse,
     ProjectCreate,
     ProjectNextResponse,
     ProjectRead,
@@ -29,9 +30,16 @@ from app.schemas.turn import (
     CurrentQuestionRegenerateRequest,
     CurrentQuestionRegenerateResponse,
     NextQuestionRequest,
+    OpenCodePlanStepRequest,
+    OpenCodeSessionResponse,
     TurnRead,
 )
-from app.services.opencode_execution_service import auto_answer_turn
+from app.services.opencode_execution_service import (
+    auto_answer_turn,
+    fetch_opencode_answer,
+    persist_turn_answer,
+)
+from app.services.opencode_session_service import ensure_opencode_session_with_status
 from app.services.question_generator import generate_first_question_result
 from app.services.question_version_service import (
     append_question_version,
@@ -50,7 +58,6 @@ from app.services.run_trace_service import create_run, finalize_run, serialize_r
 from app.services.stage_manager import decide_next_stage, normalize_stage_name
 from app.services.coverage_service import rebuild_coverage_state, save_coverage_state
 from app.services.interview_lifecycle import is_minimum_goal_reached
-from app.services.summarization_service import refresh_turn_answer_memory
 from app.services.transcript_service import build_project_transcript
 from app.services.usage_service import aggregate_project_usage, create_usage_record
 
@@ -232,11 +239,14 @@ def start_project_interview(project_id: int, db: Session = Depends(get_db)):
 
     db.commit()
     db.refresh(project)
-    if project.answer_provider_type == "opencode" and project.answer_automation_enabled:
-        auto_answer_turn(db=db, project=project, turn=first_turn)
-        db.commit()
-        db.refresh(project)
-        db.refresh(first_turn)
+    if project.answer_provider_type == "opencode":
+        try:
+            ensure_opencode_session_with_status(project)
+            db.commit()
+            db.refresh(project)
+            db.refresh(first_turn)
+        except Exception:
+            db.rollback()
     emit_event(
         "persistence",
         "project.start.complete",
@@ -273,21 +283,12 @@ def submit_answer(
     if not latest_turn:
         raise HTTPException(status_code=400, detail="Project interview has not started")
     previous_answer = latest_turn.answer_text
-    latest_turn.answer_text = payload.answer_text
-    refresh_turn_answer_memory(
+    persist_turn_answer(
         db=db,
-        project_id=project_id,
-        system_prompt=project.system_prompt,
+        project=project,
         turn=latest_turn,
+        answer_text=payload.answer_text,
     )
-    turns = (
-        db.query(InterviewTurn)
-        .filter(InterviewTurn.project_id == project_id)
-        .order_by(InterviewTurn.turn_no.asc())
-        .all()
-    )
-    refreshed_coverage_state = rebuild_coverage_state(turns)
-    save_coverage_state(project, refreshed_coverage_state)
     db.commit()
     db.refresh(latest_turn)
     emit_event(
@@ -409,17 +410,105 @@ def auto_answer_latest_turn(project_id: int, db: Session = Depends(get_db)):
     }
 
 
+@router.post("/{project_id}/opencode/session", response_model=OpenCodeSessionResponse)
+def ensure_project_opencode_session(project_id: int, db: Session = Depends(get_db)):
+    bind_log_context(project_id=project_id)
+    project = db.query(ProjectSession).filter(ProjectSession.id == project_id).first()
+    if not project:
+        raise HTTPException(status_code=404, detail="Project not found")
+    if project.answer_provider_type != "opencode":
+        raise HTTPException(status_code=400, detail="This project is not configured for OpenCode.")
+
+    session_id, created = ensure_opencode_session_with_status(project)
+    db.commit()
+    db.refresh(project)
+    return {
+        "project_id": project_id,
+        "session_id": session_id,
+        "created": created,
+        "mode": "plan",
+    }
+
+
+@router.post("/{project_id}/opencode/plan-step", response_model=OpenCodePlanStepResponse)
+def run_project_opencode_plan_step(
+    project_id: int,
+    payload: OpenCodePlanStepRequest,
+    db: Session = Depends(get_db),
+):
+    bind_log_context(project_id=project_id)
+    project = db.query(ProjectSession).filter(ProjectSession.id == project_id).first()
+    if not project:
+        raise HTTPException(status_code=404, detail="Project not found")
+    if project.answer_provider_type != "opencode":
+        raise HTTPException(status_code=400, detail="This project is not configured for OpenCode.")
+
+    latest_turn = (
+        db.query(InterviewTurn)
+        .filter(InterviewTurn.project_id == project_id)
+        .order_by(InterviewTurn.turn_no.desc())
+        .first()
+    )
+    if not latest_turn:
+        raise HTTPException(status_code=400, detail="Project interview has not started")
+    if latest_turn.answer_text is not None:
+        raise HTTPException(status_code=400, detail="Latest turn already has an answer")
+
+    if payload.human_review:
+        regenerate_current_question(
+            project_id=project_id,
+            turn_id=latest_turn.id,
+            payload=CurrentQuestionRegenerateRequest(human_review=payload.human_review),
+            db=db,
+        )
+        db.refresh(project)
+        db.refresh(latest_turn)
+        latest_turn = (
+            db.query(InterviewTurn)
+            .filter(InterviewTurn.project_id == project_id)
+            .order_by(InterviewTurn.turn_no.desc())
+            .first()
+        )
+
+    session_id, _ = ensure_opencode_session_with_status(project)
+    outgoing_question = latest_turn.question_text_for_copy.strip()
+
+    answer_text = fetch_opencode_answer(
+        project=project,
+        question_text=outgoing_question,
+    )
+    persist_turn_answer(
+        db=db,
+        project=project,
+        turn=latest_turn,
+        answer_text=answer_text,
+    )
+    db.commit()
+    db.refresh(project)
+    db.refresh(latest_turn)
+
+    next_result = submit_answer_and_generate_next(
+        project_id=project_id,
+        payload=NextQuestionRequest(),
+        db=db,
+    )
+    answered_turn = next_result["previous_turn"]
+    return {
+        "project": next_result["project"],
+        "answered_turn": answered_turn,
+        "next_turn": next_result["next_turn"],
+        "session_id": session_id,
+        "answer_text": answer_text,
+        "interview_finished": next_result["interview_finished"],
+        "minimum_goal_reached": next_result["minimum_goal_reached"],
+        "usage_summary": next_result["usage_summary"],
+        "message": "OpenCode answered the current question and the next question is ready.",
+    }
+
+
 @router.post("/{project_id}/auto-step", response_model=ProjectNextResponse)
 def auto_step_project(project_id: int, payload: NextQuestionRequest, db: Session = Depends(get_db)):
     result = submit_answer_and_generate_next(project_id=project_id, payload=payload, db=db)
-    if result["next_turn"] is not None and result["project"].answer_provider_type == "opencode" and result["project"].answer_automation_enabled:
-        auto_answer_turn(db=db, project=result["project"], turn=result["next_turn"])
-        db.commit()
-        db.refresh(result["project"])
-        db.refresh(result["next_turn"])
-        result["previous_turn"] = result["next_turn"]
-        result["next_turn"] = None
-        result["message"] = f"{result['message']} OpenCode auto-answered the generated turn.".strip()
     return result
 
 

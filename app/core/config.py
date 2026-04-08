@@ -13,7 +13,9 @@ class Settings(BaseSettings):
     log_pretty_json: bool = False
     log_text_preview_chars: int = 240
 
-    llm_provider: Literal["openai_compatible", "anthropic", "opencode"] = "openai_compatible"
+    llm_provider: Literal["openai_compatible", "anthropic", "opencode"] = (
+        "openai_compatible"
+    )
 
     openai_api_key: str = ""
     openai_base_url: str = "https://api.scnet.cn/api/llm/v1"
@@ -27,6 +29,7 @@ class Settings(BaseSettings):
 
     opencode_base_url: str = "http://localhost:4096"
     opencode_timeout_seconds: float = 60.0
+    opencode_model: str = "mindflow/claude-opus-4-6"
     duplicate_guard_use_embeddings: bool = False
     duplicate_guard_embedding_threshold: float = 0.9
 

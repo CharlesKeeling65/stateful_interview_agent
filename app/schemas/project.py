@@ -153,3 +153,15 @@ class TranscriptResponse(BaseModel):
     turn_count: int
     usage_summary: TokenUsageSummary
     transcript: str
+
+
+class OpenCodePlanStepResponse(BaseModel):
+    project: ProjectRead
+    answered_turn: TurnRead
+    next_turn: TurnRead | None
+    session_id: str
+    answer_text: str
+    interview_finished: bool
+    minimum_goal_reached: bool
+    usage_summary: TokenUsageSummary
+    message: str
