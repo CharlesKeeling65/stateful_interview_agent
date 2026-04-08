@@ -15,30 +15,21 @@ import {
   updateEnvEntries,
   updateOpencodeMindflow,
 } from './api'
+import { getBackendStatus, restartBundledBackend } from './extension'
+import { getConfiguredOpencodePath, updateConfiguredOpencodePath } from './configManager'
 
-export class InterviewPanelProvider {
-  private panel: vscode.WebviewPanel | undefined
+export class InterviewPanelProvider implements vscode.WebviewViewProvider {
+  private view: vscode.WebviewView | undefined
   private currentProjectId: number | null = null
 
   constructor(private readonly context: vscode.ExtensionContext) {}
 
-  show() {
-    if (this.panel) {
-      this.panel.reveal(vscode.ViewColumn.Beside)
-      void this.pushState()
-      return
-    }
-
-    this.panel = vscode.window.createWebviewPanel('statefulInterview', 'Stateful Interview Agent', vscode.ViewColumn.Beside, {
-      enableScripts: true,
-    })
-
-    this.panel.webview.html = this.renderHtml()
-    this.panel.webview.onDidReceiveMessage((message) => {
+  resolveWebviewView(webviewView: vscode.WebviewView) {
+    this.view = webviewView
+    webviewView.webview.options = { enableScripts: true }
+    webviewView.webview.html = this.renderHtml()
+    webviewView.webview.onDidReceiveMessage((message) => {
       void this.handleMessage(message)
-    })
-    this.panel.onDidDispose(() => {
-      this.panel = undefined
     })
     void this.pushState()
   }
@@ -105,12 +96,18 @@ export class InterviewPanelProvider {
           break
         }
         case 'saveConfig':
+          await updateConfiguredOpencodePath(String(message.opencodeConfigPath || '').trim())
           await updateOpencodeMindflow({
             base_url: String(message.mindflowBaseUrl || '').trim() || null,
             api_key: String(message.mindflowApiKey || '').trim() || null,
           })
           await updateEnvEntries(Array.isArray(message.envEntries) ? message.envEntries : [])
-          await this.pushState('Configuration updated.')
+          await restartBundledBackend()
+          await this.pushState('Configuration updated and backend restarted.')
+          break
+        case 'restartBackend':
+          await restartBundledBackend()
+          await this.pushState('Bundled backend restarted.')
           break
         default:
           break
@@ -143,11 +140,11 @@ export class InterviewPanelProvider {
   }
 
   private async pushState(statusMessage?: string, errorMessage?: string) {
-    if (!this.panel) {
+    if (!this.view) {
       return
     }
 
-    const projects = await listProjects()
+    const projects = await listProjects().catch(() => [])
     if (!this.currentProjectId && projects.length > 0) {
       this.currentProjectId = projects[0].id
     }
@@ -159,12 +156,15 @@ export class InterviewPanelProvider {
     let turns: any[] = []
     let latestRun: any = null
     if (this.currentProjectId) {
-      ;[status, turns] = await Promise.all([getProjectStatus(this.currentProjectId), getProjectTurns(this.currentProjectId)])
+      ;[status, turns] = await Promise.all([
+        getProjectStatus(this.currentProjectId).catch(() => null),
+        getProjectTurns(this.currentProjectId).catch(() => []),
+      ])
       latestRun = await getLatestProjectRun(this.currentProjectId).catch(() => null)
     }
     const config = await getConfigSnapshot().catch(() => null)
 
-    this.panel.webview.postMessage({
+    this.view.webview.postMessage({
       type: 'state',
       payload: {
         projects,
@@ -173,6 +173,8 @@ export class InterviewPanelProvider {
         turns,
         latestRun,
         config,
+        backendStatus: getBackendStatus(),
+        configuredOpencodePath: getConfiguredOpencodePath(),
         statusMessage: statusMessage ?? '',
         errorMessage: errorMessage ?? '',
       },
@@ -189,10 +191,9 @@ export class InterviewPanelProvider {
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>Stateful Interview Agent</title>
     <style>
-      body { font-family: var(--vscode-font-family); padding: 16px; color: var(--vscode-foreground); background: var(--vscode-editor-background); }
-      .section { margin-bottom: 16px; padding: 12px; border: 1px solid var(--vscode-panel-border); border-radius: 8px; }
-      .row { display: grid; gap: 8px; grid-template-columns: 1fr 1fr; }
-      button { background: var(--vscode-button-background); color: var(--vscode-button-foreground); border: 0; padding: 8px 12px; border-radius: 6px; cursor: pointer; margin-right: 8px; margin-top: 8px; }
+      body { font-family: var(--vscode-font-family); padding: 10px; color: var(--vscode-foreground); background: var(--vscode-editor-background); }
+      .section { margin-bottom: 12px; padding: 10px; border: 1px solid var(--vscode-panel-border); border-radius: 8px; }
+      button { width: 100%; background: var(--vscode-button-background); color: var(--vscode-button-foreground); border: 0; padding: 8px 10px; border-radius: 6px; cursor: pointer; margin-top: 8px; }
       input, textarea, select { width: 100%; margin-top: 8px; background: var(--vscode-input-background); color: var(--vscode-input-foreground); border: 1px solid var(--vscode-input-border); padding: 8px; border-radius: 6px; box-sizing: border-box; }
       pre { white-space: pre-wrap; word-break: break-word; background: rgba(127,127,127,.08); padding: 8px; border-radius: 6px; }
       .muted { opacity: .8; font-size: 12px; }
@@ -200,8 +201,9 @@ export class InterviewPanelProvider {
       .turn { border-top: 1px solid var(--vscode-panel-border); padding-top: 8px; margin-top: 8px; }
       table { width: 100%; border-collapse: collapse; margin-top: 8px; }
       td, th { border-top: 1px solid var(--vscode-panel-border); padding: 6px; text-align: left; vertical-align: top; }
-      .tabs { display: flex; gap: 8px; margin-bottom: 12px; }
+      .tabs { display: grid; grid-template-columns: 1fr 1fr; gap: 6px; margin-bottom: 12px; }
       .tab-active { outline: 1px solid var(--vscode-focusBorder); }
+      .inline-status { margin-top: 6px; }
     </style>
   </head>
   <body>
@@ -212,93 +214,86 @@ export class InterviewPanelProvider {
 
     <div id="workflowTab">
       <div class="section">
-        <h2>Project</h2>
+        <h3>Project</h3>
         <select id="projectSelect"></select>
-        <div class="row">
-          <input id="projectName" placeholder="New project name" />
-          <select id="answerProviderType">
-            <option value="manual">manual</option>
-            <option value="opencode">opencode</option>
-          </select>
-        </div>
+        <input id="projectName" placeholder="New project name" />
+        <select id="answerProviderType">
+          <option value="manual">manual</option>
+          <option value="opencode">opencode</option>
+        </select>
         <label class="muted"><input id="answerAutomationEnabled" type="checkbox" /> enable OpenCode automation</label>
         <textarea id="systemPrompt" rows="4" placeholder="System prompt"></textarea>
-        <div>
-          <button id="refreshBtn">Refresh</button>
-          <button id="createBtn">Create Project</button>
-        </div>
+        <button id="refreshBtn">Refresh</button>
+        <button id="createBtn">Create Project</button>
       </div>
 
       <div class="section">
-        <h2>Status</h2>
+        <h3>Status</h3>
+        <div id="backendStatus" class="muted">Backend: unknown</div>
         <div id="statusSummary" class="muted">No project selected.</div>
-        <div>
-          <button id="startBtn">Start Interview</button>
-          <button id="autoAnswerBtn">Auto-answer Latest</button>
-          <button id="autoStepBtn">Auto-step</button>
-        </div>
-        <div id="messageBox" class="muted"></div>
-        <div id="errorBox" class="error"></div>
+        <button id="startBtn">Start Interview</button>
+        <button id="autoAnswerBtn">Auto-answer Latest</button>
+        <button id="autoStepBtn">Auto-step</button>
+        <div id="messageBox" class="muted inline-status"></div>
+        <div id="errorBox" class="error inline-status"></div>
       </div>
 
       <div class="section">
-        <h2>Current Question</h2>
+        <h3>Current Question</h3>
         <pre id="currentQuestion">No question yet.</pre>
       </div>
 
       <div class="section">
-        <h2>Answer</h2>
+        <h3>Answer</h3>
         <textarea id="answerText" rows="8" placeholder="Answer text"></textarea>
-        <div>
-          <button id="saveAnswerBtn">Save Answer</button>
-          <button id="generateNextBtn">Generate Next</button>
-        </div>
+        <button id="saveAnswerBtn">Save Answer</button>
+        <button id="generateNextBtn">Generate Next</button>
       </div>
 
       <div class="section">
-        <h2>Human Review</h2>
-        <div class="row">
-          <select id="reviewVerdict">
-            <option value="">No verdict</option>
-            <option value="sufficient">Sufficient</option>
-            <option value="insufficient">Insufficient</option>
-            <option value="drifted">Drifted</option>
-          </select>
-          <select id="reviewDirection">
-            <option value="continue">Continue</option>
-            <option value="redirect">Redirect</option>
-          </select>
-        </div>
+        <h3>Human Review</h3>
+        <select id="reviewVerdict">
+          <option value="">No verdict</option>
+          <option value="sufficient">Sufficient</option>
+          <option value="insufficient">Insufficient</option>
+          <option value="drifted">Drifted</option>
+        </select>
+        <select id="reviewDirection">
+          <option value="continue">Continue</option>
+          <option value="redirect">Redirect</option>
+        </select>
         <input id="preferredNextFocus" placeholder="Preferred next focus" />
         <textarea id="reviewNote" rows="4" placeholder="Human note"></textarea>
         <button id="regenerateBtn">Regenerate Current Question</button>
       </div>
 
       <div class="section">
-        <h2>Run Trace</h2>
+        <h3>Run Trace</h3>
         <pre id="runTrace">No run data.</pre>
       </div>
 
       <div class="section">
-        <h2>Recent Transcript</h2>
+        <h3>Recent Transcript</h3>
         <div id="turns"></div>
       </div>
     </div>
 
     <div id="configTab" style="display:none">
       <div class="section">
-        <h2>Config Paths</h2>
+        <h3>Runtime</h3>
         <div id="configPaths" class="muted">No config loaded.</div>
+        <input id="opencodeConfigPath" placeholder="Custom opencode.json path" />
+        <button id="restartBackendBtn">Restart Backend</button>
       </div>
       <div class="section">
-        <h2>OpenCode Mindflow → Anthropic</h2>
+        <h3>OpenCode Mindflow → Anthropic</h3>
         <input id="mindflowBaseUrl" placeholder="Mindflow base URL" />
         <input id="mindflowApiKey" type="password" placeholder="Mindflow api key" />
         <div id="effectiveAnthropic" class="muted"></div>
         <button id="saveConfigBtn">Save Config</button>
       </div>
       <div class="section">
-        <h2>.env Editor</h2>
+        <h3>.env Editor</h3>
         <table>
           <thead><tr><th>Key</th><th>Value</th></tr></thead>
           <tbody id="envTableBody"></tbody>
@@ -318,6 +313,7 @@ export class InterviewPanelProvider {
         answerProviderType: document.getElementById('answerProviderType'),
         answerAutomationEnabled: document.getElementById('answerAutomationEnabled'),
         systemPrompt: document.getElementById('systemPrompt'),
+        backendStatus: document.getElementById('backendStatus'),
         statusSummary: document.getElementById('statusSummary'),
         messageBox: document.getElementById('messageBox'),
         errorBox: document.getElementById('errorBox'),
@@ -330,6 +326,7 @@ export class InterviewPanelProvider {
         preferredNextFocus: document.getElementById('preferredNextFocus'),
         reviewNote: document.getElementById('reviewNote'),
         configPaths: document.getElementById('configPaths'),
+        opencodeConfigPath: document.getElementById('opencodeConfigPath'),
         mindflowBaseUrl: document.getElementById('mindflowBaseUrl'),
         mindflowApiKey: document.getElementById('mindflowApiKey'),
         effectiveAnthropic: document.getElementById('effectiveAnthropic'),
@@ -376,10 +373,12 @@ export class InterviewPanelProvider {
       document.getElementById('regenerateBtn').onclick = () => vscode.postMessage({ type: 'regenerateCurrent', ...reviewPayload() })
       document.getElementById('saveConfigBtn').onclick = () => vscode.postMessage({
         type: 'saveConfig',
+        opencodeConfigPath: els.opencodeConfigPath.value,
         mindflowBaseUrl: els.mindflowBaseUrl.value,
         mindflowApiKey: els.mindflowApiKey.value,
         envEntries: collectEnvEntries(),
       })
+      document.getElementById('restartBackendBtn').onclick = () => vscode.postMessage({ type: 'restartBackend' })
       els.projectSelect.onchange = () => vscode.postMessage({ type: 'selectProject', projectId: Number(els.projectSelect.value) })
 
       window.addEventListener('message', (event) => {
@@ -393,6 +392,7 @@ export class InterviewPanelProvider {
 
         const turns = payload.turns || []
         const latestTurn = turns.length ? turns[turns.length - 1] : null
+        els.backendStatus.textContent = 'Backend: ' + (payload.backendStatus || 'unknown')
         els.currentQuestion.textContent = latestTurn?.question_text || 'No question yet.'
         els.answerText.value = latestTurn?.answer_text || ''
         els.statusSummary.textContent = payload.status
@@ -406,6 +406,7 @@ export class InterviewPanelProvider {
         els.turns.innerHTML = turns.slice(-5).map((turn) => '<div class="turn"><strong>Q' + turn.turn_no + '</strong><pre>' + escapeHtml(turn.question_text || '') + '</pre><div class="muted">Answer</div><pre>' + escapeHtml(turn.answer_text || '') + '</pre></div>').join('') || '<div class="muted">No turns yet.</div>'
 
         const config = payload.config
+        els.opencodeConfigPath.value = payload.configuredOpencodePath || ''
         if (config) {
           els.configPaths.textContent = 'OpenCode: ' + config.paths.opencode_config + ' | .env: ' + config.paths.env_file
           els.mindflowBaseUrl.value = config.opencode_mindflow.base_url || ''
