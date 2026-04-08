@@ -1,4 +1,30 @@
 import * as vscode from 'vscode'
+import { getRuntimeApiBaseUrl } from './extension'
+
+export type ConfigSnapshot = {
+  paths: {
+    opencode_config: string
+    env_file: string
+  }
+  opencode_mindflow: {
+    base_url?: string | null
+    api_key_masked: string
+    has_api_key: boolean
+    source?: string | null
+  }
+  effective_anthropic: {
+    base_url?: string | null
+    api_key_masked: string
+    has_api_key: boolean
+    source?: string | null
+  }
+  env_entries: Array<{
+    key: string
+    value: string
+    is_secret: boolean
+    has_value: boolean
+  }>
+}
 
 export type HumanReviewInput = {
   verdict?: 'sufficient' | 'insufficient' | 'drifted' | null
@@ -12,13 +38,22 @@ export type NextQuestionPayload = {
 }
 
 function getApiBaseUrl() {
+  const runtimeUrl = getRuntimeApiBaseUrl()
+  if (runtimeUrl) {
+    return runtimeUrl
+  }
   return vscode.workspace
     .getConfiguration('statefulInterview')
-    .get<string>('apiBaseUrl', 'http://127.0.0.1:8000')
+    .get<string>('apiBaseUrl', '')
+    .trim()
 }
 
 async function request<T>(path: string, init?: RequestInit): Promise<T> {
-  const response = await fetch(`${getApiBaseUrl()}${path}`, init)
+  const baseUrl = getApiBaseUrl()
+  if (!baseUrl) {
+    throw new Error('Backend is not available yet.')
+  }
+  const response = await fetch(`${baseUrl}${path}`, init)
   if (!response.ok) {
     const data = await response.json().catch(() => null)
     throw new Error(data?.detail ?? `Request failed with status ${response.status}`)
@@ -94,6 +129,26 @@ export async function autoStep(projectId: number, payload?: NextQuestionPayload)
       human_review: payload?.human_review ?? null,
       human_gate: null,
     }),
+  })
+}
+
+export async function getConfigSnapshot() {
+  return request<ConfigSnapshot>('/config')
+}
+
+export async function updateOpencodeMindflow(payload: { base_url?: string | null; api_key?: string | null }) {
+  return request<ConfigSnapshot>('/config/opencode-mindflow', {
+    method: 'PATCH',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(payload),
+  })
+}
+
+export async function updateEnvEntries(entries: Array<{ key: string; value: string }>) {
+  return request<ConfigSnapshot>('/config/env', {
+    method: 'PATCH',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ entries }),
   })
 }
 

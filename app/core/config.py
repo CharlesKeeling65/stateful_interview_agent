@@ -21,6 +21,7 @@ class Settings(BaseSettings):
     openai_embedding_model: str | None = None
 
     anthropic_api_key: str = ""
+    anthropic_base_url: str | None = None
     anthropic_model: str = "claude-sonnet-4-5"
     anthropic_max_tokens: int = 4096
 

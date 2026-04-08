@@ -7,7 +7,7 @@ from app.core.llm_providers.openai_provider import OpenAICompatibleProvider
 
 def get_llm_provider() -> LLMProvider:
     provider_name = settings.llm_provider
-    if provider_name == "anthropic":
+    if provider_name in {"anthropic", "mindflow"}:
         return AnthropicProvider()
     if provider_name == "opencode":
         return OpenCodeProvider()

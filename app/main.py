@@ -4,6 +4,7 @@ import uuid
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
+from app.api.routes.config import router as config_router
 from app.api.routes.debug import router as debug_router
 from app.api.routes.projects import router as project_router
 from app.core.config import settings
@@ -84,3 +85,4 @@ def health_check():
 
 app.include_router(project_router)
 app.include_router(debug_router)
+app.include_router(config_router)
