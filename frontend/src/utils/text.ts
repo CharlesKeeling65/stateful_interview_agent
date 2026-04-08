@@ -60,7 +60,9 @@ export function normalizeAnswerText(value: string | null | undefined) {
     return ''
   }
 
-  return trimParagraphSpacing(stripMarkdownArtifacts(normalizeLineEndings(value)))
+  return trimParagraphSpacing(
+    stripMarkdownArtifacts(normalizeLineEndings(value)),
+  ).replace(/^\s*(?:Q|Question)\s*\d+\s*[:：]\s*/i, '')
 }
 
 export function buildQuestionVersionDiff(previousText: string, nextText: string) {

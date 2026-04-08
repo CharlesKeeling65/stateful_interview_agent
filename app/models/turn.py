@@ -57,6 +57,12 @@ class InterviewTurn(Base):
         return strip_question_prefix(self.question_text)
 
     @property
+    def answer_text_for_display(self) -> str | None:
+        if self.answer_text is None:
+            return None
+        return strip_question_prefix(self.answer_text)
+
+    @property
     def human_review(self) -> dict | None:
         if not self.human_review_json:
             return None

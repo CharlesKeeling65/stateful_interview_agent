@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 
-import { buildQuestionVersionDiff } from './text'
+import { buildQuestionVersionDiff, normalizeAnswerText } from './text'
 
 describe('buildQuestionVersionDiff', () => {
   it('detects unchanged text', () => {
@@ -26,5 +26,28 @@ describe('buildQuestionVersionDiff', () => {
     expect(diff.before).toContain('core')
     expect(diff.after).toContain('user-facing')
     expect(diff.sharedSuffix).toContain(' end to end?')
+  })
+})
+
+describe('normalizeAnswerText', () => {
+  it('strips question-number prefixes from answers', () => {
+    expect(normalizeAnswerText('Q1: The app starts in app/main.py')).toBe(
+      'The app starts in app/main.py',
+    )
+    expect(normalizeAnswerText('Question 12: It loads config first.')).toBe(
+      'It loads config first.',
+    )
+    expect(normalizeAnswerText('**Q1:** The app starts in app/main.py')).toBe(
+      'The app starts in app/main.py',
+    )
+    expect(normalizeAnswerText('Q1：The app starts in app/main.py')).toBe(
+      'The app starts in app/main.py',
+    )
+    expect(normalizeAnswerText('Q 2: The app starts in app/main.py')).toBe(
+      'The app starts in app/main.py',
+    )
+    expect(normalizeAnswerText('**Question 2：** The app starts in app/main.py')).toBe(
+      'The app starts in app/main.py',
+    )
   })
 })

@@ -13,6 +13,7 @@ const turn: TurnRead = {
   question_text: 'Q19: Which modules coordinate the request path?',
   question_text_for_copy: 'Which modules coordinate the request path?',
   answer_text: null,
+  answer_text_for_display: null,
   answer_summary: null,
   answer_analysis: null,
   human_review: {
@@ -64,7 +65,8 @@ describe('TurnCard', () => {
         t={createTranslator('en')}
         turn={{
           ...turn,
-          answer_text: 'The API gateway hands requests to auth and orchestration services.',
+          answer_text: 'Q1: The API gateway hands requests to auth and orchestration services.',
+          answer_text_for_display: 'The API gateway hands requests to auth and orchestration services.',
           answer_summary: 'API gateway routes to auth and orchestration services.',
           answer_analysis: {
             stage_focus: 'Architecture Understanding',
@@ -81,6 +83,8 @@ describe('TurnCard', () => {
     )
 
     expect(screen.getByText('Saved answer memory')).toBeInTheDocument()
+    expect(screen.getByText('The API gateway hands requests to auth and orchestration services.')).toBeInTheDocument()
+    expect(screen.queryByText(/^Q1:/)).not.toBeInTheDocument()
     expect(screen.getByText('Core workflow path: API gateway -> auth service -> orchestration service.')).toBeInTheDocument()
     expect(screen.getByText('RAG chunks: 1')).toBeInTheDocument()
   })

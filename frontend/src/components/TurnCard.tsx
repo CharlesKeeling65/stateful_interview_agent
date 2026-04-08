@@ -45,7 +45,7 @@ export const TurnCard = memo(function TurnCard({
   turn,
 }: TurnCardProps) {
   const normalizedQuestion = normalizeQuestionText(turn.question_text)
-  const normalizedAnswer = normalizeAnswerText(turn.answer_text)
+  const normalizedAnswer = normalizeAnswerText(turn.answer_text_for_display ?? turn.answer_text)
   const waitingForAnswer = !turn.answer_text
   const usageByOperation = summarizeOperationUsage(turn)
   const shouldCollapseAnswer =
