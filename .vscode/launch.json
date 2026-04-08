@@ -14,5 +14,12 @@
       ],
       "preLaunchTask": "build-vscode-extension"
     }
+  ],
+  "compounds": [
+    {
+      "name": "Build and Run Sidebar Extension",
+      "configurations": ["Run VSCode Extension"],
+      "preLaunchTask": "bundle-vscode-backend"
+    }
   ]
 }

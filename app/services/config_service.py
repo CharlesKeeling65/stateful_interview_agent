@@ -8,10 +8,14 @@ PROJECT_ROOT = Path(__file__).resolve().parents[2]
 ENV_FILE_PATH = PROJECT_ROOT / ".env"
 PRIMARY_OPENCODE_CONFIG_PATH = Path.home() / ".config" / "opencode.json"
 FALLBACK_OPENCODE_CONFIG_PATH = Path.home() / ".config" / "opencode" / "opencode.json"
+OPENCODE_CONFIG_ENV_VAR = "STATEFUL_INTERVIEW_OPENCODE_CONFIG_PATH"
 SECRET_MARKER = "••••••••"
 
 
 def get_opencode_config_path() -> Path:
+    configured_path = os.getenv(OPENCODE_CONFIG_ENV_VAR, "").strip()
+    if configured_path:
+        return Path(configured_path).expanduser().resolve()
     if PRIMARY_OPENCODE_CONFIG_PATH.exists():
         return PRIMARY_OPENCODE_CONFIG_PATH
     return FALLBACK_OPENCODE_CONFIG_PATH

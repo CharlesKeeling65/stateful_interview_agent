@@ -1,4 +1,5 @@
 import * as vscode from 'vscode'
+import { getRuntimeApiBaseUrl } from './extension'
 
 export type ConfigSnapshot = {
   paths: {
@@ -37,13 +38,22 @@ export type NextQuestionPayload = {
 }
 
 function getApiBaseUrl() {
+  const runtimeUrl = getRuntimeApiBaseUrl()
+  if (runtimeUrl) {
+    return runtimeUrl
+  }
   return vscode.workspace
     .getConfiguration('statefulInterview')
-    .get<string>('apiBaseUrl', 'http://127.0.0.1:8000')
+    .get<string>('apiBaseUrl', '')
+    .trim()
 }
 
 async function request<T>(path: string, init?: RequestInit): Promise<T> {
-  const response = await fetch(`${getApiBaseUrl()}${path}`, init)
+  const baseUrl = getApiBaseUrl()
+  if (!baseUrl) {
+    throw new Error('Backend is not available yet.')
+  }
+  const response = await fetch(`${baseUrl}${path}`, init)
   if (!response.ok) {
     const data = await response.json().catch(() => null)
     throw new Error(data?.detail ?? `Request failed with status ${response.status}`)

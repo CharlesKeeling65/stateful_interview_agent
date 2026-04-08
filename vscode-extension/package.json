@@ -7,29 +7,47 @@
     "vscode": "^1.96.0"
   },
   "activationEvents": [
-    "onCommand:statefulInterview.openPanel"
+    "onView:statefulInterview.sidebarView"
   ],
   "main": "./dist/extension.js",
   "contributes": {
-    "commands": [
-      {
-        "command": "statefulInterview.openPanel",
-        "title": "Stateful Interview: Open Panel"
-      }
-    ],
+    "viewsContainers": {
+      "activitybar": [
+        {
+          "id": "statefulInterview",
+          "title": "Interview",
+          "icon": "media/interview.svg"
+        }
+      ]
+    },
+    "views": {
+      "statefulInterview": [
+        {
+          "type": "webview",
+          "id": "statefulInterview.sidebarView",
+          "name": "Interview Agent"
+        }
+      ]
+    },
     "configuration": {
       "title": "Stateful Interview Agent",
       "properties": {
         "statefulInterview.apiBaseUrl": {
           "type": "string",
-          "default": "http://127.0.0.1:8000",
-          "description": "Base URL for the Stateful Interview Agent backend API."
+          "default": "",
+          "description": "Optional override for the backend API base URL. Leave empty to use the bundled backend."
+        },
+        "statefulInterview.opencodeConfigPath": {
+          "type": "string",
+          "default": "",
+          "description": "Path to the opencode.json file used to resolve mindflow Anthropic settings."
         }
       }
     }
   },
   "scripts": {
-    "build": "tsc -p ./tsconfig.json"
+    "bundle-backend": "node ./scripts/bundle-backend.js",
+    "build": "npm run bundle-backend && tsc -p ./tsconfig.json"
   },
   "devDependencies": {
     "@types/node": "^24.12.0",
