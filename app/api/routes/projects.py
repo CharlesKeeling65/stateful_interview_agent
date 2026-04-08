@@ -25,6 +25,7 @@ from app.schemas.run_trace import RunRead
 from app.schemas.turn import (
     AnswerSubmitRequest,
     AnswerSubmitResponse,
+    AnswerWithdrawResponse,
     CurrentQuestionRegenerateRequest,
     CurrentQuestionRegenerateResponse,
     NextQuestionRequest,
@@ -306,6 +307,74 @@ def submit_answer(
         "updated_turn": latest_turn,
         "can_generate_next": True,
         "message": "Answer saved. You can now generate the next question separately.",
+    }
+
+
+@router.post("/{project_id}/withdraw-answer", response_model=AnswerWithdrawResponse)
+def withdraw_answer(project_id: int, db: Session = Depends(get_db)):
+    bind_log_context(project_id=project_id)
+    project = db.query(ProjectSession).filter(ProjectSession.id == project_id).first()
+    if not project:
+        raise HTTPException(status_code=404, detail="Project not found")
+
+    latest_turn = (
+        db.query(InterviewTurn)
+        .filter(InterviewTurn.project_id == project_id)
+        .order_by(InterviewTurn.turn_no.desc())
+        .first()
+    )
+    if not latest_turn:
+        raise HTTPException(status_code=400, detail="Project interview has not started")
+
+    if latest_turn.answer_text is None:
+        raise HTTPException(status_code=400, detail="Latest turn has no answer to withdraw")
+
+    next_turn = (
+        db.query(InterviewTurn)
+        .filter(
+            InterviewTurn.project_id == project_id,
+            InterviewTurn.turn_no > latest_turn.turn_no,
+        )
+        .order_by(InterviewTurn.turn_no.asc())
+        .first()
+    )
+    if next_turn is not None:
+        raise HTTPException(
+            status_code=400,
+            detail="Cannot withdraw answer: next question already generated. Delete the next turn first.",
+        )
+
+    latest_turn.answer_text = None
+    latest_turn.answer_summary = None
+    latest_turn.answer_analysis_json = None
+
+    turns = (
+        db.query(InterviewTurn)
+        .filter(InterviewTurn.project_id == project_id)
+        .order_by(InterviewTurn.turn_no.asc())
+        .all()
+    )
+    refreshed_coverage_state = rebuild_coverage_state(turns)
+    save_coverage_state(project, refreshed_coverage_state)
+
+    db.commit()
+    db.refresh(latest_turn)
+
+    emit_event(
+        "persistence",
+        "turn.answer.withdrawn",
+        "Withdrawn answer from latest turn",
+        operation="withdraw_answer",
+        status="success",
+        project_id=project_id,
+        turn_no=latest_turn.turn_no,
+        stage=latest_turn.stage,
+    )
+
+    return {
+        "project_id": project_id,
+        "withdrawn_turn": latest_turn,
+        "message": "Answer withdrawn. The turn is now ready for a new answer.",
     }
 
 

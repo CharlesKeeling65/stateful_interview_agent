@@ -171,4 +171,10 @@ class CurrentQuestionRegenerateResponse(BaseModel):
     message: str
 
 
+class AnswerWithdrawResponse(BaseModel):
+    project_id: int
+    withdrawn_turn: TurnRead
+    message: str
+
+
 TurnRead.model_rebuild()
