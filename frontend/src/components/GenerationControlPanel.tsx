@@ -20,6 +20,14 @@ type GenerationControlPanelProps = {
   savedAnswer?: string | null
   workingLabel?: string | null
   onGenerateNext: (payload?: NextQuestionRequestPayload) => Promise<void> | void
+  onOpenCodeSend?: () => Promise<void> | void
+  onOpenCodeRegenerateCurrentQuestion?: (humanReview: HumanReviewInput | null) => Promise<void> | void
+  onOpenCodeSkip?: () => void
+  opencodePlan?: {
+    enabled: boolean
+    sessionId?: string | null
+    pendingQuestionText: string
+  } | null
   t: Translator
 }
 
@@ -34,6 +42,10 @@ export function GenerationControlPanel({
   savedAnswer = null,
   workingLabel = null,
   onGenerateNext,
+  onOpenCodeSend,
+  onOpenCodeRegenerateCurrentQuestion,
+  onOpenCodeSkip,
+  opencodePlan = null,
   t,
 }: GenerationControlPanelProps) {
   const [reviewExpanded, setReviewExpanded] = useState(true)
@@ -65,6 +77,7 @@ export function GenerationControlPanel({
   const estimate = estimateDraftUsage(savedAnswer ?? '')
   const hasPendingGate = Boolean(pendingGate)
   const effectiveCanGenerateNext = hasPendingGate ? true : canGenerateNext
+  const showOpenCodePlan = Boolean(opencodePlan?.enabled && projectStarted && !projectFinished)
 
   function buildNextPayload(): NextQuestionRequestPayload {
     if (pendingGate) {
@@ -109,6 +122,58 @@ export function GenerationControlPanel({
         </button>
       </div>
 
+      {showOpenCodePlan && opencodePlan ? (
+        <div className="mt-4 rounded-[1.5rem] border border-indigo-200 bg-indigo-50/80 px-4 py-4">
+          <div className="flex flex-wrap items-start justify-between gap-3">
+            <div>
+              <p className="text-[0.64rem] font-semibold uppercase tracking-[0.22em] text-indigo-700">
+                {t('generation.opencodePlan')}
+              </p>
+              <p className="mt-2 text-sm leading-6 text-indigo-950">
+                {t('generation.opencodePlanHint')}
+              </p>
+            </div>
+            <span className="rounded-full bg-white px-3 py-1 text-xs font-medium text-indigo-700">
+              {opencodePlan.sessionId ?? t('generation.opencodeSessionPending')}
+            </span>
+          </div>
+
+          <div className="mt-4 rounded-[1.25rem] border border-indigo-100 bg-white px-4 py-4">
+            <p className="text-[0.64rem] font-semibold uppercase tracking-[0.18em] text-indigo-700">
+              {t('generation.currentQuestion')}
+            </p>
+            <p className="mt-2 text-sm leading-7 text-slate-800">{opencodePlan.pendingQuestionText}</p>
+          </div>
+
+          <div className="mt-4 flex flex-wrap gap-2">
+            <button
+              type="button"
+              className="rounded-full bg-indigo-700 px-4 py-2 text-sm font-medium text-white transition hover:bg-indigo-600 disabled:cursor-not-allowed disabled:bg-indigo-300"
+              onClick={() => void onOpenCodeSend?.()}
+              disabled={disabled}
+            >
+              {t('composer.sendToOpenCode')}
+            </button>
+            <button
+              type="button"
+              className="rounded-full border border-indigo-300 px-4 py-2 text-sm font-medium text-indigo-700 transition hover:bg-white disabled:cursor-not-allowed disabled:text-indigo-300"
+              onClick={() => void onOpenCodeRegenerateCurrentQuestion?.(buildHumanReviewSignal())}
+              disabled={disabled}
+            >
+              {t('generation.regenerateCurrentQuestion')}
+            </button>
+            <button
+              type="button"
+              className="rounded-full border border-slate-300 px-4 py-2 text-sm font-medium text-slate-700 transition hover:bg-white disabled:cursor-not-allowed disabled:text-slate-400"
+              onClick={onOpenCodeSkip}
+              disabled={disabled}
+            >
+              {t('composer.skipRound')}
+            </button>
+          </div>
+        </div>
+      ) : null}
+
       {pendingGate ? (
         <div className="mt-4 rounded-[1.5rem] border border-amber-200 bg-amber-50/80 px-4 py-4">
           <p className="text-[0.64rem] font-semibold uppercase tracking-[0.22em] text-amber-700">
@@ -139,7 +204,7 @@ export function GenerationControlPanel({
               </span>
               <input
                 className="mt-2 w-full rounded-2xl border border-amber-200 bg-white px-3 py-2.5 outline-none focus:border-amber-500 focus:ring-2 focus:ring-amber-200"
-                placeholder={locale === 'zh-CN' ? '可选：下一问聚焦点' : 'Optional next focus'}
+                placeholder={locale === 'zh-CN' ? '可选：下一问聚焦点' : 'Optional next-question focus'}
                 value={gateFocus}
                 onChange={(event) => setGateFocus(event.target.value)}
               />
@@ -150,7 +215,7 @@ export function GenerationControlPanel({
               </span>
               <textarea
                 className="mt-2 min-h-24 w-full rounded-[1.25rem] border border-amber-200 bg-white px-3 py-3 outline-none focus:border-amber-500 focus:ring-2 focus:ring-amber-200"
-                placeholder={locale === 'zh-CN' ? '记录你的判断或重定向理由' : 'Capture the decision or redirection rationale'}
+                placeholder={t('composer.noteHint')}
                 value={gateNote}
                 onChange={(event) => setGateNote(event.target.value)}
               />
@@ -163,7 +228,7 @@ export function GenerationControlPanel({
         <button
           type="button"
           className="flex w-full items-center justify-between gap-3 px-4 py-4 text-left"
-          onClick={() => setReviewExpanded((current) => !current)}
+          onClick={() => setReviewExpanded((value) => !value)}
         >
           <div>
             <p className="text-[0.64rem] font-semibold uppercase tracking-[0.22em] text-slate-500">
@@ -185,9 +250,7 @@ export function GenerationControlPanel({
               <select
                 className="mt-2 w-full rounded-2xl border border-slate-200 bg-slate-50 px-3 py-2.5 outline-none focus:border-amber-500 focus:ring-2 focus:ring-amber-200"
                 value={reviewVerdict}
-                onChange={(event) =>
-                  setReviewVerdict(event.target.value as '' | 'sufficient' | 'insufficient' | 'drifted')
-                }
+                onChange={(event) => setReviewVerdict(event.target.value as '' | 'sufficient' | 'insufficient' | 'drifted')}
               >
                 <option value="">{t('composer.noExplicitReview')}</option>
                 <option value="sufficient">{locale === 'zh-CN' ? '信息充分' : 'Sufficient'}</option>
@@ -297,7 +360,7 @@ export function GenerationControlPanel({
           ? t('composer.finishedHint')
           : !projectStarted
             ? t('composer.lockedHint')
-            : effectiveCanGenerateNext
+            : effectiveCanGenerateNext || showOpenCodePlan
               ? t('generation.readyHint')
               : t('generation.lockedHint')}
       </p>

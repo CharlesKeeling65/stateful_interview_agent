@@ -1,6 +1,7 @@
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 
 import type { Locale, Translator } from '../i18n'
+import { normalizeAnswerText } from '../utils/text'
 import { formatTokenCount } from '../utils/tokens'
 
 type AnswerComposerProps = {
@@ -32,7 +33,11 @@ export function AnswerComposer({
   workingLabel = null,
   t,
 }: AnswerComposerProps) {
-  const [answer, setAnswer] = useState(initialAnswer ?? '')
+  const [answer, setAnswer] = useState(normalizeAnswerText(initialAnswer ?? ''))
+
+  useEffect(() => {
+    setAnswer(normalizeAnswerText(initialAnswer ?? ''))
+  }, [initialAnswer])
 
   async function handleSave() {
     if (!answer.trim()) {

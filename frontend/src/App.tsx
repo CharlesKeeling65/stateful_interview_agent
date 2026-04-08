@@ -30,6 +30,7 @@ function App() {
     projects,
     regenerateCurrentQuestion,
     runs,
+    runOpenCodePlanStep,
     saveAnswer,
     selectProject,
     startProject,
@@ -46,6 +47,7 @@ function App() {
   const [exportLabel, setExportLabel] = useState<string | null>(null)
   const [latestQuestionCopyLabel, setLatestQuestionCopyLabel] = useState<string | null>(null)
   const [projectPendingDelete, setProjectPendingDelete] = useState<ProjectRead | null>(null)
+  const [skippedOpencodeTurnId, setSkippedOpencodeTurnId] = useState<number | null>(null)
   const t = useMemo(() => createTranslator(locale), [locale])
 
   useEffect(() => {
@@ -121,6 +123,7 @@ function App() {
     creating: `${t('sidebar.createProject')}...`,
     starting: `${t('status.start')}...`,
     saving_answer: `${t('composer.saveAnswer')}...`,
+    sending_opencode: `${t('composer.sendToOpenCode')}...`,
     generating_next: `${t('status.generating')}`,
     regenerating: `${t('status.regeneratingCurrent')}`,
     updating: `${t('sidebar.save')}...`,
@@ -131,6 +134,23 @@ function App() {
   const workingLabel = busyAction ? workingLabelMap[busyAction] : null
   const infoMessage = lastMessageKey ? t(lastMessageKey as Parameters<typeof t>[0]) : ''
   const latestTurn = turns[turns.length - 1] ?? null
+  const opencodePlanEnabled = Boolean(
+    project &&
+    project.answer_provider_type === 'opencode' &&
+    latestTurn &&
+    !latestTurn.answer_text &&
+    latestTurn.id !== skippedOpencodeTurnId,
+  )
+
+  useEffect(() => {
+    if (!latestTurn || latestTurn.answer_text) {
+      setSkippedOpencodeTurnId(null)
+      return
+    }
+    if (latestTurn.id !== skippedOpencodeTurnId) {
+      setSkippedOpencodeTurnId(null)
+    }
+  }, [latestTurn?.id, latestTurn?.answer_text])
   const overviewStats = [
     {
       label: t('app.activeSession'),
@@ -245,15 +265,15 @@ function App() {
               <div className="grid gap-4 xl:grid-cols-[minmax(0,1.45fr)_minmax(22rem,0.95fr)]">
                 <div className="flex min-h-0 flex-col gap-4">
                   <AnswerComposer
-                    key={`${project?.id ?? 'no-project'}-${latestTurn?.id ?? 'no-turn'}-${latestTurn?.answer_text ?? ''}`}
+                    key={`${project?.id ?? 'no-project'}-${latestTurn?.id ?? 'no-turn'}-${latestTurn?.answer_text_for_display ?? latestTurn?.answer_text ?? ''}`}
                     estimateDraftUsage={estimateDraftUsage}
-                    initialAnswer={latestTurn?.answer_text ?? ''}
+                    initialAnswer={latestTurn?.answer_text_for_display ?? latestTurn?.answer_text ?? ''}
                     locale={locale}
                     onSave={saveAnswer}
                     disabled={loading || !project || !projectStarted || projectFinished}
                     projectFinished={projectFinished}
                     projectStarted={projectStarted}
-                    savedAnswer={latestTurn?.answer_text ?? null}
+                    savedAnswer={latestTurn?.answer_text_for_display ?? latestTurn?.answer_text ?? null}
                     workingLabel={busyAction === 'saving_answer' ? workingLabel : null}
                     t={t}
                   />
@@ -264,11 +284,28 @@ function App() {
                     estimateDraftUsage={estimateDraftUsage}
                     locale={locale}
                     onGenerateNext={submitNext}
+                    onOpenCodeSend={async () => {
+                      setSkippedOpencodeTurnId(null)
+                      await runOpenCodePlanStep(null)
+                    }}
+                    onOpenCodeRegenerateCurrentQuestion={async (humanReview) => {
+                      if (!latestTurn) {
+                        return
+                      }
+                      setSkippedOpencodeTurnId(null)
+                      await regenerateCurrentQuestion(latestTurn.id, humanReview)
+                    }}
+                    onOpenCodeSkip={() => latestTurn ? setSkippedOpencodeTurnId(latestTurn.id) : undefined}
+                    opencodePlan={opencodePlanEnabled && latestTurn ? {
+                      enabled: true,
+                      pendingQuestionText: latestTurn.question_text_for_copy,
+                      sessionId: project?.opencode_session_id ?? null,
+                    } : null}
                     pendingGate={project?.pending_gate ?? null}
                     projectFinished={projectFinished}
                     projectStarted={projectStarted}
                     savedAnswer={latestTurn?.answer_text ?? null}
-                    workingLabel={busyAction === 'generating_next' ? workingLabel : null}
+                    workingLabel={busyAction === 'generating_next' || busyAction === 'sending_opencode' ? workingLabel : null}
                     t={t}
                   />
 

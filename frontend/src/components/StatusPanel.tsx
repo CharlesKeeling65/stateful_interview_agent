@@ -205,6 +205,10 @@ export function StatusPanel({
               label={t('status.repoSymbols')}
               value={String(project.repository_manifest.symbol_count ?? 0)}
             />
+            <StatusItem
+              label={locale === 'zh-CN' ? 'OpenCode Session' : 'OpenCode Session'}
+              value={project.opencode_session_id ?? (locale === 'zh-CN' ? '未创建' : 'Not created')}
+            />
             {project.rubric_task_board_summary ? (
               <>
                 <StatusItem

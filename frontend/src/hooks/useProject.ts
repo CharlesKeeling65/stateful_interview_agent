@@ -5,6 +5,7 @@ import {
   autoStep,
   createProject,
   deleteProject,
+  ensureOpenCodeSession,
   getProject,
   getLatestProjectRun,
   getProjectRuns,
@@ -13,6 +14,7 @@ import {
   getProjectTurns,
   listProjects,
   regenerateCurrentQuestion,
+  runOpenCodePlanStep,
   submitAnswer,
   startProject,
   submitNext,
@@ -49,6 +51,7 @@ export type BusyAction =
   | 'creating'
   | 'starting'
   | 'saving_answer'
+  | 'sending_opencode'
   | 'generating_next'
   | 'regenerating'
   | 'updating'
@@ -195,6 +198,9 @@ export function useProject() {
     await handleCreateProject({
       project_name: demoName,
       system_prompt: DEFAULT_SYSTEM_PROMPT,
+      agent_mode: 'understand_current_code',
+      answer_provider_type: 'opencode',
+      answer_automation_enabled: true,
     })
   }
 
@@ -267,6 +273,59 @@ export function useProject() {
       await refreshSelected(project.id)
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Unable to auto-answer the latest question.')
+    } finally {
+      setBusyAction(null)
+      setLoading(false)
+    }
+  }
+
+  async function handleEnsureOpenCodeSession() {
+    if (!project) {
+      return null
+    }
+
+    setBusyAction('sending_opencode')
+    setLoading(true)
+    setError('')
+
+    try {
+      const result = await ensureOpenCodeSession(project.id)
+      startTransition(() => {
+        setLastMessageKey(result.created ? 'status.opencodeSessionCreated' : 'status.opencodeSessionReady')
+      })
+      await refreshSelected(project.id)
+      return result
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Unable to prepare the OpenCode session.')
+      return null
+    } finally {
+      setBusyAction(null)
+      setLoading(false)
+    }
+  }
+
+  async function handleRunOpenCodePlanStep(humanReview?: HumanReviewInput | null) {
+    if (!project) {
+      return
+    }
+
+    setBusyAction('sending_opencode')
+    setLoading(true)
+    setError('')
+    setLastMessageKey('status.opencodeSending')
+    setLastRegenerationFeedback(null)
+
+    try {
+      const result = await runOpenCodePlanStep(project.id, {
+        human_review: humanReview ?? null,
+      })
+      startTransition(() => {
+        setProject(result.project)
+        setLastMessageKey(result.interview_finished ? 'status.finished' : 'status.opencodeAnswered')
+      })
+      await refreshSelected(project.id)
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Unable to send the question to OpenCode.')
     } finally {
       setBusyAction(null)
       setLoading(false)
@@ -605,6 +664,8 @@ export function useProject() {
     selectProject,
     startProject: handleStart,
     saveAnswer: handleSaveAnswer,
+    ensureOpenCodeSession: handleEnsureOpenCodeSession,
+    runOpenCodePlanStep: handleRunOpenCodePlanStep,
     autoAnswerLatest: handleAutoAnswerLatest,
     submitNext: handleGenerateNext,
     autoStep: handleAutoStep,

@@ -209,6 +209,7 @@ export type TurnRead = {
   question_text: string
   question_text_for_copy: string
   answer_text: string | null
+  answer_text_for_display?: string | null
   answer_summary: string | null
   answer_analysis?: AnswerAnalysisRead | null
   human_review: HumanReviewInput | null
@@ -291,6 +292,8 @@ export type CreateProjectPayload = {
     git_ref?: string | null
   }
   agent_mode?: string
+  answer_provider_type?: string
+  answer_automation_enabled?: boolean
 }
 
 export type UpdateProjectPayload = {
@@ -334,5 +337,28 @@ export type CurrentQuestionRegenerateResponse = {
     regeneration_count_before: number
     regeneration_count_after: number
   }
+  message: string
+}
+
+export type OpenCodeSessionResponse = {
+  project_id: number
+  session_id: string
+  created: boolean
+  mode: string
+}
+
+export type OpenCodePlanStepPayload = {
+  human_review?: HumanReviewInput | null
+}
+
+export type OpenCodePlanStepResponse = {
+  project: ProjectRead
+  answered_turn: TurnRead
+  next_turn: TurnRead | null
+  session_id: string
+  answer_text: string
+  interview_finished: boolean
+  minimum_goal_reached: boolean
+  usage_summary: TokenUsageSummary
   message: string
 }

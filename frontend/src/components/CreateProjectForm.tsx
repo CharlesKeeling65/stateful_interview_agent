@@ -38,6 +38,9 @@ export function CreateProjectForm({
     void onCreate({
       project_name: projectName.trim(),
       system_prompt: systemPrompt.trim(),
+      agent_mode: 'understand_current_code',
+      answer_provider_type: 'opencode',
+      answer_automation_enabled: true,
       repository: {
         source_type: repoSourceType,
         local_path: repoSourceType === 'local_path' ? repoLocalPath.trim() || null : null,

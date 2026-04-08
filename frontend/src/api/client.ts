@@ -4,6 +4,9 @@ import type {
   CurrentQuestionRegenerateResponse,
   HumanReviewInput,
   NextQuestionRequestPayload,
+  OpenCodePlanStepPayload,
+  OpenCodePlanStepResponse,
+  OpenCodeSessionResponse,
   ProjectNextResponse,
   ProjectRead,
   ProjectStartResponse,
@@ -84,6 +87,22 @@ export async function autoStep(projectId: number, payload?: NextQuestionRequestP
     body: JSON.stringify({
       human_review: payload?.human_review ?? null,
       human_gate: payload?.human_gate ?? null,
+    }),
+  })
+}
+
+export async function ensureOpenCodeSession(projectId: number) {
+  return request<OpenCodeSessionResponse>(`/projects/${projectId}/opencode/session`, {
+    method: 'POST',
+  })
+}
+
+export async function runOpenCodePlanStep(projectId: number, payload?: OpenCodePlanStepPayload) {
+  return request<OpenCodePlanStepResponse>(`/projects/${projectId}/opencode/plan-step`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      human_review: payload?.human_review ?? null,
     }),
   })
 }
