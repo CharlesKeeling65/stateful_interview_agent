@@ -10,6 +10,3 @@ logs/
 .claude
 AGENTS.md
 CLAUDE.md
-vscode-extension/node_modules
-vscode-extension/dist
-vscode-extension/bundled/backend
