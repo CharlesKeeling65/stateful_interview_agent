@@ -3,13 +3,18 @@ from anthropic import Anthropic
 from app.core.config import settings
 from app.core.llm_providers.base import LLMProvider
 from app.core.llm_types import LLMGenerateResult, LLMUsageMetrics
+from app.services.config_service import resolve_effective_anthropic_config
 
 
 class AnthropicProvider(LLMProvider):
     provider_name = "anthropic"
 
     def __init__(self, client: Anthropic | None = None):
-        self.client = client or Anthropic(api_key=settings.anthropic_api_key)
+        effective_config = resolve_effective_anthropic_config()
+        self.client = client or Anthropic(
+            api_key=effective_config["api_key"] or settings.anthropic_api_key,
+            base_url=effective_config["base_url"] or settings.anthropic_base_url,
+        )
 
     def generate_text(
         self,
