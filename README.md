@@ -238,6 +238,43 @@ Frontend default URL:
 http://127.0.0.1:5173
 ```
 
+### 6. Start both backend and frontend together
+
+If you want one development entrypoint from the repo root, use:
+
+```bash
+uv run python main.py
+```
+
+This root-level `main.py` starts both:
+
+- the FastAPI backend with the current Python interpreter
+- the Vite frontend with `npm run dev`
+
+This is the safest way to run the project inside a `uv`-managed environment because:
+
+- `uv run python main.py` uses the project environment created by `uv sync`
+- the backend process inherits that same interpreter via `sys.executable`
+- you do not need to manually activate `.venv` first
+
+If you have already activated the environment yourself, this also works:
+
+```bash
+python main.py
+```
+
+or directly:
+
+```bash
+.venv/bin/python main.py
+```
+
+On Windows PowerShell, the equivalent is typically:
+
+```powershell
+uv run python .\main.py
+```
+
 ## Windows Packaging
 
 The project can now be packaged for Windows without requiring a preinstalled Python runtime.
