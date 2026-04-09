@@ -51,7 +51,24 @@ jobs:
         run: npm run build
 
       - name: Build Windows bundle
-        run: uv run pyinstaller packaging/windows/stateful_interview_agent.spec --noconfirm
+        shell: pwsh
+        run: |
+          $args = @(
+            "run", "pyinstaller",
+            "app/launcher.py",
+            "--name", "StatefulInterviewAgent",
+            "--onedir",
+            "--noconfirm",
+            "--paths", ".",
+            "--collect-submodules", "uvicorn",
+            "--add-data", "app/prompts/assets;app/prompts/assets"
+          )
+
+          if (Test-Path "frontend/dist") {
+            $args += @("--add-data", "frontend/dist;frontend/dist")
+          }
+
+          uv @args
 
       - name: Prepare distributable folder
         shell: pwsh
