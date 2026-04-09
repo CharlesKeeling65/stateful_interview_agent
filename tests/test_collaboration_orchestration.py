@@ -524,7 +524,7 @@ class StageGateTests(unittest.TestCase):
         )
 
         self.assertEqual(decision["next_stage"], "Code Detail Completion")
-        self.assertIn("hard-coded transition window", decision["reason"].lower())
+        self.assertIn("hard-gated", decision["reason"].lower())
 
     def test_stage_controller_blocks_wrap_up_until_scenario_contract_is_complete(self):
         coverage_state = {

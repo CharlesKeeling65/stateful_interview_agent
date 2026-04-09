@@ -98,6 +98,197 @@ class FrameworkCoverageTests(unittest.TestCase):
 
 
 class StageControllerTests(unittest.TestCase):
+    def test_stage_controller_reserves_final_two_turns_for_use_cases_under_42_turn_cap(self):
+        coverage_state = {
+            "framework": {
+                "panorama": {
+                    "purpose": True,
+                    "target_users": True,
+                    "boundaries": True,
+                    "major_modules": True,
+                    "high_level_workflow": True,
+                    "initial_module_relationships": True,
+                },
+                "architecture": {
+                    "architecture_style_or_organization": True,
+                    "module_responsibilities": True,
+                    "collaboration_mechanisms": True,
+                    "key_call_chains": True,
+                    "system_structure": True,
+                    "design_rationale_or_quality_attributes": True,
+                },
+                "code_detail": {
+                    "specific_files_count": 16,
+                    "specific_classes_count": 7,
+                    "specific_methods_count": 18,
+                    "execution_paths_count": 10,
+                    "library_usage_points_count": 5,
+                    "error_handling_points_count": 4,
+                    "protocol_implementation_points_count": 3,
+                    "state_management_points_count": 2,
+                },
+                "use_cases": {
+                    "representative_scenarios_count": 0,
+                    "actors_roles_count": 0,
+                    "input_output_patterns_count": 0,
+                    "boundary_conditions_count": 0,
+                    "extension_points_count": 0,
+                },
+                "human_collaboration": {},
+                "stage_turn_counts": {
+                    "Panorama Mapping": 2,
+                    "Architecture Understanding": 2,
+                    "Code Detail Completion": 35,
+                    "Use Cases & Scenarios": 0,
+                    "Final Wrap-up": 0,
+                },
+                "gaps": {
+                    "panorama": [],
+                    "architecture": [],
+                    "code_detail": [],
+                    "use_cases": ["representative_scenarios_count", "actors_roles_count"],
+                    "human_collaboration": [],
+                },
+                "wrap_up_ready": False,
+            }
+        }
+
+        decision_before_window = decide_next_stage(
+            next_turn_no=40,
+            coverage_state=coverage_state,
+            current_stage="Code Detail Completion",
+            max_turns=42,
+        )
+        self.assertEqual(decision_before_window["next_stage"], "Code Detail Completion")
+
+        coverage_state["framework"]["stage_turn_counts"]["Code Detail Completion"] = 36
+        decision_in_window = decide_next_stage(
+            next_turn_no=41,
+            coverage_state=coverage_state,
+            current_stage="Code Detail Completion",
+            max_turns=42,
+        )
+        self.assertEqual(decision_in_window["next_stage"], "Use Cases & Scenarios")
+
+    def test_stage_controller_uses_two_architecture_turns_before_code_detail(self):
+        coverage_state = {
+            "framework": {
+                "panorama": {
+                    "purpose": True,
+                    "target_users": True,
+                    "boundaries": True,
+                    "major_modules": True,
+                    "high_level_workflow": True,
+                    "initial_module_relationships": True,
+                },
+                "architecture": {
+                    "architecture_style_or_organization": True,
+                    "module_responsibilities": True,
+                    "collaboration_mechanisms": True,
+                    "key_call_chains": True,
+                    "system_structure": True,
+                    "design_rationale_or_quality_attributes": True,
+                },
+                "code_detail": {
+                    "specific_files_count": 0,
+                    "specific_classes_count": 0,
+                    "specific_methods_count": 0,
+                    "execution_paths_count": 0,
+                    "library_usage_points_count": 0,
+                    "error_handling_points_count": 0,
+                    "protocol_implementation_points_count": 0,
+                    "state_management_points_count": 0,
+                },
+                "use_cases": {},
+                "human_collaboration": {},
+                "stage_turn_counts": {
+                    "Panorama Mapping": 2,
+                    "Architecture Understanding": 2,
+                },
+                "gaps": {
+                    "panorama": [],
+                    "architecture": [],
+                    "code_detail": ["specific_files_count", "specific_methods_count"],
+                    "use_cases": [],
+                    "human_collaboration": [],
+                },
+                "wrap_up_ready": False,
+            }
+        }
+
+        decision = decide_next_stage(
+            next_turn_no=5,
+            coverage_state=coverage_state,
+            current_stage="Architecture Understanding",
+            max_turns=42,
+        )
+
+        self.assertEqual(decision["next_stage"], "Code Detail Completion")
+
+    def test_stage_controller_never_enters_wrap_up_for_43_turn_cap(self):
+        coverage_state = {
+            "framework": {
+                "panorama": {
+                    "purpose": True,
+                    "target_users": True,
+                    "boundaries": True,
+                    "major_modules": True,
+                    "high_level_workflow": True,
+                    "initial_module_relationships": True,
+                },
+                "architecture": {
+                    "architecture_style_or_organization": True,
+                    "module_responsibilities": True,
+                    "collaboration_mechanisms": True,
+                    "key_call_chains": True,
+                    "system_structure": True,
+                    "design_rationale_or_quality_attributes": True,
+                },
+                "code_detail": {
+                    "specific_files_count": 20,
+                    "specific_classes_count": 10,
+                    "specific_methods_count": 24,
+                    "execution_paths_count": 12,
+                    "library_usage_points_count": 8,
+                    "error_handling_points_count": 6,
+                    "protocol_implementation_points_count": 4,
+                    "state_management_points_count": 3,
+                },
+                "use_cases": {
+                    "representative_scenarios_count": 1,
+                    "actors_roles_count": 1,
+                    "input_output_patterns_count": 1,
+                    "boundary_conditions_count": 1,
+                    "extension_points_count": 0,
+                },
+                "human_collaboration": {},
+                "stage_turn_counts": {
+                    "Panorama Mapping": 2,
+                    "Architecture Understanding": 2,
+                    "Code Detail Completion": 37,
+                    "Use Cases & Scenarios": 1,
+                    "Final Wrap-up": 0,
+                },
+                "gaps": {
+                    "panorama": [],
+                    "architecture": [],
+                    "code_detail": [],
+                    "use_cases": [],
+                    "human_collaboration": [],
+                },
+                "wrap_up_ready": True,
+            }
+        }
+
+        decision = decide_next_stage(
+            next_turn_no=43,
+            coverage_state=coverage_state,
+            current_stage="Use Cases & Scenarios",
+            max_turns=43,
+        )
+
+        self.assertEqual(decision["next_stage"], "Use Cases & Scenarios")
+
     def test_stage_controller_stays_in_panorama_when_framework_gaps_remain(self):
         coverage_state = {
             "framework": {
@@ -293,7 +484,7 @@ class StageControllerTests(unittest.TestCase):
             human_review_signal={"preferred_next_focus": "use_case"},
         )
 
-        self.assertEqual(decision["next_stage"], "Use Cases & Scenarios")
+        self.assertEqual(decision["next_stage"], "Code Detail Completion")
 
     def test_stage_controller_stays_in_code_detail_before_hardcoded_turn_window_even_if_coverage_is_strong(self):
         coverage_state = {
@@ -369,7 +560,7 @@ class StageControllerTests(unittest.TestCase):
         self.assertEqual(decision["next_stage"], "Code Detail Completion")
         self.assertIn("hard-gated", decision["reason"].lower())
 
-    def test_stage_controller_for_45_turn_cap_blocks_use_cases_until_turn_35(self):
+    def test_stage_controller_for_45_turn_cap_keeps_code_detail_until_final_two_turns(self):
         coverage_state = {
             "framework": {
                 "panorama": {
@@ -442,10 +633,87 @@ class StageControllerTests(unittest.TestCase):
         )
 
         self.assertEqual(decision["next_stage"], "Code Detail Completion")
-        self.assertIn("turn 35", decision["reason"].lower())
+        self.assertIn("turn 43", decision["reason"].lower())
 
 
 class PlannerAndValidatorTests(unittest.TestCase):
+    def test_question_planner_switches_to_a_different_code_file_when_recent_file_was_covered(self):
+        coverage_state = {
+            "branches": [
+                {
+                    "branch_id": "projects_route",
+                    "label": "app/api/routes/projects.py request flow",
+                    "stage": "Code Detail Completion",
+                    "status": "needs_follow_up",
+                    "priority": 0.95,
+                    "keywords": ["projects.py", "route flow"],
+                    "evidence_turn_ids": [1],
+                    "evidence_turn_nos": [12],
+                    "summary": "app/api/routes/projects.py coordinates request validation and persistence.",
+                    "unresolved_points": ["Need the detailed persistence call path."],
+                    "last_turn_no": 12,
+                },
+                {
+                    "branch_id": "planner_path",
+                    "label": "app/services/question_planner.py selection path",
+                    "stage": "Code Detail Completion",
+                    "status": "needs_follow_up",
+                    "priority": 0.93,
+                    "keywords": ["question_planner.py", "selection path"],
+                    "evidence_turn_ids": [2],
+                    "evidence_turn_nos": [13],
+                    "summary": "question_planner.py uses choose_non_redundant_code_detail_target() to vary targets.",
+                    "unresolved_points": ["Need the branch switching logic in detail."],
+                    "last_turn_no": 13,
+                },
+            ],
+            "framework": {
+                "code_detail": {
+                    "specific_files_count": 2,
+                    "specific_classes_count": 0,
+                    "specific_methods_count": 1,
+                    "execution_paths_count": 1,
+                    "library_usage_points_count": 0,
+                    "error_handling_points_count": 0,
+                    "protocol_implementation_points_count": 0,
+                    "state_management_points_count": 0,
+                },
+                "gaps": {
+                    "code_detail": ["specific_files_count", "specific_methods_count"],
+                },
+                "human_collaboration": {
+                    "judgment_turn_count": 1,
+                    "correction_turn_count": 1,
+                    "redirection_turn_count": 1,
+                    "prioritization_turn_count": 1,
+                },
+                "stage_turn_counts": {"Code Detail Completion": 12},
+            },
+            "question_history": [
+                {
+                    "turn_no": 12,
+                    "stage": "Code Detail Completion",
+                    "intent": "code_detail_deep_dive",
+                    "branch_id": "projects_route",
+                    "target_type": "file",
+                    "target_label": "app/api/routes/projects.py",
+                    "signature": "Code Detail Completion|code_detail_deep_dive|projects_route|file|app/api/routes/projects.py",
+                }
+            ],
+        }
+
+        planner = plan_next_question(
+            turns=[],
+            current_stage="Code Detail Completion",
+            next_turn_no=13,
+            coverage_state=coverage_state,
+        )
+
+        self.assertEqual(planner["question_intent"], "code_detail_deep_dive")
+        self.assertEqual(planner["target_branch_id"], "planner_path")
+        self.assertNotEqual(planner["target_label"], "app/api/routes/projects.py")
+        self.assertIn("avoids recently repeated questions", planner["why_this_question"])
+
     def test_question_planner_prioritizes_concrete_code_detail_targets(self):
         turns = [
             InterviewTurn(
