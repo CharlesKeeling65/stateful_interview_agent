@@ -14,6 +14,9 @@ on:
       - "pyproject.toml"
       - "uv.lock"
 
+permissions:
+  contents: write
+
 jobs:
   build-windows-exe:
     runs-on: windows-latest
