@@ -65,6 +65,19 @@ class RuntimePackagingTests(unittest.TestCase):
 
             self.assertEqual(resolved, packaged_dist)
 
+    def test_creates_runtime_data_and_log_directories(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            runtime_root = Path(temp_dir)
+
+            runtime.ensure_runtime_directories(
+                database_url="sqlite:///./data/app.db",
+                log_dir=str(runtime_root / "logs"),
+                runtime_root=runtime_root,
+            )
+
+            self.assertTrue((runtime_root / "data").is_dir())
+            self.assertTrue((runtime_root / "logs").is_dir())
+
 
 class AppFactoryTests(unittest.TestCase):
     def test_serves_built_frontend_when_dist_is_available(self):

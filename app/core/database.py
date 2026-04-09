@@ -2,6 +2,13 @@ from sqlalchemy import create_engine, inspect, text
 from sqlalchemy.orm import declarative_base, sessionmaker
 
 from app.core.config import settings
+from app.core.runtime import ensure_runtime_directories, get_runtime_root
+
+ensure_runtime_directories(
+    database_url=settings.database_url,
+    log_dir=settings.log_dir,
+    runtime_root=get_runtime_root(),
+)
 
 engine = create_engine(
     settings.database_url,

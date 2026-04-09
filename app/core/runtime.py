@@ -91,6 +91,24 @@ def normalize_database_url(database_url: str, runtime_root: Path) -> str:
     return f"{prefix}{(runtime_root / normalized).resolve().as_posix()}"
 
 
+def ensure_runtime_directories(
+    *,
+    database_url: str,
+    log_dir: str,
+    runtime_root: Path,
+) -> None:
+    if database_url.startswith("sqlite:///"):
+        sqlite_path = Path(database_url[len("sqlite:///"):]).expanduser()
+        sqlite_parent = (
+            sqlite_path.parent
+            if sqlite_path.is_absolute()
+            else (runtime_root / sqlite_path).resolve().parent
+        )
+        sqlite_parent.mkdir(parents=True, exist_ok=True)
+
+    Path(log_dir).expanduser().mkdir(parents=True, exist_ok=True)
+
+
 def get_frontend_dist_dir(
     *,
     bundle_root: Path | None = None,
