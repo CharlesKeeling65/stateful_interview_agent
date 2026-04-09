@@ -10,8 +10,8 @@ def ensure_opencode_session_with_status(project: ProjectSession) -> tuple[str, b
     client = get_opencode_client()
     payload = {
         "model": settings.opencode_model,
-        "plan": True,
-        "stream": False,
+        "agent": "plan",
+        "stream": True,
     }
     response = client.post("/session", json=payload)
     response.raise_for_status()

@@ -1,5 +1,6 @@
 import json
 
+import httpx
 from fastapi import APIRouter, Depends, HTTPException, Response, status
 from sqlalchemy.orm import Session
 
@@ -473,10 +474,15 @@ def run_project_opencode_plan_step(
     session_id, _ = ensure_opencode_session_with_status(project)
     outgoing_question = latest_turn.question_text_for_copy.strip()
 
-    answer_text = fetch_opencode_answer(
-        project=project,
-        question_text=outgoing_question,
-    )
+    try:
+        answer_text = fetch_opencode_answer(
+            project=project,
+            question_text=outgoing_question,
+        )
+    except (TimeoutError, httpx.ReadTimeout) as exc:
+        raise HTTPException(status_code=504, detail=str(exc)) from exc
+    except (RuntimeError, ValueError, httpx.HTTPError) as exc:
+        raise HTTPException(status_code=502, detail=str(exc)) from exc
     persist_turn_answer(
         db=db,
         project=project,

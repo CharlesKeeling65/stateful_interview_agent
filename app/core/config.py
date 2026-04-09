@@ -3,8 +3,12 @@ from typing import Literal
 from pydantic import field_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
-from app.core.runtime import get_env_file_path, get_runtime_root, normalize_database_url, resolve_runtime_path
-
+from app.core.runtime import (
+    get_env_file_path,
+    get_runtime_root,
+    normalize_database_url,
+    resolve_runtime_path,
+)
 
 RUNTIME_ROOT = get_runtime_root()
 
@@ -36,7 +40,7 @@ class Settings(BaseSettings):
     anthropic_max_tokens: int = 4096
 
     opencode_base_url: str = "http://localhost:4096"
-    opencode_timeout_seconds: float = 60.0
+    opencode_timeout_seconds: float = 180.0
     opencode_model: str = "mindflow/claude-opus-4-6"
     duplicate_guard_use_embeddings: bool = False
     duplicate_guard_embedding_threshold: float = 0.9
