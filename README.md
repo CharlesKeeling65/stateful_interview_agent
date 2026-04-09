@@ -238,6 +238,63 @@ Frontend default URL:
 http://127.0.0.1:5173
 ```
 
+## Windows Packaging
+
+The project can now be packaged for Windows without requiring a preinstalled Python runtime.
+
+Packaging model:
+
+- Build the frontend into static files.
+- Bundle the FastAPI server, prompt assets, and frontend build with PyInstaller.
+- Keep `.env`, `data/`, and `logs/` outside the executable so operators can reconfigure the app after packaging.
+
+### Runtime behavior
+
+- Source mode still works as before: run the backend from the repo root and use the Vite dev server.
+- Packaged mode uses the executable directory as the writable runtime root.
+- Relative paths like `./data/app.db` and `./logs` are resolved against that runtime root.
+- If `frontend/dist` is bundled, FastAPI serves it directly and the frontend falls back to same-origin API calls.
+
+### Build steps
+
+1. Build the frontend:
+
+```bash
+cd frontend
+npm install
+npm run build
+cd ..
+```
+
+2. Install build tooling:
+
+```bash
+uv sync --extra build
+```
+
+3. Build the Windows bundle on Windows:
+
+```bash
+uv run pyinstaller packaging/windows/stateful_interview_agent.spec
+```
+
+4. Copy your runtime files next to `dist/StatefulInterviewAgent/StatefulInterviewAgent.exe`:
+
+```text
+dist/StatefulInterviewAgent/
+├─ StatefulInterviewAgent.exe
+├─ .env
+├─ data/
+└─ logs/
+```
+
+### Configurable environment files
+
+- Default source-mode env file: repo-root `.env`
+- Default packaged-mode env file: executable-directory `.env`
+- Override path explicitly with `STATEFUL_AGENT_ENV_FILE`
+- Override the writable runtime directory with `STATEFUL_AGENT_RUNTIME_DIR`
+
 ## Environment Variables
 
 Defined in [app/core/config.py](app/core/config.py).
@@ -248,6 +305,8 @@ Defined in [app/core/config.py](app/core/config.py).
 - `OPENAI_EMBEDDING_MODEL`: optional embedding model for semantic duplicate checks.
 - `DUPLICATE_GUARD_USE_EMBEDDINGS`: enable optional embedding-assisted duplicate detection.
 - `DUPLICATE_GUARD_EMBEDDING_THRESHOLD`: cosine-similarity threshold for embedding duplicate checks.
+- `APP_HOST`: backend listen host, used by the packaged launcher.
+- `APP_PORT`: backend listen port, used by the packaged launcher.
 - `INTERVIEW_MIN_TURNS`: minimum interview target before the goal is considered reached.
 - `INTERVIEW_MAX_TURNS`: hard upper bound for interview turns.
 - `DATABASE_URL`: SQLAlchemy database URL.
@@ -257,6 +316,8 @@ Defined in [app/core/config.py](app/core/config.py).
 - `LOG_ARTIFACTS_ENABLED`: whether to dump larger prompt/context artifacts.
 - `LOG_PRETTY_JSON`: JSON formatting option for local debugging.
 - `LOG_TEXT_PREVIEW_CHARS`: text preview length stored in logs.
+- `STATEFUL_AGENT_ENV_FILE`: optional absolute path to an external env file.
+- `STATEFUL_AGENT_RUNTIME_DIR`: optional writable runtime root for `.env`, SQLite, and logs.
 
 ## Typical Workflow
 

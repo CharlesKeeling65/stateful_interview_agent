@@ -238,6 +238,63 @@ npm run dev
 http://127.0.0.1:5173
 ```
 
+## Windows 打包
+
+这个项目现在可以打成 Windows 可执行分发包，目标机器不需要预装 Python。
+
+打包形态如下：
+
+- 先把前端构建成静态文件。
+- 用 PyInstaller 打包 FastAPI 服务、prompt 资产和前端构建产物。
+- 将 `.env`、`data/`、`logs/` 保持在 exe 外部，便于交付后继续修改配置。
+
+### 运行时行为
+
+- 源码模式保持不变：在仓库根目录启动后端，同时用 Vite dev server 跑前端。
+- 打包模式下，可执行文件所在目录会作为默认可写运行根目录。
+- `./data/app.db`、`./logs` 这类相对路径会自动解析到该运行根目录下。
+- 如果 `frontend/dist` 被打进包里，FastAPI 会直接托管前端静态资源，前端也会优先走同源 API。
+
+### 打包步骤
+
+1. 构建前端：
+
+```bash
+cd frontend
+npm install
+npm run build
+cd ..
+```
+
+2. 安装打包依赖：
+
+```bash
+uv sync --extra build
+```
+
+3. 在 Windows 上执行打包：
+
+```bash
+uv run pyinstaller packaging/windows/stateful_interview_agent.spec
+```
+
+4. 将运行时文件放到 `dist/StatefulInterviewAgent/StatefulInterviewAgent.exe` 同目录：
+
+```text
+dist/StatefulInterviewAgent/
+├─ StatefulInterviewAgent.exe
+├─ .env
+├─ data/
+└─ logs/
+```
+
+### 可配置的环境文件
+
+- 源码模式默认读取仓库根目录 `.env`
+- 打包模式默认读取 exe 同目录 `.env`
+- 可通过 `STATEFUL_AGENT_ENV_FILE` 显式指定 env 文件路径
+- 可通过 `STATEFUL_AGENT_RUNTIME_DIR` 显式指定可写运行目录
+
 ## 环境变量说明
 
 定义位置见 [app/core/config.py](app/core/config.py)。
@@ -248,6 +305,8 @@ http://127.0.0.1:5173
 - `OPENAI_EMBEDDING_MODEL`：可选，embedding 判重模型。
 - `DUPLICATE_GUARD_USE_EMBEDDINGS`：是否开启 embedding 辅助判重。
 - `DUPLICATE_GUARD_EMBEDDING_THRESHOLD`：embedding 相似度阈值。
+- `APP_HOST`：后端监听地址，打包启动器会读取它。
+- `APP_PORT`：后端监听端口，打包启动器会读取它。
 - `INTERVIEW_MIN_TURNS`：达到最小访谈目标的轮次下限。
 - `INTERVIEW_MAX_TURNS`：访谈轮次硬上限。
 - `DATABASE_URL`：数据库连接串。
@@ -257,6 +316,8 @@ http://127.0.0.1:5173
 - `LOG_ARTIFACTS_ENABLED`：是否输出更大的 prompt/context artifact。
 - `LOG_PRETTY_JSON`：本地调试用 JSON 格式开关。
 - `LOG_TEXT_PREVIEW_CHARS`：日志文本预览长度。
+- `STATEFUL_AGENT_ENV_FILE`：可选，显式指定外部 env 文件路径。
+- `STATEFUL_AGENT_RUNTIME_DIR`：可选，显式指定可写运行目录。
 
 ## 典型使用流程
 
