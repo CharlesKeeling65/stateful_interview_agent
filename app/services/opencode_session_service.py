@@ -1,6 +1,5 @@
-import httpx
-
 from app.core.config import settings
+from app.core.http_clients import get_opencode_client
 from app.models.project import ProjectSession
 
 
@@ -8,10 +7,7 @@ def ensure_opencode_session_with_status(project: ProjectSession) -> tuple[str, b
     if project.opencode_session_id:
         return project.opencode_session_id, False
 
-    client = httpx.Client(
-        base_url=settings.opencode_base_url,
-        timeout=settings.opencode_timeout_seconds,
-    )
+    client = get_opencode_client()
     payload = {
         "model": settings.opencode_model,
         "plan": True,

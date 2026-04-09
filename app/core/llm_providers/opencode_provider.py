@@ -1,6 +1,6 @@
 import httpx
 
-from app.core.config import settings
+from app.core.http_clients import get_opencode_client
 from app.core.llm_providers.base import LLMProvider
 from app.core.llm_types import LLMGenerateResult, LLMUsageMetrics
 
@@ -9,10 +9,7 @@ class OpenCodeProvider(LLMProvider):
     provider_name = "opencode"
 
     def __init__(self, client: httpx.Client | None = None):
-        self.client = client or httpx.Client(
-            base_url=settings.opencode_base_url,
-            timeout=settings.opencode_timeout_seconds,
-        )
+        self.client = client or get_opencode_client()
 
     def generate_text(
         self,

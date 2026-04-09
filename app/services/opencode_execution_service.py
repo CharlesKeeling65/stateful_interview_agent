@@ -1,8 +1,7 @@
-import httpx
 import re
 from sqlalchemy.orm import Session
 
-from app.core.config import settings
+from app.core.http_clients import get_opencode_client
 from app.models.project import ProjectSession
 from app.models.turn import InterviewTurn
 from app.services.coverage_service import rebuild_coverage_state, save_coverage_state
@@ -27,10 +26,7 @@ def fetch_opencode_answer(
     question_text: str,
 ) -> str:
     session_id = ensure_opencode_session(project)
-    client = httpx.Client(
-        base_url=settings.opencode_base_url,
-        timeout=settings.opencode_timeout_seconds,
-    )
+    client = get_opencode_client()
     response = client.post(
         f"/session/{session_id}/message",
         json={"agent": "plan", "parts": [{"type": "text", "text": question_text}], "stream": False},

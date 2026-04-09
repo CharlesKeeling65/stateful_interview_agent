@@ -8,6 +8,7 @@ from app.api.routes.debug import router as debug_router
 from app.api.routes.projects import router as project_router
 from app.core.config import settings
 from app.core.database import ensure_database_schema
+from app.core.http_clients import close_opencode_client
 from app.logging import clear_log_context, configure_logging, emit_event, set_log_context
 from app.models import InterviewTurn, LLMUsage, ProjectSession
 
@@ -80,6 +81,11 @@ def health_check():
         "app_name": settings.app_name,
         "environment": settings.app_env,
     }
+
+
+@app.on_event("shutdown")
+def shutdown_clients() -> None:
+    close_opencode_client()
 
 
 app.include_router(project_router)
