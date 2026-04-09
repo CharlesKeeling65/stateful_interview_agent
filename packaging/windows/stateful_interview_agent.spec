@@ -3,7 +3,7 @@ from pathlib import Path
 from PyInstaller.utils.hooks import collect_submodules
 
 
-project_root = Path.cwd()
+project_root = Path(__file__).resolve().parents[2]
 
 datas = [
     (str(project_root / "app" / "prompts" / "assets"), "app/prompts/assets"),
@@ -17,7 +17,7 @@ hiddenimports = collect_submodules("uvicorn")
 
 
 a = Analysis(
-    ["app/launcher.py"],
+    [str(project_root / "app" / "launcher.py")],
     pathex=[str(project_root)],
     binaries=[],
     datas=datas,
