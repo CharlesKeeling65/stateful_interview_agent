@@ -83,6 +83,8 @@ export function useProject() {
   const [activeRun, setActiveRun] = useState<RunRead | null>(null)
   const [loading, setLoading] = useState(false)
   const [busyAction, setBusyAction] = useState<BusyAction>(null)
+  const [opencodeStartedAt, setOpencodeStartedAt] = useState<number | null>(null)
+  const [opencodeElapsedSeconds, setOpencodeElapsedSeconds] = useState(0)
   const [error, setError] = useState('')
   const [lastMessageKey, setLastMessageKey] = useState('')
   const [lastRegenerationFeedback, setLastRegenerationFeedback] =
@@ -285,6 +287,8 @@ export function useProject() {
     }
 
     setBusyAction('sending_opencode')
+    setOpencodeStartedAt(Date.now())
+    setOpencodeElapsedSeconds(0)
     setLoading(true)
     setError('')
 
@@ -300,6 +304,8 @@ export function useProject() {
       return null
     } finally {
       setBusyAction(null)
+      setOpencodeStartedAt(null)
+      setOpencodeElapsedSeconds(0)
       setLoading(false)
     }
   }
@@ -310,6 +316,8 @@ export function useProject() {
     }
 
     setBusyAction('sending_opencode')
+    setOpencodeStartedAt(Date.now())
+    setOpencodeElapsedSeconds(0)
     setLoading(true)
     setError('')
     setLastMessageKey('status.opencodeSending')
@@ -328,9 +336,25 @@ export function useProject() {
       setError(err instanceof Error ? err.message : 'Unable to send the question to OpenCode.')
     } finally {
       setBusyAction(null)
+      setOpencodeStartedAt(null)
+      setOpencodeElapsedSeconds(0)
       setLoading(false)
     }
   }
+
+  useEffect(() => {
+    if (busyAction !== 'sending_opencode' || opencodeStartedAt == null) {
+      return
+    }
+
+    const updateElapsed = () => {
+      setOpencodeElapsedSeconds(Math.max(0, Math.floor((Date.now() - opencodeStartedAt) / 1000)))
+    }
+
+    updateElapsed()
+    const intervalId = window.setInterval(updateElapsed, 1000)
+    return () => window.clearInterval(intervalId)
+  }, [busyAction, opencodeStartedAt])
 
   async function handleGenerateNext(payload?: NextQuestionRequestPayload) {
     if (!project) {
@@ -650,6 +674,7 @@ export function useProject() {
     transcript,
     turns,
     activeRun,
+    opencodeElapsedSeconds,
     estimateDraftUsage: (answerDraft: string) => ({
       estimatedAnswerInputTokens: estimateTokenCount(answerDraft),
       estimatedNextPromptTokens: estimateNextPromptTokens({

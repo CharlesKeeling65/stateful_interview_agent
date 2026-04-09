@@ -27,6 +27,7 @@ type GenerationControlPanelProps = {
     enabled: boolean
     sessionId?: string | null
     pendingQuestionText: string
+    elapsedSeconds?: number
   } | null
   t: Translator
 }
@@ -132,6 +133,11 @@ export function GenerationControlPanel({
               <p className="mt-2 text-sm leading-6 text-indigo-950">
                 {t('generation.opencodePlanHint')}
               </p>
+              {typeof opencodePlan.elapsedSeconds === 'number' ? (
+                <p className="mt-2 text-xs font-medium text-indigo-700">
+                  {`${t('generation.opencodeWaiting')} ${opencodePlan.elapsedSeconds}s`}
+                </p>
+              ) : null}
             </div>
             <span className="rounded-full bg-white px-3 py-1 text-xs font-medium text-indigo-700">
               {opencodePlan.sessionId ?? t('generation.opencodeSessionPending')}

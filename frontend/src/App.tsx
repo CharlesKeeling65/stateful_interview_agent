@@ -26,6 +26,7 @@ function App() {
     lastMessageKey,
     lastRegenerationFeedback,
     loading,
+    opencodeElapsedSeconds,
     project,
     projects,
     regenerateCurrentQuestion,
@@ -300,6 +301,7 @@ function App() {
                       enabled: true,
                       pendingQuestionText: latestTurn.question_text_for_copy,
                       sessionId: project?.opencode_session_id ?? null,
+                      elapsedSeconds: busyAction === 'sending_opencode' ? opencodeElapsedSeconds : undefined,
                     } : null}
                     pendingGate={project?.pending_gate ?? null}
                     projectFinished={projectFinished}

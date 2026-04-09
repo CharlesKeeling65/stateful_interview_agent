@@ -39,6 +39,34 @@ describe('GenerationControlPanel', () => {
     expect(screen.getByRole('button', { name: 'Skip this round' })).toBeInTheDocument()
   })
 
+  it('shows the live OpenCode wait duration while sending is in progress', () => {
+    render(
+      <GenerationControlPanel
+        canGenerateNext
+        estimateDraftUsage={() => ({
+          estimatedAnswerInputTokens: 0,
+          estimatedNextPromptTokens: 0,
+          estimatedNextOutputTokens: 0,
+        })}
+        onGenerateNext={vi.fn()}
+        onOpenCodeSend={vi.fn()}
+        onOpenCodeRegenerateCurrentQuestion={vi.fn()}
+        onOpenCodeSkip={vi.fn()}
+        opencodePlan={{
+          enabled: true,
+          sessionId: 'sess_123',
+          pendingQuestionText: 'How is the repository bootstrapped?',
+          elapsedSeconds: 17,
+        }}
+        projectStarted
+        savedAnswer="saved answer"
+        t={createTranslator('en')}
+      />,
+    )
+
+    expect(screen.getByText('Waiting for OpenCode: 17s')).toBeInTheDocument()
+  })
+
   it('shows the cleaned question text that will be sent to OpenCode', () => {
     render(
       <GenerationControlPanel
