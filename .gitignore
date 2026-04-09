@@ -4,6 +4,9 @@ __pycache__/
 .env
 data/*.db
 logs/
+build/
+dist/
+*.spec.bak
 .DS_Store
 .ref_docs/
 .gitnexus

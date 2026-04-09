@@ -18,7 +18,12 @@ dependencies = [
 ]
 
 [project.scripts]
-stateful-interview-agent = "stateful_interview_agent:main"
+stateful-interview-agent = "app.launcher:main"
+
+[project.optional-dependencies]
+build = [
+    "pyinstaller>=6.0",
+]
 
 [build-system]
 requires = ["hatchling"]

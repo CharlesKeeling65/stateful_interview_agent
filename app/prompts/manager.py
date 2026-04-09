@@ -5,12 +5,13 @@ from typing import Any
 
 import yaml
 
+from app.core.runtime import get_bundle_root
 from app.prompts.schemas import PromptDefinition, RenderedPrompt
 
 
 class PromptManager:
     def __init__(self, prompt_directory: Path | None = None):
-        self.prompt_directory = prompt_directory or Path(__file__).resolve().parent / "assets"
+        self.prompt_directory = prompt_directory or get_bundle_root() / "app" / "prompts" / "assets"
         self._prompts = self._load_prompts()
 
     def _load_prompts(self) -> dict[str, PromptDefinition]:

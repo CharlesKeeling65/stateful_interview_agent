@@ -1,11 +1,19 @@
 from typing import Literal
 
+from pydantic import field_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
+
+from app.core.runtime import get_env_file_path, get_runtime_root, normalize_database_url, resolve_runtime_path
+
+
+RUNTIME_ROOT = get_runtime_root()
 
 
 class Settings(BaseSettings):
     app_name: str = "Stateful Interview Agent"
     app_env: str = "dev"
+    app_host: str = "127.0.0.1"
+    app_port: int = 8000
     log_level: str = "INFO"
     log_dir: str = "./logs"
     log_llm_payloads: bool = True
@@ -39,10 +47,19 @@ class Settings(BaseSettings):
     database_url: str = "sqlite:///./data/app.db"
 
     model_config = SettingsConfigDict(
-        env_file=".env",
         env_file_encoding="utf-8",
         extra="ignore",
     )
 
+    @field_validator("database_url", mode="after")
+    @classmethod
+    def validate_database_url(cls, value: str) -> str:
+        return normalize_database_url(value, RUNTIME_ROOT)
 
-settings = Settings()
+    @field_validator("log_dir", mode="after")
+    @classmethod
+    def validate_log_dir(cls, value: str) -> str:
+        return resolve_runtime_path(value, RUNTIME_ROOT)
+
+
+settings = Settings(_env_file=get_env_file_path())

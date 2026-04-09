@@ -17,7 +17,19 @@ import type {
   UpdateProjectPayload,
 } from '../types/api'
 
-const API_BASE = import.meta.env.VITE_API_BASE_URL ?? 'http://127.0.0.1:8000'
+function getDefaultApiBase() {
+  if (import.meta.env.VITE_API_BASE_URL) {
+    return import.meta.env.VITE_API_BASE_URL
+  }
+
+  if (typeof window !== 'undefined' && ['5173', '4173'].includes(window.location.port)) {
+    return 'http://127.0.0.1:8000'
+  }
+
+  return ''
+}
+
+const API_BASE = getDefaultApiBase()
 
 async function handle<T>(res: Response): Promise<T> {
   if (!res.ok) {

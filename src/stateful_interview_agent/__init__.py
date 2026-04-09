@@ -1,2 +1,4 @@
 def main() -> None:
-    print("Hello from stateful-interview-agent!")
+    from app.launcher import main as launch_app
+
+    launch_app()
