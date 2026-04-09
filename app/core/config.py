@@ -45,8 +45,8 @@ class Settings(BaseSettings):
     duplicate_guard_use_embeddings: bool = False
     duplicate_guard_embedding_threshold: float = 0.9
 
-    interview_min_turns: int = 35
-    interview_max_turns: int = 40
+    interview_min_turns: int = 42
+    interview_max_turns: int = 43
 
     database_url: str = "sqlite:///./data/app.db"
 

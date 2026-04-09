@@ -40,11 +40,9 @@ STAGE_SEQUENCE = [
     WRAP_UP_STAGE,
 ]
 
-CODE_DETAIL_MIN_EXIT_TURN_NO = 35
-CODE_DETAIL_FORCE_EXIT_TURN_NO = 40
-
 PANORAMA_MIN_TURNS = 2
-ARCHITECTURE_MIN_TURNS = 3
+ARCHITECTURE_MIN_TURNS = 2
+USE_CASE_RESERVED_TURNS = 2
 
 PANORAMA_REQUIRED: frozenset[str] = frozenset({
     "purpose", "target_users", "major_modules", "high_level_workflow"
@@ -85,6 +83,33 @@ def _get_critical_gaps(gaps: list[str], required: frozenset[str]) -> list[str]:
     return [gap for gap in gaps if gap in required]
 
 
+def _infer_gaps_from_stage_coverage(
+    stage_coverage: dict,
+    required: frozenset[str],
+) -> list[str]:
+    inferred: list[str] = []
+    for key in required:
+        value = stage_coverage.get(key)
+        if value is False or value in (0, None):
+            inferred.append(key)
+    return inferred
+
+
+def _resolve_stage_gaps(
+    *,
+    framework: dict,
+    stage_key: str,
+    required: frozenset[str],
+) -> list[str]:
+    gap_map = framework.get("gaps", {})
+    if isinstance(gap_map, dict) and stage_key in gap_map:
+        return list(gap_map.get(stage_key) or [])
+    stage_coverage = framework.get(stage_key, {})
+    if isinstance(stage_coverage, dict):
+        return _infer_gaps_from_stage_coverage(stage_coverage, required)
+    return []
+
+
 def normalize_stage_name(value: str | None) -> str | None:
     if not value:
         return None
@@ -119,11 +144,11 @@ def clamp_stage_not_before_current(candidate_stage: str, current_stage: str) -> 
 
 
 def determine_stage_by_turn(turn_no: int) -> str:
-    if 1 <= turn_no <= 5:
+    if 1 <= turn_no <= 2:
         return PANORAMA_STAGE
-    elif 6 <= turn_no <= 10:
+    elif 3 <= turn_no <= 4:
         return ARCHITECTURE_STAGE
-    elif 11 <= turn_no <= CODE_DETAIL_FORCE_EXIT_TURN_NO:
+    elif 5 <= turn_no <= 41:
         return CODE_DETAIL_STAGE
     else:
         return USE_CASE_STAGE
@@ -144,12 +169,27 @@ def decide_next_stage(
     remaining_turns = max_turns - next_turn_no + 1
     wrap_up_ready = framework.get("wrap_up_ready", False)
 
-    gaps = framework.get("gaps", {})
-    panorama_gaps = gaps.get("panorama", [])
-    architecture_gaps = gaps.get("architecture", [])
-    code_detail_gaps = gaps.get("code_detail", [])
-    use_case_gaps = gaps.get("use_cases", [])
-    collaboration_gaps = gaps.get("human_collaboration", [])
+    panorama_gaps = _resolve_stage_gaps(
+        framework=framework,
+        stage_key="panorama",
+        required=PANORAMA_REQUIRED,
+    )
+    architecture_gaps = _resolve_stage_gaps(
+        framework=framework,
+        stage_key="architecture",
+        required=ARCHITECTURE_REQUIRED,
+    )
+    code_detail_gaps = _resolve_stage_gaps(
+        framework=framework,
+        stage_key="code_detail",
+        required=CODE_DETAIL_REQUIRED,
+    )
+    use_case_gaps = _resolve_stage_gaps(
+        framework=framework,
+        stage_key="use_cases",
+        required=USE_CASE_REQUIRED,
+    )
+    collaboration_gaps = framework.get("gaps", {}).get("human_collaboration", [])
 
     human_phase_ready = bool((human_review_signal or {}).get("phase_ready"))
     human_direction = (human_review_signal or {}).get("direction")
@@ -193,25 +233,18 @@ def decide_next_stage(
             "gaps": use_case_gaps,
         }
 
-    if remaining_turns <= 1:
-        return {
-            "next_stage": clamp_stage_not_before_current(WRAP_UP_STAGE, current_stage),
-            "reason": "The interview is at the final turn and should prepare for wrap-up.",
-            "gaps": [],
-        }
-
     code_detail_core_gaps = _get_critical_gaps(code_detail_gaps, CODE_DETAIL_REQUIRED)
     use_case_core_gaps = _get_critical_gaps(use_case_gaps, USE_CASE_REQUIRED)
+    code_detail_exit_turn = max(5, max_turns - USE_CASE_RESERVED_TURNS + 1)
     in_hard_coded_code_detail_window = (
-        current_stage == CODE_DETAIL_STAGE and next_turn_no < CODE_DETAIL_MIN_EXIT_TURN_NO
+        current_stage == CODE_DETAIL_STAGE and next_turn_no < code_detail_exit_turn
     )
     at_forced_code_detail_exit = (
-        current_stage == CODE_DETAIL_STAGE and next_turn_no >= CODE_DETAIL_FORCE_EXIT_TURN_NO
+        current_stage == CODE_DETAIL_STAGE and next_turn_no >= code_detail_exit_turn
     )
     architecture_can_enter_use_cases = (
         current_stage == USE_CASE_STAGE
-        or explicit_use_case_request
-        or (current_stage == CODE_DETAIL_STAGE and next_turn_no >= CODE_DETAIL_MIN_EXIT_TURN_NO)
+        or (current_stage == CODE_DETAIL_STAGE and next_turn_no >= code_detail_exit_turn)
     )
 
     if in_hard_coded_code_detail_window and not explicit_use_case_request:
@@ -219,7 +252,7 @@ def decide_next_stage(
             "next_stage": clamp_stage_not_before_current(CODE_DETAIL_STAGE, current_stage),
             "reason": (
                 "Code detail is hard-gated to remain dominant until turn "
-                f"{CODE_DETAIL_MIN_EXIT_TURN_NO}, regardless of early gap completion."
+                f"{code_detail_exit_turn - 1}, regardless of early gap completion."
             ),
             "gaps": code_detail_core_gaps or code_detail_gaps,
         }
@@ -236,8 +269,8 @@ def decide_next_stage(
 
     if wrap_up_ready and remaining_turns <= 1 and not use_case_core_gaps:
         return {
-            "next_stage": clamp_stage_not_before_current(WRAP_UP_STAGE, current_stage),
-            "reason": "Framework coverage is broadly complete and only the final wrap-up turn remains.",
+            "next_stage": clamp_stage_not_before_current(USE_CASE_STAGE, current_stage),
+            "reason": "Framework coverage is broadly complete, so the final turn should stay on representative scenario confirmation instead of a separate wrap-up stage.",
             "gaps": [],
         }
 
@@ -245,7 +278,7 @@ def decide_next_stage(
         if (
             current_stage == CODE_DETAIL_STAGE
             and human_phase_ready
-            and next_turn_no >= CODE_DETAIL_MIN_EXIT_TURN_NO
+            and next_turn_no >= code_detail_exit_turn
             and not use_case_core_gaps
         ):
             return {
@@ -262,12 +295,12 @@ def decide_next_stage(
             "gaps": code_detail_core_gaps,
         }
 
-    if current_stage == CODE_DETAIL_STAGE and next_turn_no < CODE_DETAIL_FORCE_EXIT_TURN_NO and human_direction != "redirect":
+    if current_stage == CODE_DETAIL_STAGE and next_turn_no < code_detail_exit_turn and human_direction != "redirect":
         return {
             "next_stage": clamp_stage_not_before_current(CODE_DETAIL_STAGE, current_stage),
             "reason": (
                 "Code-detail remains the active stage until the hard-coded transition window near turns "
-                f"{CODE_DETAIL_MIN_EXIT_TURN_NO}-{CODE_DETAIL_FORCE_EXIT_TURN_NO}."
+                f"{code_detail_exit_turn - 1}-{code_detail_exit_turn}."
             ),
             "gaps": code_detail_gaps,
         }
@@ -291,8 +324,8 @@ def decide_next_stage(
 
     if wrap_up_ready or (current_stage == USE_CASE_STAGE and human_phase_ready and not use_case_gaps):
         return {
-            "next_stage": clamp_stage_not_before_current(WRAP_UP_STAGE, current_stage),
-            "reason": "Framework coverage is complete enough to move into final wrap-up.",
+            "next_stage": clamp_stage_not_before_current(USE_CASE_STAGE, current_stage),
+            "reason": "Framework coverage is complete enough to keep the remaining turns focused on representative scenarios rather than a separate wrap-up stage.",
             "gaps": [],
         }
 

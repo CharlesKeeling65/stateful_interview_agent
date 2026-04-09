@@ -147,10 +147,10 @@ def generate_next_question_from_history(
     provider = get_llm_provider()
 
     stage_instruction = get_stage_instruction(current_stage)
-    is_near_end = next_turn_no >= settings.interview_min_turns
+    is_near_end = next_turn_no >= max(1, settings.interview_max_turns - 1)
     closing_instruction = (
-        "The interview is now in its closing phase. Prefer questions that help complete coverage cleanly "
-        "instead of opening entirely new broad topics."
+        "The interview is in its final scenario-focused phase. Do not ask a separate wrap-up or convergence question; "
+        "use the remaining turns only to complete representative use-case coverage cleanly."
         if is_near_end
         else "The interview still has room to deepen partially explored branches."
     )
