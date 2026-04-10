@@ -275,9 +275,9 @@ On Windows PowerShell, the equivalent is typically:
 uv run python .\main.py
 ```
 
-## Windows Packaging
+## Packaging
 
-The project can now be packaged for Windows without requiring a preinstalled Python runtime.
+The project can now be packaged for Windows and Ubuntu Linux without requiring a preinstalled Python runtime.
 
 Packaging model:
 
@@ -292,7 +292,7 @@ Packaging model:
 - Relative paths like `./data/app.db` and `./logs` are resolved against that runtime root.
 - If `frontend/dist` is bundled, FastAPI serves it directly and the frontend falls back to same-origin API calls.
 
-### Build steps
+### Shared build steps
 
 1. Build the frontend:
 
@@ -309,6 +309,8 @@ cd ..
 uv sync --extra build
 ```
 
+### Windows packaging
+
 3. Build the Windows bundle on Windows:
 
 ```bash
@@ -324,6 +326,29 @@ dist/StatefulInterviewAgent/
 ├─ data/
 └─ logs/
 ```
+
+### Ubuntu Linux packaging
+
+3. Build the Linux bundle on Ubuntu Linux:
+
+```bash
+uv run pyinstaller packaging/linux/stateful_interview_agent.spec
+```
+
+4. Copy your runtime files next to `dist/StatefulInterviewAgent/StatefulInterviewAgent`:
+
+```text
+dist/StatefulInterviewAgent/
+├─ StatefulInterviewAgent
+├─ .env
+├─ data/
+└─ logs/
+```
+
+### GitHub Actions release artifacts
+
+- Windows workflow uploads the `StatefulInterviewAgent-windows` artifact and publishes `StatefulInterviewAgent-windows.zip` on tagged releases.
+- Linux workflow uploads the `StatefulInterviewAgent-linux` artifact and publishes `StatefulInterviewAgent-linux.tar.gz` on tagged releases.
 
 ### Configurable environment files
 

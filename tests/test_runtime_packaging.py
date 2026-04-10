@@ -18,8 +18,19 @@ class RuntimePackagingTests(unittest.TestCase):
 
             self.assertEqual(runtime_root, cwd.resolve())
 
-    def test_uses_executable_directory_when_frozen(self):
+    def test_uses_windows_executable_directory_when_frozen(self):
         executable = Path("/bundle/StatefulInterviewAgent.exe")
+
+        runtime_root = runtime.get_runtime_root(
+            cwd=Path("/ignored"),
+            executable=executable,
+            frozen=True,
+        )
+
+        self.assertEqual(runtime_root, executable.parent.resolve())
+
+    def test_uses_linux_executable_directory_when_frozen(self):
+        executable = Path("/bundle/StatefulInterviewAgent")
 
         runtime_root = runtime.get_runtime_root(
             cwd=Path("/ignored"),
