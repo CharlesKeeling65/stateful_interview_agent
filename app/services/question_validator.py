@@ -104,7 +104,7 @@ USE_CASE_MARKERS = (
 )
 QUESTION_FILE_PATTERN = re.compile(r"\b[\w./-]+\.(?:py|ts|tsx|js|jsx|java|go|rb|yaml|yml|json|toml|md)\b")
 QUESTION_SYMBOL_PATTERN = re.compile(r"\b[A-Z][A-Za-z0-9_]{2,}\b")
-MAX_QUESTION_LENGTH = 160
+MAX_QUESTION_LENGTH = 240
 CODE_DETAIL_STAGE = "Code Detail Completion"
 
 

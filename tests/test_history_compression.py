@@ -88,6 +88,16 @@ class HistoryCompressionTests(unittest.TestCase):
             "Q8: How does app/services/question_generator.py build the prompt?",
         )
 
+    def test_question_copy_variant_does_not_hard_truncate_long_code_detail_question(self):
+        self.assertEqual(
+            clean_generated_question(
+                "Q11: In modules/typer_agent.py, what does the build_prompt() method do with its full signature, how does it read the scratchpad file, and how does it assemble the final prompt before returning it?",
+                11,
+                current_stage="Code Detail Completion",
+            ),
+            "Q11: In modules/typer_agent.py, what does the build_prompt() method do with its full signature, how does it read the scratchpad file, and how does it assemble the final prompt before returning it?",
+        )
+
     def test_question_copy_variant_keeps_multi_part_panorama_question(self):
         self.assertEqual(
             clean_generated_question(
@@ -180,7 +190,9 @@ class QuestionReviewerTests(unittest.TestCase):
             (
                 "Q10: In app/services/question_generator.py, how does generate_next_question_from_history "
                 "assemble the prompt, merge planner constraints, weave in retrieved context, and then "
-                "decide which repository evidence matters most before calling the model right now?"
+                "decide which repository evidence matters most before calling the model right now, while also "
+                "tracking every intermediate formatting branch, fallback path, retry-specific mutation, "
+                "validator-facing adaptation, and post-call packaging detail across the full execution flow?"
             ),
             "understand_current_code",
             current_stage="Code Detail Completion",
@@ -188,6 +200,18 @@ class QuestionReviewerTests(unittest.TestCase):
 
         self.assertFalse(review["is_valid"])
         self.assertIn("Question is too long; keep it concise and direct.", review["reasons"])
+
+    def test_reviewer_allows_reasonably_long_code_detail_question(self):
+        review = review_question_text(
+            (
+                "Q12: In modules/typer_agent.py, what does the build_prompt() method do with its full signature, "
+                "how does it read the scratchpad file, and how does it assemble the final prompt before returning it?"
+            ),
+            "understand_current_code",
+            current_stage="Code Detail Completion",
+        )
+
+        self.assertTrue(review["is_valid"])
 
     def test_reviewer_allows_longer_non_code_detail_question(self):
         review = review_question_text(

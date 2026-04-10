@@ -1,6 +1,5 @@
 import re
 
-MAX_QUESTION_CHARS = 160
 CODE_DETAIL_STAGE = "Code Detail Completion"
 
 
@@ -53,25 +52,6 @@ def _keep_only_first_question(text: str) -> str:
     if first_question_mark >= 0:
         return text[: first_question_mark + 1].strip()
     return text
-
-
-def _trim_question_length(text: str) -> str:
-    if len(text) <= MAX_QUESTION_CHARS:
-        return text
-
-    prefix_match = re.match(r"^(Q\d+:\s+)(.+)$", text)
-    if not prefix_match:
-        return text[:MAX_QUESTION_CHARS].rstrip(" ,.;:") + "?"
-
-    prefix, body = prefix_match.groups()
-    allowed_body = max(0, MAX_QUESTION_CHARS - len(prefix))
-    truncated_body = body[:allowed_body].rstrip(" ,.;:")
-    last_space = truncated_body.rfind(" ")
-    if last_space >= 40:
-        truncated_body = truncated_body[:last_space].rstrip(" ,.;:")
-    if not truncated_body.endswith("?"):
-        truncated_body += "?"
-    return prefix + truncated_body
 
 
 def _should_enforce_code_detail_tightening(current_stage: str | None) -> bool:
@@ -154,9 +134,6 @@ def clean_generated_question(
         if "?" not in body:
             body = body.rstrip(".") + "?"
     text = prefix + body
-
-    if _should_enforce_code_detail_tightening(current_stage):
-        text = _trim_question_length(text)
 
     # 保证是问句
     if "?" not in text:

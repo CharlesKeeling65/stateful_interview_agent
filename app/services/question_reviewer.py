@@ -73,7 +73,7 @@ UNDERSTANDING_PATTERNS = [
     r"what\s+is\s+(?:the\s+)?(?:current|existing)",
 ]
 
-MAX_QUESTION_LENGTH = 160
+MAX_QUESTION_LENGTH = 240
 CODE_DETAIL_STAGE = "Code Detail Completion"
 
 

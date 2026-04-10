@@ -330,7 +330,7 @@ def plan_next_question(
                 "Must reference a specific file, class, method, execution path, library usage, or error path",
                 "Reject broad implementation questions without a concrete target",
                 "Prefer actual code artifact names when available",
-                "Keep the question concise and direct",
+                "Keep the question focused and direct without turning it into a fragment",
                 "Ask exactly one sentence with exactly one question mark",
             ],
             "prompt_id": "next_question_code_detail",
