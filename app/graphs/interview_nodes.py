@@ -289,7 +289,11 @@ def generate_question_for_state(
                 + "; ".join(validation["reasons"])
             )
 
-    text_review = review_question_text(next_question, project.agent_mode)
+    text_review = review_question_text(
+        next_question,
+        project.agent_mode,
+        current_stage=current_stage,
+    )
     if not text_review["is_valid"]:
         raise ValueError(
             "Generated question failed reviewer text checks: "

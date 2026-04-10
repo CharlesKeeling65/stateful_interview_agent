@@ -74,6 +74,7 @@ UNDERSTANDING_PATTERNS = [
 ]
 
 MAX_QUESTION_LENGTH = 160
+CODE_DETAIL_STAGE = "Code Detail Completion"
 
 
 def review_question_plan(
@@ -285,6 +286,7 @@ def review_question_text(
     question_text: str,
     mode: AgentMode | str,
     expected_intent: str | None = None,
+    current_stage: str | None = None,
 ) -> dict[str, Any]:
     """
     Review generated question text for mode compliance.
@@ -317,13 +319,14 @@ def review_question_text(
                 f"Contains '{marker}' which is not allowed in {mode.value} mode"
             )
 
-    if question_text.count("?") != 1:
-        result["is_valid"] = False
-        result["reasons"].append("Question must contain exactly one question mark.")
+    if current_stage == CODE_DETAIL_STAGE:
+        if question_text.count("?") != 1:
+            result["is_valid"] = False
+            result["reasons"].append("Question must contain exactly one question mark.")
 
-    if len(question_text.strip()) > MAX_QUESTION_LENGTH:
-        result["is_valid"] = False
-        result["reasons"].append("Question is too long; keep it concise and direct.")
+        if len(question_text.strip()) > MAX_QUESTION_LENGTH:
+            result["is_valid"] = False
+            result["reasons"].append("Question is too long; keep it concise and direct.")
 
     # Check patterns
     if not constraints.get("allow_change_proposals", False):
@@ -353,6 +356,7 @@ def should_regenerate_question(
     review_result: ReviewResult,
     question_text: str,
     mode: AgentMode | str,
+    current_stage: str | None = None,
 ) -> tuple[bool, str]:
     """
     Determine if a question should be regenerated after review.
@@ -369,7 +373,7 @@ def should_regenerate_question(
         return True, review_result.review_reason
 
     # Also check the question text itself
-    text_review = review_question_text(question_text, mode)
+    text_review = review_question_text(question_text, mode, current_stage=current_stage)
     if not text_review["is_valid"]:
         return True, "; ".join(text_review["reasons"])
 

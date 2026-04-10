@@ -73,6 +73,7 @@ class HistoryCompressionTests(unittest.TestCase):
             clean_generated_question(
                 "Q7: What does the scheduler do right after startup? What happens if the config is missing?",
                 7,
+                current_stage="Code Detail Completion",
             ),
             "Q7: What does the scheduler do right after startup?",
         )
@@ -82,8 +83,19 @@ class HistoryCompressionTests(unittest.TestCase):
             clean_generated_question(
                 "Q8: To better understand the current implementation, could you walk me through how app/services/question_generator.py builds the prompt?",
                 8,
+                current_stage="Code Detail Completion",
             ),
             "Q8: How does app/services/question_generator.py build the prompt?",
+        )
+
+    def test_question_copy_variant_keeps_multi_part_panorama_question(self):
+        self.assertEqual(
+            clean_generated_question(
+                "Q4: To better understand the current system, could you walk me through what the project does and who it serves?",
+                4,
+                current_stage="Panorama Mapping",
+            ),
+            "Q4: What does the project do and who does it serve?",
         )
 
     def test_compact_context_uses_override_for_latest_pending_answer(self):
@@ -157,6 +169,7 @@ class QuestionReviewerTests(unittest.TestCase):
         review = review_question_text(
             "Q9: What triggers the job runner? What happens after that?",
             "understand_current_code",
+            current_stage="Code Detail Completion",
         )
 
         self.assertFalse(review["is_valid"])
@@ -170,10 +183,24 @@ class QuestionReviewerTests(unittest.TestCase):
                 "decide which repository evidence matters most before calling the model right now?"
             ),
             "understand_current_code",
+            current_stage="Code Detail Completion",
         )
 
         self.assertFalse(review["is_valid"])
         self.assertIn("Question is too long; keep it concise and direct.", review["reasons"])
+
+    def test_reviewer_allows_longer_non_code_detail_question(self):
+        review = review_question_text(
+            (
+                "Q3: How do the major modules collaborate across request intake, orchestration, persistence, "
+                "and delivery boundaries when a user moves through the main workflow and the system hands "
+                "off responsibility between services and layers?"
+            ),
+            "understand_current_code",
+            current_stage="Architecture Understanding",
+        )
+
+        self.assertTrue(review["is_valid"])
 
 
 if __name__ == "__main__":

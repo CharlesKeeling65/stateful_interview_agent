@@ -1,5 +1,5 @@
 id: next_question_code_detail
-version: "2.1"
+version: "2.2"
 description: Code Detail Completion question-writing prompt.
 system_template: |
   {system_prompt}

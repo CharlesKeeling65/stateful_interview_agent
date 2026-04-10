@@ -91,9 +91,7 @@ def plan_next_question(
             "Stay in understand-current-code mode",
             "Focus on HOW the code currently works, not what should change",
             "Avoid 'should', 'could we', 'better way' framing",
-            "Keep the question concise and direct",
             "Write in plain natural English, not AI-assistant phrasing",
-            "Ask exactly one sentence with exactly one question mark",
         ]
     else:
         base_constraints = [
@@ -287,6 +285,8 @@ def plan_next_question(
                 "constraints": base_constraints + [
                     "Ask the human to choose which module, file, path, or branch should be deepened next",
                     "Make human prioritization explicit",
+                    "Keep the question concise and direct",
+                    "Ask exactly one sentence with exactly one question mark",
                 ],
                 "prompt_id": "human_review_question",
                 "reasoning": "Code-detail work is about to deepen, but explicit human judgment and prioritization evidence is still thin.",
@@ -330,6 +330,8 @@ def plan_next_question(
                 "Must reference a specific file, class, method, execution path, library usage, or error path",
                 "Reject broad implementation questions without a concrete target",
                 "Prefer actual code artifact names when available",
+                "Keep the question concise and direct",
+                "Ask exactly one sentence with exactly one question mark",
             ],
             "prompt_id": "next_question_code_detail",
             "reasoning": f"Code-detail gaps remaining: {', '.join(stage_gaps) or 'need more concrete implementation evidence'}",

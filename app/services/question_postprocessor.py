@@ -1,6 +1,7 @@
 import re
 
 MAX_QUESTION_CHARS = 160
+CODE_DETAIL_STAGE = "Code Detail Completion"
 
 
 def _remove_ai_lead_in(text: str) -> str:
@@ -10,6 +11,24 @@ def _remove_ai_lead_in(text: str) -> str:
         text,
         flags=re.IGNORECASE,
     ).strip()
+
+    what_and_who_match = re.match(
+        r"^(?:could you|can you|would you)\s+walk me through\s+what\s+(.+?)\s+does\s+and\s+who\s+it\s+serves\??$",
+        text,
+        flags=re.IGNORECASE,
+    )
+    if what_and_who_match:
+        subject = what_and_who_match.group(1).strip()
+        return f"What does {subject} do and who does it serve?"
+
+    what_match = re.match(
+        r"^(?:could you|can you|would you)\s+walk me through\s+what\s+(.+?)\s+does\??$",
+        text,
+        flags=re.IGNORECASE,
+    )
+    if what_match:
+        subject = what_match.group(1).strip()
+        return f"What does {subject} do?"
 
     walk_through_match = re.match(
         r"^(?:could you|can you|would you)\s+walk me through\s+how\s+(.+)$",
@@ -55,6 +74,10 @@ def _trim_question_length(text: str) -> str:
     return prefix + truncated_body
 
 
+def _should_enforce_code_detail_tightening(current_stage: str | None) -> bool:
+    return current_stage == CODE_DETAIL_STAGE
+
+
 def strip_question_prefix(text: str) -> str:
     return re.sub(
         r"^\s*(?:\*\*\s*)?(?:Q|Question)\s*\d+\s*[:：]\s*(?:\*\*\s*)?",
@@ -64,7 +87,11 @@ def strip_question_prefix(text: str) -> str:
     ).strip()
 
 
-def clean_generated_question(text: str, expected_turn_no: int) -> str:
+def clean_generated_question(
+    text: str,
+    expected_turn_no: int,
+    current_stage: str | None = None,
+) -> str:
     text = text.strip()
 
     # 只保留第一行，避免附带解释
@@ -122,12 +149,14 @@ def clean_generated_question(text: str, expected_turn_no: int) -> str:
     prefix = f"Q{expected_turn_no}: "
     body = text[len(prefix):].strip() if text.startswith(prefix) else text
     body = _remove_ai_lead_in(body)
-    body = _keep_only_first_question(body)
-    if "?" not in body:
-        body = body.rstrip(".") + "?"
+    if _should_enforce_code_detail_tightening(current_stage):
+        body = _keep_only_first_question(body)
+        if "?" not in body:
+            body = body.rstrip(".") + "?"
     text = prefix + body
 
-    text = _trim_question_length(text)
+    if _should_enforce_code_detail_tightening(current_stage):
+        text = _trim_question_length(text)
 
     # 保证是问句
     if "?" not in text:

@@ -51,7 +51,11 @@ def normalize_question_versions(db: Session, turn: InterviewTurn) -> list[Interv
         elif index > 1 and version.generation_kind == "initial":
             version.generation_kind = "human_regeneration"
         if version.question_text:
-            cleaned_question = clean_generated_question(version.question_text, turn.turn_no)
+            cleaned_question = clean_generated_question(
+                version.question_text,
+                turn.turn_no,
+                current_stage=turn.stage,
+            )
             if cleaned_question != version.question_text:
                 version.question_text = cleaned_question
         saw_initial = saw_initial or version.generation_kind == "initial"
@@ -60,7 +64,11 @@ def normalize_question_versions(db: Session, turn: InterviewTurn) -> list[Interv
         versions[0].generation_kind = "initial"
 
     if turn.question_text:
-        cleaned_turn_question = clean_generated_question(turn.question_text, turn.turn_no)
+        cleaned_turn_question = clean_generated_question(
+            turn.question_text,
+            turn.turn_no,
+            current_stage=turn.stage,
+        )
         if cleaned_turn_question != turn.question_text:
             turn.question_text = cleaned_turn_question
 

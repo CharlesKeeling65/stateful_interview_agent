@@ -93,7 +93,11 @@ def generate_first_question_result(system_prompt: str, repository_context: str =
             exc_info=error,
         )
         raise error
-    cleaned = clean_generated_question(content, 1)
+    cleaned = clean_generated_question(
+        content,
+        1,
+        current_stage="Panorama Mapping",
+    )
     usage_metrics = extract_usage_metrics(
         response,
         prompt_text=prompt_text,
@@ -227,7 +231,11 @@ def generate_next_question_from_history(
             content = response.text
             if not content:
                 raise ValueError("Model returned empty content.")
-            cleaned = clean_generated_question(content, next_turn_no)
+            cleaned = clean_generated_question(
+                content,
+                next_turn_no,
+                current_stage=current_stage,
+            )
             usage_metrics = extract_usage_metrics(
                 response,
                 prompt_text=prompt_text,

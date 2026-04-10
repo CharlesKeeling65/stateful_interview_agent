@@ -1,5 +1,5 @@
 id: next_question_wrap_up
-version: "2.1"
+version: "2.2"
 description: Final wrap-up readiness question-writing prompt.
 system_template: |
   {system_prompt}
@@ -32,9 +32,8 @@ user_template: |
   1. Ask exactly one English question labeled Q{next_turn_no}.
   2. Focus on final readiness, missing evidence, or delivery handoff preparation.
   3. Do not reopen broad new investigation areas.
-  4. Keep it short, direct, and natural. Avoid AI-assistant lead-ins or polite filler.
-  5. Use exactly one sentence and exactly one question mark.
-  6. Do not provide explanations, alternatives, or change proposals.
+  4. Keep it natural. Avoid AI-assistant lead-ins or polite filler.
+  5. Do not provide explanations, alternatives, or change proposals.
 required_variables:
   - system_prompt
   - current_stage
