@@ -303,7 +303,7 @@ npm run build
 cd ..
 ```
 
-2. Install build tooling:
+1. Install build tooling:
 
 ```bash
 uv sync --extra build
@@ -311,13 +311,13 @@ uv sync --extra build
 
 ### Windows packaging
 
-3. Build the Windows bundle on Windows:
+1. Build the Windows bundle on Windows:
 
 ```bash
 uv run pyinstaller packaging/windows/stateful_interview_agent.spec
 ```
 
-4. Copy your runtime files next to `dist/StatefulInterviewAgent/StatefulInterviewAgent.exe`:
+1. Copy your runtime files next to `dist/StatefulInterviewAgent/StatefulInterviewAgent.exe`:
 
 ```text
 dist/StatefulInterviewAgent/
@@ -329,13 +329,13 @@ dist/StatefulInterviewAgent/
 
 ### Ubuntu Linux packaging
 
-3. Build the Linux bundle on Ubuntu Linux:
+1. Build the Linux bundle on Ubuntu Linux:
 
 ```bash
 uv run pyinstaller packaging/linux/stateful_interview_agent.spec
 ```
 
-4. Copy your runtime files next to `dist/StatefulInterviewAgent/StatefulInterviewAgent`:
+1. Copy your runtime files next to `dist/StatefulInterviewAgent/StatefulInterviewAgent`:
 
 ```text
 dist/StatefulInterviewAgent/
@@ -343,6 +343,32 @@ dist/StatefulInterviewAgent/
 ├─ .env
 ├─ data/
 └─ logs/
+```
+
+### Linux runtime example
+
+After downloading `StatefulInterviewAgent-linux.tar.gz` from GitHub Releases:
+
+```bash
+tar -xzf StatefulInterviewAgent-linux.tar.gz
+cd StatefulInterviewAgent
+cp .env.example .env
+chmod +x StatefulInterviewAgent
+./StatefulInterviewAgent
+```
+
+By default, the packaged Linux app:
+
+- reads configuration from `./.env`
+- stores SQLite data under `./data/`
+- writes logs under `./logs/`
+
+If you want to override those defaults:
+
+```bash
+STATEFUL_AGENT_ENV_FILE=/etc/stateful-interview-agent.env \
+STATEFUL_AGENT_RUNTIME_DIR=/var/lib/stateful-interview-agent \
+./StatefulInterviewAgent
 ```
 
 ### GitHub Actions release artifacts
