@@ -10,6 +10,7 @@ from sqlalchemy.orm import sessionmaker
 from app.api.routes import projects as project_routes
 from app.core.database import Base, get_db
 from app.main import app
+from app.models.agent_run import AgentRun
 from app.models.project import ProjectSession
 from app.models.turn import InterviewTurn
 
@@ -83,6 +84,50 @@ class OpenCodeApiRouteTests(unittest.TestCase):
             response.json()["detail"],
             "auth_unavailable: no auth available",
         )
+
+    def test_plan_step_uses_edited_question_text_when_provided(self):
+        def fake_submit_answer_and_generate_next(*, project_id, payload, db):
+            project = db.query(ProjectSession).filter(ProjectSession.id == project_id).first()
+            answered_turn = (
+                db.query(InterviewTurn)
+                .filter(InterviewTurn.project_id == project_id)
+                .order_by(InterviewTurn.turn_no.desc())
+                .first()
+            )
+            return {
+                "project": project,
+                "previous_turn": answered_turn,
+                "next_turn": None,
+                "interview_finished": False,
+                "minimum_goal_reached": False,
+                "usage_summary": {
+                    "prompt_tokens": 0,
+                    "completion_tokens": 0,
+                    "total_tokens": 0,
+                    "estimated_total_tokens": 0,
+                },
+            }
+
+        with patch.object(
+            project_routes,
+            "ensure_opencode_session_with_status",
+            return_value=("ses_123", False),
+        ), patch.object(
+            project_routes,
+            "fetch_opencode_answer",
+            return_value="OpenCode answer",
+        ) as fetch_mock, patch.object(
+            project_routes,
+            "submit_answer_and_generate_next",
+            side_effect=fake_submit_answer_and_generate_next,
+        ):
+            response = self.client.post(
+                f"/projects/{self.project_id}/opencode/plan-step",
+                json={"question_text": "Edited question for OpenCode"},
+            )
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(fetch_mock.call_args.kwargs["question_text"], "Edited question for OpenCode")
 
 
 if __name__ == "__main__":

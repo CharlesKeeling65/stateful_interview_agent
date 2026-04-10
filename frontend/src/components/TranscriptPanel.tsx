@@ -11,6 +11,7 @@ import { TurnCard } from './TurnCard'
 type TranscriptPanelProps = {
   copyLabel?: string | null
   onCopyLatestQuestion?: (text: string) => Promise<void> | void
+  onDeleteTurnTail?: (turnId: number) => Promise<void> | void
   onRegenerateCurrentQuestion?: (turnId: number, humanReview?: TurnRead['human_review']) => Promise<void> | void
   onRequestDelete?: (project: ProjectRead) => void
   onRenameProject?: (nextTitle: string) => Promise<void> | void
@@ -42,6 +43,7 @@ function EmptyState({ t }: { t: Translator }) {
 export function TranscriptPanel({
   copyLabel = null,
   onCopyLatestQuestion,
+  onDeleteTurnTail,
   onRegenerateCurrentQuestion,
   onRequestDelete,
   onRenameProject,
@@ -155,6 +157,7 @@ export function TranscriptPanel({
               isLatestActiveTurn={!turn.answer_text && turn.id === latestTurnId}
               locale={locale}
               onCopyLatestQuestion={onCopyLatestQuestion}
+              onDeleteFromTurn={onDeleteTurnTail}
               onRegenerateCurrentQuestion={onRegenerateCurrentQuestion}
               regenerateWorking={regenerateWorking && turn.id === latestTurnId}
               run={runByTurnNo.get(turn.turn_no) ?? null}

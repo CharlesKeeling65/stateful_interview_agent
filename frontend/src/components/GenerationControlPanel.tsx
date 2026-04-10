@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 
 import type { Locale, Translator } from '../i18n'
 import type { HumanGateRead, HumanReviewInput, NextQuestionRequestPayload } from '../types/api'
@@ -20,7 +20,7 @@ type GenerationControlPanelProps = {
   savedAnswer?: string | null
   workingLabel?: string | null
   onGenerateNext: (payload?: NextQuestionRequestPayload) => Promise<void> | void
-  onOpenCodeSend?: () => Promise<void> | void
+  onOpenCodeSend?: (questionText?: string) => Promise<void> | void
   onOpenCodeRegenerateCurrentQuestion?: (humanReview: HumanReviewInput | null) => Promise<void> | void
   onOpenCodeSkip?: () => void
   opencodePlan?: {
@@ -59,6 +59,8 @@ export function GenerationControlPanel({
   const [gateAction, setGateAction] = useState('')
   const [gateFocus, setGateFocus] = useState('')
   const [gateNote, setGateNote] = useState('')
+  const [isEditingOpenCodeQuestion, setIsEditingOpenCodeQuestion] = useState(false)
+  const [editedOpenCodeQuestion, setEditedOpenCodeQuestion] = useState('')
 
   function buildHumanReviewSignal(): HumanReviewInput | null {
     if (!reviewVerdict && !preferredNextFocus.trim() && !reviewNote.trim() && !phaseReady && !phaseCorrection) {
@@ -79,6 +81,14 @@ export function GenerationControlPanel({
   const hasPendingGate = Boolean(pendingGate)
   const effectiveCanGenerateNext = hasPendingGate ? true : canGenerateNext
   const showOpenCodePlan = Boolean(opencodePlan?.enabled && projectStarted && !projectFinished)
+  const activeOpenCodeQuestion = isEditingOpenCodeQuestion
+    ? editedOpenCodeQuestion
+    : (opencodePlan?.pendingQuestionText ?? '')
+
+  useEffect(() => {
+    setIsEditingOpenCodeQuestion(false)
+    setEditedOpenCodeQuestion(opencodePlan?.pendingQuestionText ?? '')
+  }, [opencodePlan?.pendingQuestionText])
 
   function buildNextPayload(): NextQuestionRequestPayload {
     if (pendingGate) {
@@ -148,17 +158,41 @@ export function GenerationControlPanel({
             <p className="text-[0.64rem] font-semibold uppercase tracking-[0.18em] text-indigo-700">
               {t('generation.currentQuestion')}
             </p>
-            <p className="mt-2 text-sm leading-7 text-slate-800">{opencodePlan.pendingQuestionText}</p>
+            {isEditingOpenCodeQuestion ? (
+              <textarea
+                className="mt-2 min-h-28 w-full rounded-[1rem] border border-indigo-200 bg-indigo-50/40 px-3 py-3 text-sm leading-7 text-slate-800 outline-none focus:border-indigo-500 focus:ring-2 focus:ring-indigo-200"
+                value={editedOpenCodeQuestion}
+                onChange={(event) => setEditedOpenCodeQuestion(event.target.value)}
+              />
+            ) : (
+              <p className="mt-2 text-sm leading-7 text-slate-800">{opencodePlan.pendingQuestionText}</p>
+            )}
           </div>
 
           <div className="mt-4 flex flex-wrap gap-2">
             <button
               type="button"
               className="rounded-full bg-indigo-700 px-4 py-2 text-sm font-medium text-white transition hover:bg-indigo-600 disabled:cursor-not-allowed disabled:bg-indigo-300"
-              onClick={() => void onOpenCodeSend?.()}
+              onClick={() => void onOpenCodeSend?.(activeOpenCodeQuestion.trim() || opencodePlan.pendingQuestionText)}
               disabled={disabled}
             >
-              {t('composer.sendToOpenCode')}
+              {isEditingOpenCodeQuestion ? t('composer.sendEditedQuestion') : t('composer.sendToOpenCode')}
+            </button>
+            <button
+              type="button"
+              className="rounded-full border border-indigo-300 px-4 py-2 text-sm font-medium text-indigo-700 transition hover:bg-white disabled:cursor-not-allowed disabled:text-indigo-300"
+              onClick={() => {
+                if (!isEditingOpenCodeQuestion) {
+                  setEditedOpenCodeQuestion(opencodePlan.pendingQuestionText)
+                  setIsEditingOpenCodeQuestion(true)
+                  return
+                }
+                setEditedOpenCodeQuestion(opencodePlan.pendingQuestionText)
+                setIsEditingOpenCodeQuestion(false)
+              }}
+              disabled={disabled}
+            >
+              {isEditingOpenCodeQuestion ? t('composer.cancelEditQuestion') : t('composer.editBeforeSending')}
             </button>
             <button
               type="button"

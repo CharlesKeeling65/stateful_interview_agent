@@ -15,7 +15,7 @@ import { formatDurationMs, formatTimestamp } from '../utils/format'
 import { buildQuestionVersionDiff, normalizeAnswerText, normalizeQuestionText } from '../utils/text'
 import { formatTokenCount, summarizeOperationUsage } from '../utils/tokens'
 import { ActionButton } from './ActionButton'
-import { CheckIcon, ChevronDownIcon, ClockIcon, CopyIcon } from './Icons'
+import { CheckIcon, ChevronDownIcon, ClockIcon, CopyIcon, TrashIcon } from './Icons'
 import { ExecutionTraceSection } from './ExecutionTraceSection'
 import { TokenUsagePanel } from './TokenUsagePanel'
 
@@ -26,6 +26,7 @@ type TurnCardProps = {
   isLatestActiveTurn?: boolean
   locale?: Locale
   onCopyLatestQuestion?: (text: string) => Promise<void> | void
+  onDeleteFromTurn?: (turnId: number) => Promise<void> | void
   onRegenerateCurrentQuestion?: (turnId: number, humanReview?: TurnRead['human_review']) => Promise<void> | void
   regenerateWorking?: boolean
   run?: RunRead | null
@@ -38,6 +39,7 @@ export const TurnCard = memo(function TurnCard({
   isLatestActiveTurn = false,
   locale = 'en',
   onCopyLatestQuestion,
+  onDeleteFromTurn,
   onRegenerateCurrentQuestion,
   regenerateWorking = false,
   run = null,
@@ -101,6 +103,17 @@ export const TurnCard = memo(function TurnCard({
             <p className="mt-2 text-xs text-slate-500">{formatTimestamp(turn.created_at, locale)}</p>
           </div>
           <div className="flex flex-wrap items-center gap-2">
+            {onDeleteFromTurn ? (
+              <ActionButton
+                aria-label={t('transcript.deleteTurnFromHere')}
+                icon={<TrashIcon />}
+                label={t('transcript.deleteTurnFromHere')}
+                onClick={() => void onDeleteFromTurn(turn.id)}
+                title={t('transcript.deleteTurnFromHere')}
+                type="button"
+                variant="danger"
+              />
+            ) : null}
             {isLatestActiveTurn ? (
               <ActionButton
                 aria-label={t('transcript.copyLatest')}

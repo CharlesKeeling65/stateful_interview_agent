@@ -1,5 +1,5 @@
-import { render, screen } from '@testing-library/react'
-import { describe, expect, it } from 'vitest'
+import { fireEvent, render, screen } from '@testing-library/react'
+import { describe, expect, it, vi } from 'vitest'
 
 import { createTranslator } from '../i18n'
 import type { TurnRead } from '../types/api'
@@ -87,5 +87,22 @@ describe('TurnCard', () => {
     expect(screen.queryByText(/^Q1:/)).not.toBeInTheDocument()
     expect(screen.getByText('Core workflow path: API gateway -> auth service -> orchestration service.')).toBeInTheDocument()
     expect(screen.getByText('RAG chunks: 1')).toBeInTheDocument()
+  })
+
+  it('exposes a delete-from-here action for transcript truncation', () => {
+    const onDeleteFromTurn = vi.fn()
+
+    render(
+      <TurnCard
+        locale="en"
+        onDeleteFromTurn={onDeleteFromTurn}
+        t={createTranslator('en')}
+        turn={turn}
+      />,
+    )
+
+    fireEvent.click(screen.getByRole('button', { name: 'Delete from here' }))
+
+    expect(onDeleteFromTurn).toHaveBeenCalledWith(turn.id)
   })
 })

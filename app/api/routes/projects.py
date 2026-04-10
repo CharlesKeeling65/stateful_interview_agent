@@ -11,6 +11,7 @@ from app.graphs.interview_nodes import build_question_plan_json, generate_questi
 from app.graphs.interview_nodes import draft_question_from_answered_history
 from app.logging import bind_log_context, emit_event, preview_payload
 from app.models.agent_run import AgentRun
+from app.models.llm_usage import LLMUsage
 from app.models.project import ProjectSession
 from app.models.turn import InterviewTurn
 from app.schemas.project import (
@@ -27,6 +28,7 @@ from app.schemas.run_trace import RunRead
 from app.schemas.turn import (
     AnswerSubmitRequest,
     AnswerSubmitResponse,
+    TurnTailDeleteResponse,
     AnswerWithdrawResponse,
     CurrentQuestionRegenerateRequest,
     CurrentQuestionRegenerateResponse,
@@ -381,6 +383,87 @@ def withdraw_answer(project_id: int, db: Session = Depends(get_db)):
     }
 
 
+@router.delete("/{project_id}/turns/{turn_id}/tail", response_model=TurnTailDeleteResponse)
+def delete_turn_tail(project_id: int, turn_id: int, db: Session = Depends(get_db)):
+    bind_log_context(project_id=project_id, turn_id=turn_id)
+    project = db.query(ProjectSession).filter(ProjectSession.id == project_id).first()
+    if not project:
+        raise HTTPException(status_code=404, detail="Project not found")
+
+    selected_turn = (
+        db.query(InterviewTurn)
+        .filter(InterviewTurn.project_id == project_id, InterviewTurn.id == turn_id)
+        .first()
+    )
+    if not selected_turn:
+        raise HTTPException(status_code=404, detail="Turn not found")
+
+    deleted_from_turn_no = selected_turn.turn_no
+    turns_to_delete = (
+        db.query(InterviewTurn)
+        .filter(
+            InterviewTurn.project_id == project_id,
+            InterviewTurn.turn_no >= deleted_from_turn_no,
+        )
+        .order_by(InterviewTurn.turn_no.asc())
+        .all()
+    )
+    deleted_turn_ids = [turn.id for turn in turns_to_delete]
+
+    if deleted_turn_ids:
+        (
+            db.query(AgentRun)
+            .filter(
+                AgentRun.project_id == project_id,
+                AgentRun.turn_no.isnot(None),
+                AgentRun.turn_no >= deleted_from_turn_no,
+            )
+            .delete(synchronize_session=False)
+        )
+        (
+            db.query(LLMUsage)
+            .filter(
+                LLMUsage.project_id == project_id,
+                LLMUsage.turn_id.in_(deleted_turn_ids),
+            )
+            .delete(synchronize_session=False)
+        )
+        for turn in turns_to_delete:
+            db.delete(turn)
+
+    remaining_turns = (
+        db.query(InterviewTurn)
+        .filter(InterviewTurn.project_id == project_id, InterviewTurn.turn_no < deleted_from_turn_no)
+        .order_by(InterviewTurn.turn_no.asc())
+        .all()
+    )
+    save_coverage_state(project, rebuild_coverage_state(remaining_turns))
+    project.pending_gate_json = "null"
+    project.turn_count = len(remaining_turns)
+    project.current_stage = remaining_turns[-1].stage if remaining_turns else "Panorama Mapping"
+
+    db.commit()
+
+    emit_event(
+        "persistence",
+        "turn.tail.deleted",
+        "Deleted selected turn and all subsequent history",
+        operation="delete_turn_tail",
+        status="success",
+        project_id=project_id,
+        turn_no=deleted_from_turn_no,
+        output={"remaining_turn_count": len(remaining_turns)},
+    )
+
+    return {
+        "project_id": project_id,
+        "deleted_from_turn_id": turn_id,
+        "deleted_from_turn_no": deleted_from_turn_no,
+        "remaining_turn_count": len(remaining_turns),
+        "message": "Deleted this turn and all later history.",
+    }
+
+
 @router.post("/{project_id}/auto-answer-latest", response_model=AnswerSubmitResponse)
 def auto_answer_latest_turn(project_id: int, db: Session = Depends(get_db)):
     bind_log_context(project_id=project_id)
@@ -472,7 +555,7 @@ def run_project_opencode_plan_step(
         )
 
     session_id, _ = ensure_opencode_session_with_status(project)
-    outgoing_question = latest_turn.question_text_for_copy.strip()
+    outgoing_question = (payload.question_text or "").strip() or latest_turn.question_text_for_copy.strip()
 
     try:
         answer_text = fetch_opencode_answer(

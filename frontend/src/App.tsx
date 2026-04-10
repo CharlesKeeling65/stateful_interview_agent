@@ -21,6 +21,7 @@ function App() {
     busyAction,
     createDemoProject,
     createProject,
+    deleteTurnTail,
     deleteProject,
     error,
     lastMessageKey,
@@ -76,6 +77,14 @@ function App() {
     } finally {
       window.setTimeout(() => setLatestQuestionCopyLabel(null), 1200)
     }
+  }
+
+  async function handleDeleteTurnTail(turnId: number) {
+    const confirmed = window.confirm(t('transcript.deleteTurnConfirm'))
+    if (!confirmed) {
+      return
+    }
+    await deleteTurnTail(turnId)
   }
 
   function getExportFilename(extension: 'txt' | 'md') {
@@ -285,9 +294,9 @@ function App() {
                     estimateDraftUsage={estimateDraftUsage}
                     locale={locale}
                     onGenerateNext={submitNext}
-                    onOpenCodeSend={async () => {
+                    onOpenCodeSend={async (questionText) => {
                       setSkippedOpencodeTurnId(null)
-                      await runOpenCodePlanStep(null)
+                      await runOpenCodePlanStep(null, questionText ?? null)
                     }}
                     onOpenCodeRegenerateCurrentQuestion={async (humanReview) => {
                       if (!latestTurn) {
@@ -357,6 +366,7 @@ function App() {
                   copyLabel={latestQuestionCopyLabel}
                   locale={locale}
                   onCopyLatestQuestion={handleCopyLatestQuestion}
+                  onDeleteTurnTail={handleDeleteTurnTail}
                   onRegenerateCurrentQuestion={regenerateCurrentQuestion}
                   onRequestDelete={setProjectPendingDelete}
                   onRenameProject={

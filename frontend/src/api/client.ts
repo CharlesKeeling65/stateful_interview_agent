@@ -13,6 +13,7 @@ import type {
   ProjectStatusResponse,
   RunRead,
   TranscriptResponse,
+  TurnTailDeleteResponse,
   TurnRead,
   UpdateProjectPayload,
 } from '../types/api'
@@ -115,6 +116,7 @@ export async function runOpenCodePlanStep(projectId: number, payload?: OpenCodeP
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({
       human_review: payload?.human_review ?? null,
+      question_text: payload?.question_text ?? null,
     }),
   })
 }
@@ -165,6 +167,12 @@ export async function updateProject(projectId: number, payload: UpdateProjectPay
 
 export async function deleteProject(projectId: number) {
   await request<void>(`/projects/${projectId}`, {
+    method: 'DELETE',
+  })
+}
+
+export async function deleteTurnTail(projectId: number, turnId: number) {
+  return request<TurnTailDeleteResponse>(`/projects/${projectId}/turns/${turnId}/tail`, {
     method: 'DELETE',
   })
 }

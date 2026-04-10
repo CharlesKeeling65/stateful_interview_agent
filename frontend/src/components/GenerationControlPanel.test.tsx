@@ -95,6 +95,43 @@ describe('GenerationControlPanel', () => {
     expect(screen.queryByText(/^Q3:/)).not.toBeInTheDocument()
   })
 
+  it('lets users edit the OpenCode question inline before sending', () => {
+    const onOpenCodeSend = vi.fn()
+
+    render(
+      <GenerationControlPanel
+        canGenerateNext
+        estimateDraftUsage={() => ({
+          estimatedAnswerInputTokens: 0,
+          estimatedNextPromptTokens: 0,
+          estimatedNextOutputTokens: 0,
+        })}
+        onGenerateNext={vi.fn()}
+        onOpenCodeSend={onOpenCodeSend}
+        onOpenCodeRegenerateCurrentQuestion={vi.fn()}
+        onOpenCodeSkip={vi.fn()}
+        opencodePlan={{
+          enabled: true,
+          sessionId: 'sess_123',
+          pendingQuestionText: 'How is the repository bootstrapped?',
+        }}
+        projectStarted
+        savedAnswer="saved answer"
+        t={createTranslator('en')}
+      />,
+    )
+
+    fireEvent.click(screen.getByRole('button', { name: 'Edit before sending' }))
+
+    const editor = screen.getByDisplayValue('How is the repository bootstrapped?')
+    fireEvent.change(editor, {
+      target: { value: 'How is the repository bootstrapped in development?' },
+    })
+    fireEvent.click(screen.getByRole('button', { name: 'Send edited question' }))
+
+    expect(onOpenCodeSend).toHaveBeenCalledWith('How is the repository bootstrapped in development?')
+  })
+
   it('passes human review details when users regenerate the current question', () => {
     const onOpenCodeRegenerateCurrentQuestion = vi.fn()
 

@@ -134,6 +134,7 @@ class NextQuestionRequest(BaseModel):
 
 class OpenCodePlanStepRequest(BaseModel):
     human_review: HumanReviewInput | None = None
+    question_text: str | None = None
 
 
 class QuestionVersionRead(BaseModel):
@@ -186,6 +187,14 @@ class CurrentQuestionRegenerateResponse(BaseModel):
 class AnswerWithdrawResponse(BaseModel):
     project_id: int
     withdrawn_turn: TurnRead
+    message: str
+
+
+class TurnTailDeleteResponse(BaseModel):
+    project_id: int
+    deleted_from_turn_id: int
+    deleted_from_turn_no: int
+    remaining_turn_count: int
     message: str
 
 

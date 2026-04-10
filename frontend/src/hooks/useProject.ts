@@ -4,6 +4,7 @@ import {
   autoAnswerLatest,
   autoStep,
   createProject,
+  deleteTurnTail,
   deleteProject,
   ensureOpenCodeSession,
   getProject,
@@ -310,7 +311,10 @@ export function useProject() {
     }
   }
 
-  async function handleRunOpenCodePlanStep(humanReview?: HumanReviewInput | null) {
+  async function handleRunOpenCodePlanStep(
+    humanReview?: HumanReviewInput | null,
+    questionText?: string | null,
+  ) {
     if (!project) {
       return
     }
@@ -326,6 +330,7 @@ export function useProject() {
     try {
       const result = await runOpenCodePlanStep(project.id, {
         human_review: humanReview ?? null,
+        question_text: questionText?.trim() || null,
       })
       startTransition(() => {
         setProject(result.project)
@@ -644,6 +649,30 @@ export function useProject() {
     }
   }
 
+  async function handleDeleteTurnTail(turnId: number) {
+    if (!project) {
+      return
+    }
+
+    setBusyAction('deleting')
+    setLoading(true)
+    setError('')
+
+    try {
+      const result = await deleteTurnTail(project.id, turnId)
+      startTransition(() => {
+        setLastMessageKey(result.remaining_turn_count > 0 ? 'status.turnTailDeleted' : 'status.turnTailDeletedToStart')
+        setLastRegenerationFeedback(null)
+      })
+      await refreshSelected(project.id)
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Unable to delete this turn and later history.')
+    } finally {
+      setBusyAction(null)
+      setLoading(false)
+    }
+  }
+
   const initializeProjects = useEffectEvent(() => {
     setBusyAction('initializing')
     void refreshProjects()
@@ -695,6 +724,7 @@ export function useProject() {
     submitNext: handleGenerateNext,
     autoStep: handleAutoStep,
     regenerateCurrentQuestion: handleRegenerateCurrentQuestion,
+    deleteTurnTail: handleDeleteTurnTail,
     deleteProject: handleDeleteProject,
     updateProject: handleUpdateProject,
   }

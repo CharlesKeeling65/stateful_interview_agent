@@ -282,6 +282,14 @@ export type AnswerSubmitResponse = {
   message: string
 }
 
+export type TurnTailDeleteResponse = {
+  project_id: number
+  deleted_from_turn_id: number
+  deleted_from_turn_no: number
+  remaining_turn_count: number
+  message: string
+}
+
 export type CreateProjectPayload = {
   project_name: string
   system_prompt: string
@@ -349,6 +357,7 @@ export type OpenCodeSessionResponse = {
 
 export type OpenCodePlanStepPayload = {
   human_review?: HumanReviewInput | null
+  question_text?: string | null
 }
 
 export type OpenCodePlanStepResponse = {
