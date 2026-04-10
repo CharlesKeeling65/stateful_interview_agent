@@ -1,5 +1,5 @@
 id: next_question_panorama
-version: "2.0"
+version: "2.1"
 description: Panorama Mapping question-writing prompt.
 system_template: |
   {system_prompt}
@@ -36,7 +36,9 @@ user_template: |
   3. Focus on purpose, target users, boundaries, major modules, high-level workflow, or initial module relationships.
   4. Do not dive into files, classes, methods, retries, safety audits, or detailed implementation.
   5. Ask about the current project as it exists today, not what should be changed.
-  6. Do not provide explanations, alternatives, or design suggestions.
+  6. Keep it short, direct, and natural. Avoid AI-assistant lead-ins or polite filler.
+  7. Use exactly one sentence and exactly one question mark.
+  8. Do not provide explanations, alternatives, or design suggestions.
 required_variables:
   - system_prompt
   - current_stage

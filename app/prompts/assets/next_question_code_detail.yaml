@@ -1,5 +1,5 @@
 id: next_question_code_detail
-version: "2.0"
+version: "2.1"
 description: Code Detail Completion question-writing prompt.
 system_template: |
   {system_prompt}
@@ -38,7 +38,9 @@ user_template: |
   5. It must not ask a vague summary question such as "How is this implemented overall?"
   6. It must not ask for redesigns, improvements, modifications, or test updates.
   7. Prefer concrete code artifacts over abstract design wording, and prefer tracing current behavior over discussing future changes.
-  8. Do not provide explanations, alternatives, or implementation proposals.
+  8. Keep it short, direct, and natural. Avoid AI-assistant lead-ins or polite filler.
+  9. Use exactly one sentence and exactly one question mark.
+  10. Do not provide explanations, alternatives, or implementation proposals.
 required_variables:
   - system_prompt
   - current_stage

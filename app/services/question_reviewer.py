@@ -73,6 +73,8 @@ UNDERSTANDING_PATTERNS = [
     r"what\s+is\s+(?:the\s+)?(?:current|existing)",
 ]
 
+MAX_QUESTION_LENGTH = 160
+
 
 def review_question_plan(
     planner_decision: dict[str, Any],
@@ -314,6 +316,14 @@ def review_question_text(
             result["reasons"].append(
                 f"Contains '{marker}' which is not allowed in {mode.value} mode"
             )
+
+    if question_text.count("?") != 1:
+        result["is_valid"] = False
+        result["reasons"].append("Question must contain exactly one question mark.")
+
+    if len(question_text.strip()) > MAX_QUESTION_LENGTH:
+        result["is_valid"] = False
+        result["reasons"].append("Question is too long; keep it concise and direct.")
 
     # Check patterns
     if not constraints.get("allow_change_proposals", False):

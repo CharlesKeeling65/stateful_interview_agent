@@ -6,6 +6,7 @@ os.environ.setdefault("OPENAI_API_KEY", "test-key")
 
 from app.models.turn import InterviewTurn
 from app.services.question_postprocessor import clean_generated_question
+from app.services.question_reviewer import review_question_text
 from app.services.transcript_service import build_compact_interview_context
 from app.services.usage_service import (
     aggregate_project_usage,
@@ -65,6 +66,24 @@ class HistoryCompressionTests(unittest.TestCase):
         self.assertEqual(
             clean_generated_question("# Q6: Call Chain Walkthrough?", 6),
             "Q6: Call Chain Walkthrough?",
+        )
+
+    def test_question_copy_variant_keeps_only_first_question_sentence(self):
+        self.assertEqual(
+            clean_generated_question(
+                "Q7: What does the scheduler do right after startup? What happens if the config is missing?",
+                7,
+            ),
+            "Q7: What does the scheduler do right after startup?",
+        )
+
+    def test_question_copy_variant_removes_ai_sounding_lead_in(self):
+        self.assertEqual(
+            clean_generated_question(
+                "Q8: To better understand the current implementation, could you walk me through how app/services/question_generator.py builds the prompt?",
+                8,
+            ),
+            "Q8: How does app/services/question_generator.py build the prompt?",
         )
 
     def test_compact_context_uses_override_for_latest_pending_answer(self):
@@ -131,6 +150,30 @@ class UsageServiceTests(unittest.TestCase):
         self.assertEqual(aggregated["prompt_tokens"], 140)
         self.assertEqual(aggregated["completion_tokens"], 30)
         self.assertEqual(aggregated["total_tokens"], 170)
+
+
+class QuestionReviewerTests(unittest.TestCase):
+    def test_reviewer_rejects_multiple_question_marks(self):
+        review = review_question_text(
+            "Q9: What triggers the job runner? What happens after that?",
+            "understand_current_code",
+        )
+
+        self.assertFalse(review["is_valid"])
+        self.assertIn("Question must contain exactly one question mark.", review["reasons"])
+
+    def test_reviewer_rejects_overlong_question_text(self):
+        review = review_question_text(
+            (
+                "Q10: In app/services/question_generator.py, how does generate_next_question_from_history "
+                "assemble the prompt, merge planner constraints, weave in retrieved context, and then "
+                "decide which repository evidence matters most before calling the model right now?"
+            ),
+            "understand_current_code",
+        )
+
+        self.assertFalse(review["is_valid"])
+        self.assertIn("Question is too long; keep it concise and direct.", review["reasons"])
 
 
 if __name__ == "__main__":

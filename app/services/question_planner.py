@@ -91,6 +91,9 @@ def plan_next_question(
             "Stay in understand-current-code mode",
             "Focus on HOW the code currently works, not what should change",
             "Avoid 'should', 'could we', 'better way' framing",
+            "Keep the question concise and direct",
+            "Write in plain natural English, not AI-assistant phrasing",
+            "Ask exactly one sentence with exactly one question mark",
         ]
     else:
         base_constraints = [

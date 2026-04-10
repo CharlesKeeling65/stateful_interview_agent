@@ -1,5 +1,5 @@
 id: next_question_architecture
-version: "2.0"
+version: "2.1"
 description: Architecture Understanding question-writing prompt.
 system_template: |
   {system_prompt}
@@ -37,7 +37,9 @@ user_template: |
   4. Avoid broad code-detail questions unless tied to a concrete call path or component interaction.
   5. Stay in understand-current-code mode: ask how the current structure and interactions work.
   6. Do not ask for redesigns, refactors, proposed modifications, or test updates.
-  7. Do not provide explanations, alternatives, or change proposals.
+  7. Keep it short, direct, and natural. Avoid AI-assistant lead-ins or polite filler.
+  8. Use exactly one sentence and exactly one question mark.
+  9. Do not provide explanations, alternatives, or change proposals.
 required_variables:
   - system_prompt
   - current_stage

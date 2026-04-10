@@ -104,6 +104,7 @@ USE_CASE_MARKERS = (
 )
 QUESTION_FILE_PATTERN = re.compile(r"\b[\w./-]+\.(?:py|ts|tsx|js|jsx|java|go|rb|yaml|yml|json|toml|md)\b")
 QUESTION_SYMBOL_PATTERN = re.compile(r"\b[A-Z][A-Za-z0-9_]{2,}\b")
+MAX_QUESTION_LENGTH = 160
 
 
 def looks_like_valid_question(text: str, expected_turn_no: int) -> bool:
@@ -140,9 +141,13 @@ def validate_question_for_stage(
 
     if "?" not in text:
         reasons.append("Question must contain a question mark.")
+    elif text.count("?") != 1:
+        reasons.append("Question must contain exactly one question mark.")
 
     if len(text) < 15:
         reasons.append("Question is too short.")
+    if len(text) > MAX_QUESTION_LENGTH:
+        reasons.append("Question is too long; keep it concise and direct.")
 
     # Mode-specific validation
     if effective_mode == "understand_current_code":
