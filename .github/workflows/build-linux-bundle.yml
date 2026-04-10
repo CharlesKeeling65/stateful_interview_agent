@@ -1,0 +1,80 @@
+name: Build Linux bundle
+
+on:
+  workflow_dispatch:
+  push:
+    tags:
+      - "v*"
+  pull_request:
+    paths:
+      - ".github/workflows/build-linux-bundle.yml"
+      - "app/**"
+      - "frontend/**"
+      - "packaging/linux/**"
+      - "pyproject.toml"
+      - "uv.lock"
+
+permissions:
+  contents: write
+
+jobs:
+  build-linux-bundle:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.10"
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+          cache: "npm"
+          cache-dependency-path: frontend/package-lock.json
+
+      - name: Set up uv
+        uses: astral-sh/setup-uv@v5
+        with:
+          enable-cache: true
+
+      - name: Install backend dependencies
+        run: uv sync --extra build
+
+      - name: Install frontend dependencies
+        working-directory: frontend
+        run: npm ci
+
+      - name: Build frontend
+        working-directory: frontend
+        run: npm run build
+
+      - name: Build Linux bundle
+        run: uv run pyinstaller packaging/linux/stateful_interview_agent.spec
+
+      - name: Prepare distributable folder
+        run: |
+          mkdir -p dist/StatefulInterviewAgent/data
+          mkdir -p dist/StatefulInterviewAgent/logs
+          cp .env.example dist/StatefulInterviewAgent/.env.example
+
+      - name: Upload Linux bundle artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: StatefulInterviewAgent-linux
+          path: dist/StatefulInterviewAgent
+          if-no-files-found: error
+
+      - name: Create release archive
+        if: startsWith(github.ref, 'refs/tags/v')
+        run: tar -C dist -czf dist/StatefulInterviewAgent-linux.tar.gz StatefulInterviewAgent
+
+      - name: Publish tagged release asset
+        if: startsWith(github.ref, 'refs/tags/v')
+        uses: softprops/action-gh-release@v2
+        with:
+          files: dist/StatefulInterviewAgent-linux.tar.gz
