@@ -24,6 +24,7 @@ class Settings(BaseSettings):
     log_artifacts_enabled: bool = False
     log_pretty_json: bool = False
     log_text_preview_chars: int = 240
+    max_question_length: int = 480
 
     llm_provider: Literal["openai_compatible", "anthropic", "opencode"] = (
         "openai_compatible"

@@ -10,6 +10,8 @@ from typing import Any
 
 from pydantic import BaseModel, Field
 
+from app.core.config import settings
+
 from app.services.mode_service import (
     AgentMode,
     GateType,
@@ -73,7 +75,7 @@ UNDERSTANDING_PATTERNS = [
     r"what\s+is\s+(?:the\s+)?(?:current|existing)",
 ]
 
-MAX_QUESTION_LENGTH = 240
+MAX_QUESTION_LENGTH = settings.max_question_length
 CODE_DETAIL_STAGE = "Code Detail Completion"
 
 
