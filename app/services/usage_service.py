@@ -18,12 +18,23 @@ def extract_usage_metrics(
 ):
     if response is not None:
         usage = response.usage
-        if usage.prompt_tokens and usage.completion_tokens and usage.total_tokens:
+        prompt_tokens = getattr(usage, "prompt_tokens", None)
+        completion_tokens = getattr(usage, "completion_tokens", None)
+        total_tokens = getattr(usage, "total_tokens", None)
+
+        if prompt_tokens is None:
+            prompt_tokens = getattr(usage, "input_tokens", None)
+        if completion_tokens is None:
+            completion_tokens = getattr(usage, "output_tokens", None)
+        if total_tokens is None and prompt_tokens is not None and completion_tokens is not None:
+            total_tokens = prompt_tokens + completion_tokens
+
+        if prompt_tokens is not None and completion_tokens is not None and total_tokens is not None:
             return {
-                "prompt_tokens": int(usage.prompt_tokens),
-                "completion_tokens": int(usage.completion_tokens),
-                "total_tokens": int(usage.total_tokens),
-                "is_estimated": bool(usage.is_estimated),
+                "prompt_tokens": int(prompt_tokens),
+                "completion_tokens": int(completion_tokens),
+                "total_tokens": int(total_tokens),
+                "is_estimated": bool(getattr(usage, "is_estimated", False)),
             }
 
     estimated_prompt = estimate_token_count(prompt_text)
