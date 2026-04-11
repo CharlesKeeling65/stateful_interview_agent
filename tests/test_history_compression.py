@@ -108,6 +108,46 @@ class HistoryCompressionTests(unittest.TestCase):
             "Q4: What does the project do and who does it serve?",
         )
 
+    def test_question_copy_variant_removes_specifically_lead_in_across_stages(self):
+        self.assertEqual(
+            clean_generated_question(
+                "Q5: Specifically, how do the major modules collaborate during the main request flow?",
+                5,
+                current_stage="Architecture Understanding",
+            ),
+            "Q5: How do the major modules collaborate during the main request flow?",
+        )
+
+    def test_question_copy_variant_removes_cross_turn_reference_lead_in(self):
+        self.assertEqual(
+            clean_generated_question(
+                "Q6: In Q3, how does the cache layer interact with the request path?",
+                6,
+                current_stage="Architecture Understanding",
+            ),
+            "Q6: How does the cache layer interact with the request path?",
+        )
+
+    def test_question_copy_variant_removes_as_mentioned_lead_in(self):
+        self.assertEqual(
+            clean_generated_question(
+                "Q14: As mentioned above, what input and output boundaries define this scenario today?",
+                14,
+                current_stage="Use Cases & Scenarios",
+            ),
+            "Q14: What input and output boundaries define this scenario today?",
+        )
+
+    def test_question_copy_variant_normalizes_windows_unfriendly_symbols_to_ascii(self):
+        self.assertEqual(
+            clean_generated_question(
+                'Q13: What does “build_prompt()” do — and how does it route errors → retries? 🤖',
+                13,
+                current_stage="Code Detail Completion",
+            ),
+            'Q13: What does "build_prompt()" do - and how does it route errors -> retries?',
+        )
+
     def test_compact_context_uses_override_for_latest_pending_answer(self):
         turns = [
             InterviewTurn(
@@ -192,7 +232,11 @@ class QuestionReviewerTests(unittest.TestCase):
                 "assemble the prompt, merge planner constraints, weave in retrieved context, and then "
                 "decide which repository evidence matters most before calling the model right now, while also "
                 "tracking every intermediate formatting branch, fallback path, retry-specific mutation, "
-                "validator-facing adaptation, and post-call packaging detail across the full execution flow?"
+                "validator-facing adaptation, post-call packaging detail across the full execution flow, "
+                "the branch-priority scoring state, the exact shape of every retrieval payload, the way "
+                "prompt fragments are concatenated before the provider call, the fallback handling for "
+                "missing repository evidence, the cleanup path for malformed intermediate text, and the "
+                "final persistence-facing packaging fields that are handed to downstream workflow steps?"
             ),
             "understand_current_code",
             current_stage="Code Detail Completion",

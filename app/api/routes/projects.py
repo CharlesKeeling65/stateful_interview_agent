@@ -1,4 +1,5 @@
 import json
+import re
 
 import httpx
 from fastapi import APIRouter, Depends, HTTPException, Response, status
@@ -44,6 +45,7 @@ from app.services.opencode_execution_service import (
 )
 from app.services.opencode_session_service import ensure_opencode_session_with_status
 from app.services.question_generator import generate_first_question_result
+from app.services.question_postprocessor import strip_question_prefix
 from app.services.question_version_service import (
     append_question_version,
     ensure_initial_question_version,
@@ -65,6 +67,71 @@ from app.services.transcript_service import build_project_transcript
 from app.services.usage_service import aggregate_project_usage, create_usage_record
 
 router = APIRouter(prefix="/projects", tags=["projects"])
+
+
+def _normalize_generation_error_message(message: str) -> str:
+    compact = re.sub(r"\s+", " ", (message or "").strip())
+    compact = strip_question_prefix(compact)
+    return compact[:400]
+
+
+def _build_auto_retry_human_review_signal(
+    existing_signal: dict | None,
+    *,
+    error_message: str,
+) -> dict:
+    merged = dict(existing_signal or {})
+    merged["direction"] = merged.get("direction") or "redirect"
+    merged["verdict"] = merged.get("verdict") or "insufficient"
+    retry_note = (
+        "Automatic retry after question-generation failure. "
+        f"Previous error: {_normalize_generation_error_message(error_message)}"
+    )
+    existing_note = (merged.get("note") or "").strip()
+    if existing_note and retry_note not in existing_note:
+        merged["note"] = f"{existing_note} | {retry_note}"
+    else:
+        merged["note"] = existing_note or retry_note
+    return merged
+
+
+def _should_auto_retry_generation_error(exc: Exception) -> bool:
+    if isinstance(exc, ValueError):
+        return True
+    if not isinstance(exc, RuntimeError):
+        return False
+
+    message = str(exc).lower()
+    retry_markers = (
+        "question",
+        "validator",
+        "reviewer",
+        "symbol",
+        "encoding",
+        "unicode",
+        "empty content",
+    )
+    return any(marker in message for marker in retry_markers)
+
+
+def _invoke_interview_workflow(
+    *,
+    project_id: int,
+    run_id: int,
+    answer_text: str,
+    human_review_signal: dict | None,
+    human_gate_resolution: dict | None,
+):
+    return interview_graph.invoke(
+        {
+            "run_id": run_id,
+            "project_id": project_id,
+            "answer_text": answer_text,
+            "human_review_signal": human_review_signal,
+            "human_gate_resolution": human_gate_resolution,
+        },
+        config={"configurable": {"thread_id": f"project-{project_id}"}},
+    )
 
 
 @router.post("", response_model=ProjectRead)
@@ -842,6 +909,8 @@ def submit_answer_and_generate_next(
         turn_no=(latest_turn.turn_no + 1) if latest_turn else None,
     )
     bind_log_context(run_id=run.id)
+    human_review_signal = payload.human_review.model_dump() if payload.human_review else None
+    human_gate_resolution = payload.human_gate.model_dump() if payload.human_gate else None
 
     try:
         emit_event(
@@ -852,40 +921,131 @@ def submit_answer_and_generate_next(
             project_id=project_id,
             input=preview_payload(latest_turn.answer_text, artifact_category="answers", artifact_name=f"workflow-input-project-{project_id}"),
         )
-        result = interview_graph.invoke(
-            {
-                "run_id": run.id,
-                "project_id": project_id,
-                "answer_text": latest_turn.answer_text,
-                "human_review_signal": payload.human_review.model_dump() if payload.human_review else None,
-                "human_gate_resolution": payload.human_gate.model_dump() if payload.human_gate else None,
-            },
-            config={"configurable": {"thread_id": f"project-{project_id}"}},
+        result = _invoke_interview_workflow(
+            project_id=project_id,
+            run_id=run.id,
+            answer_text=latest_turn.answer_text,
+            human_review_signal=human_review_signal,
+            human_gate_resolution=human_gate_resolution,
         )
     except ValueError as e:
-        finalize_run(run_id=run.id, status="failed")
-        emit_event(
-            "workflow",
-            "workflow.invoke.error",
-            "Interview workflow failed",
-            level=40,
-            operation="submit_answer_and_generate_next",
-            project_id=project_id,
-            exc_info=e,
-        )
-        raise HTTPException(status_code=400, detail=str(e))
+        if _should_auto_retry_generation_error(e):
+            retry_human_review_signal = _build_auto_retry_human_review_signal(
+                human_review_signal,
+                error_message=str(e),
+            )
+            emit_event(
+                "workflow",
+                "workflow.invoke.retry",
+                "Retrying interview workflow with automatic error guidance",
+                operation="submit_answer_and_generate_next",
+                project_id=project_id,
+                run_id=run.id,
+                output={"retry_reason": _normalize_generation_error_message(str(e))},
+            )
+            try:
+                result = _invoke_interview_workflow(
+                    project_id=project_id,
+                    run_id=run.id,
+                    answer_text=latest_turn.answer_text,
+                    human_review_signal=retry_human_review_signal,
+                    human_gate_resolution=human_gate_resolution,
+                )
+            except ValueError as retry_error:
+                finalize_run(run_id=run.id, status="failed")
+                emit_event(
+                    "workflow",
+                    "workflow.invoke.error",
+                    "Interview workflow failed after automatic retry",
+                    level=40,
+                    operation="submit_answer_and_generate_next",
+                    project_id=project_id,
+                    exc_info=retry_error,
+                )
+                raise HTTPException(status_code=400, detail=str(retry_error))
+            except Exception as retry_error:
+                finalize_run(run_id=run.id, status="failed")
+                emit_event(
+                    "workflow",
+                    "workflow.invoke.error",
+                    "Interview workflow failed after automatic retry",
+                    level=40,
+                    operation="submit_answer_and_generate_next",
+                    project_id=project_id,
+                    exc_info=retry_error,
+                )
+                raise
+        else:
+            finalize_run(run_id=run.id, status="failed")
+            emit_event(
+                "workflow",
+                "workflow.invoke.error",
+                "Interview workflow failed",
+                level=40,
+                operation="submit_answer_and_generate_next",
+                project_id=project_id,
+                exc_info=e,
+            )
+            raise HTTPException(status_code=400, detail=str(e))
     except Exception as e:
-        finalize_run(run_id=run.id, status="failed")
-        emit_event(
-            "workflow",
-            "workflow.invoke.error",
-            "Interview workflow failed",
-            level=40,
-            operation="submit_answer_and_generate_next",
-            project_id=project_id,
-            exc_info=e,
-        )
-        raise
+        if _should_auto_retry_generation_error(e):
+            retry_human_review_signal = _build_auto_retry_human_review_signal(
+                human_review_signal,
+                error_message=str(e),
+            )
+            emit_event(
+                "workflow",
+                "workflow.invoke.retry",
+                "Retrying interview workflow with automatic error guidance",
+                operation="submit_answer_and_generate_next",
+                project_id=project_id,
+                run_id=run.id,
+                output={"retry_reason": _normalize_generation_error_message(str(e))},
+            )
+            try:
+                result = _invoke_interview_workflow(
+                    project_id=project_id,
+                    run_id=run.id,
+                    answer_text=latest_turn.answer_text,
+                    human_review_signal=retry_human_review_signal,
+                    human_gate_resolution=human_gate_resolution,
+                )
+            except ValueError as retry_error:
+                finalize_run(run_id=run.id, status="failed")
+                emit_event(
+                    "workflow",
+                    "workflow.invoke.error",
+                    "Interview workflow failed after automatic retry",
+                    level=40,
+                    operation="submit_answer_and_generate_next",
+                    project_id=project_id,
+                    exc_info=retry_error,
+                )
+                raise HTTPException(status_code=400, detail=str(retry_error))
+            except Exception as retry_error:
+                finalize_run(run_id=run.id, status="failed")
+                emit_event(
+                    "workflow",
+                    "workflow.invoke.error",
+                    "Interview workflow failed after automatic retry",
+                    level=40,
+                    operation="submit_answer_and_generate_next",
+                    project_id=project_id,
+                    exc_info=retry_error,
+                )
+                raise
+        else:
+            finalize_run(run_id=run.id, status="failed")
+            emit_event(
+                "workflow",
+                "workflow.invoke.error",
+                "Interview workflow failed",
+                level=40,
+                operation="submit_answer_and_generate_next",
+                project_id=project_id,
+                exc_info=e,
+            )
+            raise
 
     db.expire_all()
     updated_project = (

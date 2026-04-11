@@ -92,11 +92,15 @@ def plan_next_question(
             "Focus on HOW the code currently works, not what should change",
             "Avoid 'should', 'could we', 'better way' framing",
             "Write in plain natural English, not AI-assistant phrasing",
+            "Use ASCII punctuation only; avoid emoji, smart quotes, arrows, em dashes, and other non-ASCII symbols",
+            "Do not open with filler such as 'specifically', 'in Q3', 'as mentioned above', or similar cross-turn lead-ins",
         ]
     else:
         base_constraints = [
             f"Stay in {mode.value} mode",
             mode_constraints.get("description", ""),
+            "Use ASCII punctuation only; avoid emoji, smart quotes, arrows, em dashes, and other non-ASCII symbols",
+            "Do not open with filler such as 'specifically', 'in Q3', 'as mentioned above', or similar cross-turn lead-ins",
         ]
 
     if review and (

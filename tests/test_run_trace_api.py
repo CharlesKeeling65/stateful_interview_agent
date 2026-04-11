@@ -18,8 +18,8 @@ from app.services import question_generator, summarization_service
 from app.services import run_trace_service
 
 
-class _FakeChatCompletions:
-    def create(self, *, messages, **_kwargs):
+class _FakeClient:
+    def generate_text(self, *, messages, **_kwargs):
         user_content = messages[-1]["content"]
 
         if "Summarize this answered interview turn." in user_content:
@@ -30,14 +30,10 @@ class _FakeChatCompletions:
             content = "Q2: Which modules coordinate the core workflow end to end?"
 
         return SimpleNamespace(
-            choices=[SimpleNamespace(message=SimpleNamespace(content=content))],
+            text=content,
+            model="fake-model",
             usage=SimpleNamespace(prompt_tokens=120, completion_tokens=30, total_tokens=150),
         )
-
-
-class _FakeClient:
-    def __init__(self):
-        self.chat = SimpleNamespace(completions=_FakeChatCompletions())
 
 
 class RunTraceApiTests(unittest.TestCase):
@@ -68,10 +64,10 @@ class RunTraceApiTests(unittest.TestCase):
         graph_module.SessionLocal = self.SessionLocal
         run_trace_service.SessionLocal = self.SessionLocal
 
-        self.original_question_client = question_generator.get_openai_client
-        self.original_summary_client = summarization_service.get_openai_client
-        question_generator.get_openai_client = lambda: _FakeClient()
-        summarization_service.get_openai_client = lambda: _FakeClient()
+        self.original_question_provider = question_generator.get_llm_provider
+        self.original_summary_provider = summarization_service.get_llm_provider
+        question_generator.get_llm_provider = lambda: _FakeClient()
+        summarization_service.get_llm_provider = lambda: _FakeClient()
 
         self.client = TestClient(app)
 
@@ -79,8 +75,8 @@ class RunTraceApiTests(unittest.TestCase):
         app.dependency_overrides.clear()
         graph_module.SessionLocal = self.original_session_local
         run_trace_service.SessionLocal = self.original_run_trace_session_local
-        question_generator.get_openai_client = self.original_question_client
-        summarization_service.get_openai_client = self.original_summary_client
+        question_generator.get_llm_provider = self.original_question_provider
+        summarization_service.get_llm_provider = self.original_summary_provider
         self.engine.dispose()
         self.temp_dir.cleanup()
 
@@ -213,6 +209,71 @@ class RunTraceApiTests(unittest.TestCase):
         latest = self.client.get(f"/projects/{project_id}/runs/latest")
         self.assertEqual(latest.status_code, 200)
         self.assertEqual(latest.json()["status"], "failed")
+
+    def test_failed_next_call_retries_once_with_error_guidance(self):
+        created = self.client.post(
+            "/projects",
+            json={
+                "project_name": "Trace Retry Project",
+                "system_prompt": "You are a stateful interview agent.",
+            },
+        )
+        self.assertEqual(created.status_code, 200)
+        project_id = created.json()["id"]
+
+        started = self.client.post(f"/projects/{project_id}/start")
+        self.assertEqual(started.status_code, 200)
+
+        saved = self.client.post(
+            f"/projects/{project_id}/answer",
+            json={"answer_text": "Long answer that should trigger one guided retry."},
+        )
+        self.assertEqual(saved.status_code, 200)
+
+        original_generate = interview_nodes_module.generate_next_question_from_history
+        state = {"calls": 0}
+
+        def flaky_generate(*args, **kwargs):
+            state["calls"] += 1
+            if state["calls"] == 1:
+                raise ValueError("Generated question used unsupported Windows symbol 鈥?")
+
+            planner_decision = kwargs.get("planner_decision") or {}
+            human_review_signal = planner_decision.get("human_review_signal") or {}
+            assert "Generated question used unsupported Windows symbol" in (human_review_signal.get("note") or "")
+            return {
+                "question_text": "Q2: Which modules coordinate the core workflow end to end?",
+                "usage_metrics": {
+                    "prompt_tokens": 120,
+                    "completion_tokens": 30,
+                    "total_tokens": 150,
+                    "is_estimated": False,
+                },
+                "prompt_id": "next_question_architecture",
+                "prompt_version": "test",
+            }
+
+        interview_nodes_module.generate_next_question_from_history = flaky_generate
+        try:
+            advanced = self.client.post(
+                f"/projects/{project_id}/next",
+                json={},
+            )
+        finally:
+            interview_nodes_module.generate_next_question_from_history = original_generate
+
+        self.assertEqual(advanced.status_code, 200)
+        self.assertEqual(state["calls"], 2)
+
+        turns = self.client.get(f"/projects/{project_id}/turns")
+        self.assertEqual(turns.status_code, 200)
+        turns_payload = turns.json()
+        self.assertEqual(len(turns_payload), 2)
+        self.assertIn("Generated question used unsupported Windows symbol", turns_payload[0]["human_review"]["note"])
+        self.assertEqual(
+            turns_payload[1]["question_text"],
+            "Q2: Which modules coordinate the core workflow end to end?",
+        )
 
     def test_trace_step_write_failure_does_not_fail_successful_next_call(self):
         created = self.client.post(

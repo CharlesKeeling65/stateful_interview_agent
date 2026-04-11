@@ -1,9 +1,41 @@
 import re
+import unicodedata
 
 CODE_DETAIL_STAGE = "Code Detail Completion"
+WINDOWS_SAFE_REPLACEMENTS = {
+    "“": '"',
+    "”": '"',
+    "‘": "'",
+    "’": "'",
+    "—": "-",
+    "–": "-",
+    "―": "-",
+    "…": "...",
+    "→": "->",
+    "←": "<-",
+    "↔": "<->",
+    "：": ":",
+    "？": "?",
+    "（": "(",
+    "）": ")",
+    "【": "[",
+    "】": "]",
+}
 
 
 def _remove_ai_lead_in(text: str) -> str:
+    text = re.sub(
+        r"^\s*(?:specifically|more specifically|more concretely|concretely|in particular)\s*,\s*",
+        "",
+        text,
+        flags=re.IGNORECASE,
+    ).strip()
+    text = re.sub(
+        r"^\s*(?:in\s+q(?:uestion)?\s*\d+|from\s+q(?:uestion)?\s*\d+|based\s+on\s+q(?:uestion)?\s*\d+|as\s+(?:mentioned|noted|discussed)\s+(?:above|earlier|before)|as\s+you\s+mentioned|as\s+noted\s+above|from\s+the\s+previous\s+answer)\s*,\s*",
+        "",
+        text,
+        flags=re.IGNORECASE,
+    ).strip()
     text = re.sub(
         r"^\s*(?:to better understand|to help me understand|to understand)\s+(?:the\s+)?(?:current\s+)?(?:implementation|system|codebase)\s*,\s*",
         "",
@@ -54,8 +86,31 @@ def _keep_only_first_question(text: str) -> str:
     return text
 
 
+def _capitalize_question_start(text: str) -> str:
+    if not text:
+        return text
+    return text[0].upper() + text[1:]
+
+
 def _should_enforce_code_detail_tightening(current_stage: str | None) -> bool:
     return current_stage == CODE_DETAIL_STAGE
+
+
+def _normalize_windows_safe_text(text: str) -> str:
+    normalized = unicodedata.normalize("NFKC", text)
+    for source, target in WINDOWS_SAFE_REPLACEMENTS.items():
+        normalized = normalized.replace(source, target)
+
+    safe_chars: list[str] = []
+    for char in normalized:
+        if ord(char) < 128:
+            safe_chars.append(char)
+            continue
+        if unicodedata.category(char).startswith("Z"):
+            safe_chars.append(" ")
+
+    normalized = "".join(safe_chars)
+    return re.sub(r"\s+", " ", normalized).strip()
 
 
 def strip_question_prefix(text: str) -> str:
@@ -129,6 +184,8 @@ def clean_generated_question(
     prefix = f"Q{expected_turn_no}: "
     body = text[len(prefix):].strip() if text.startswith(prefix) else text
     body = _remove_ai_lead_in(body)
+    body = _normalize_windows_safe_text(body)
+    body = _capitalize_question_start(body)
     if _should_enforce_code_detail_tightening(current_stage):
         body = _keep_only_first_question(body)
         if "?" not in body:
