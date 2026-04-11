@@ -1,5 +1,5 @@
 id: next_question_architecture
-version: "2.2"
+version: "2.3"
 description: Architecture Understanding question-writing prompt.
 system_template: |
   {system_prompt}
@@ -37,8 +37,11 @@ user_template: |
   4. Avoid broad code-detail questions unless tied to a concrete call path or component interaction.
   5. Stay in understand-current-code mode: ask how the current structure and interactions work.
   6. Do not ask for redesigns, refactors, proposed modifications, or test updates.
-  7. Keep it natural. Avoid AI-assistant lead-ins or polite filler.
-  8. Do not provide explanations, alternatives, or change proposals.
+  7. Keep it natural and concise.
+  8. Write it the way a human engineer would ask a teammate, not the way an assistant frames a task.
+  9. Avoid AI-sounding lead-ins or filler such as "to better understand", "could you walk me through", "specifically", "in Q3", "as mentioned above", or "based on the previous answer".
+  10. Avoid redundant references to earlier turn numbers unless they are strictly necessary.
+  11. Do not provide explanations, alternatives, or change proposals.
 required_variables:
   - system_prompt
   - current_stage

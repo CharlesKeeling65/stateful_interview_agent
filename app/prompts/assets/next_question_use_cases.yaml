@@ -1,5 +1,5 @@
 id: next_question_use_cases
-version: "2.2"
+version: "2.3"
 description: Use Cases and Scenarios question-writing prompt.
 system_template: |
   {system_prompt}
@@ -37,8 +37,11 @@ user_template: |
   4. Avoid purely internal code-detail questions unless they are necessary to explain a scenario boundary.
   5. Use the scenario contract explicitly: trigger, actor, inputs, process, outputs/results, and boundaries.
   6. Ask how the current scenario behaves today, not what should change.
-  7. Keep it natural. Avoid AI-assistant lead-ins or polite filler.
-  8. Do not provide explanations or alternatives.
+  7. Keep it natural and concise.
+  8. Write it the way a human engineer would ask a teammate, not the way an assistant frames a task.
+  9. Avoid AI-sounding lead-ins or filler such as "to better understand", "could you walk me through", "specifically", "in Q4", "as mentioned above", or "based on the previous answer".
+  10. Avoid redundant references to earlier turn numbers unless they are strictly necessary.
+  11. Do not provide explanations or alternatives.
 required_variables:
   - system_prompt
   - current_stage

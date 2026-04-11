@@ -1,5 +1,5 @@
 id: next_question_panorama
-version: "2.2"
+version: "2.3"
 description: Panorama Mapping question-writing prompt.
 system_template: |
   {system_prompt}
@@ -36,8 +36,11 @@ user_template: |
   3. Focus on purpose, target users, boundaries, major modules, high-level workflow, or initial module relationships.
   4. Do not dive into files, classes, methods, retries, safety audits, or detailed implementation.
   5. Ask about the current project as it exists today, not what should be changed.
-  6. Keep it natural. Avoid AI-assistant lead-ins or polite filler.
-  7. Do not provide explanations, alternatives, or design suggestions.
+  6. Keep it natural and concise.
+  7. Write it the way a human engineer would ask a teammate, not the way an assistant frames a task.
+  8. Avoid AI-sounding lead-ins or filler such as "to better understand", "could you walk me through", "specifically", "in Q{next_turn_no}", "as mentioned above", or "based on the previous answer".
+  9. Avoid redundant references to earlier turn numbers unless they are strictly necessary.
+  10. Do not provide explanations, alternatives, or design suggestions.
 required_variables:
   - system_prompt
   - current_stage

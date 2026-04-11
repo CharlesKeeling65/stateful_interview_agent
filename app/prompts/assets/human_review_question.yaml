@@ -1,5 +1,5 @@
 id: human_review_question
-version: "2.2"
+version: "2.3"
 description: Human collaboration gate prompt before deepening a branch.
 system_template: |
   {system_prompt}
@@ -33,8 +33,11 @@ user_template: |
   2. Make the human's judgment, correction, prioritization, or redirection explicit.
   3. Ask the human to choose which branch, module, file, path, or concern should be deepened next.
   4. Keep the question concrete, decision-oriented, and still grounded in understanding the current code.
-  5. Keep it natural. Avoid AI-assistant lead-ins or polite filler.
-  6. Do not provide explanations, alternatives, or change proposals.
+  5. Keep it natural and concise.
+  6. Write it the way a human engineer would ask a teammate, not the way an assistant frames a task.
+  7. Avoid AI-sounding lead-ins or filler such as "to better understand", "could you walk me through", "specifically", "in Q2", "as mentioned above", or "based on the previous answer".
+  8. Avoid redundant references to earlier turn numbers unless they are strictly necessary.
+  9. Do not provide explanations, alternatives, or change proposals.
 required_variables:
   - system_prompt
   - current_stage

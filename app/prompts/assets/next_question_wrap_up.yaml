@@ -1,5 +1,5 @@
 id: next_question_wrap_up
-version: "2.2"
+version: "2.3"
 description: Final wrap-up readiness question-writing prompt.
 system_template: |
   {system_prompt}
@@ -32,8 +32,11 @@ user_template: |
   1. Ask exactly one English question labeled Q{next_turn_no}.
   2. Focus on final readiness, missing evidence, or delivery handoff preparation.
   3. Do not reopen broad new investigation areas.
-  4. Keep it natural. Avoid AI-assistant lead-ins or polite filler.
-  5. Do not provide explanations, alternatives, or change proposals.
+  4. Keep it natural and concise.
+  5. Write it the way a human engineer would ask a teammate, not the way an assistant frames a task.
+  6. Avoid AI-sounding lead-ins or filler such as "to better understand", "could you walk me through", "specifically", "in Q5", "as mentioned above", or "based on the previous answer".
+  7. Avoid redundant references to earlier turn numbers unless they are strictly necessary.
+  8. Do not provide explanations, alternatives, or change proposals.
 required_variables:
   - system_prompt
   - current_stage

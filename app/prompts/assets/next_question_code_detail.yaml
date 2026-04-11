@@ -1,5 +1,5 @@
 id: next_question_code_detail
-version: "2.3"
+version: "2.4"
 description: Code Detail Completion question-writing prompt.
 system_template: |
   {system_prompt}
@@ -39,8 +39,11 @@ user_template: |
   6. It must not ask for redesigns, improvements, modifications, or test updates.
   7. Prefer concrete code artifacts over abstract design wording, and prefer tracing current behavior over discussing future changes.
   8. Keep it focused, direct, and natural. It can be moderately detailed when needed, but avoid bloated multi-clause wording.
-  9. Use exactly one sentence and exactly one question mark.
-  10. Do not provide explanations, alternatives, or implementation proposals.
+  9. Write it the way a human engineer would ask a teammate, not the way an assistant frames a task.
+  10. Avoid AI-sounding lead-ins or filler such as "to better understand", "could you walk me through", "specifically", "in Q7", "as mentioned above", or "based on the previous answer".
+  11. Avoid redundant references to earlier turn numbers unless they are strictly necessary.
+  12. Use exactly one sentence and exactly one question mark.
+  13. Do not provide explanations, alternatives, or implementation proposals.
 required_variables:
   - system_prompt
   - current_stage

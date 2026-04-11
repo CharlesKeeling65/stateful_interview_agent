@@ -1,5 +1,5 @@
 id: first_question
-version: "1.2"
+version: "1.3"
 description: Bootstrap prompt for the first Panorama Mapping question.
 system_template: |
   {system_prompt}
@@ -18,9 +18,12 @@ user_template: |
   3. This is the first question, so label it as Q1.
   4. The question should establish the overall understanding of the project.
   5. Prefer a precise overview question over a generic introductory question.
-  6. Keep it plain and natural. Avoid AI-assistant phrases such as "to better understand" or "could you walk me through".
-  7. Do not answer the question.
-  8. Do not provide multiple options or explanations.
+  6. Keep it plain and natural.
+  7. Write the question the way a careful engineer would ask it in conversation, not the way an assistant frames a task.
+  8. Avoid AI-sounding openings or scene-setting phrases such as "to better understand", "could you walk me through", "specifically", "in Q1", "as mentioned above", or "based on the previous answer".
+  9. Avoid redundant references to earlier turns unless the question truly needs them.
+  10. Do not answer the question.
+  11. Do not provide multiple options or explanations.
 required_variables:
   - system_prompt
   - current_stage

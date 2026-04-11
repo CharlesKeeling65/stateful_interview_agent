@@ -1,5 +1,5 @@
 id: next_question
-version: "1.2"
+version: "1.3"
 description: Stage-aware next-question generation prompt using selective retrieved context.
 system_template: |
   {system_prompt}
@@ -33,9 +33,12 @@ user_template: |
   7. Keep the question aligned with the current stage objective.
   8. Prefer branches marked unresolved, shallow, or high-priority over fully covered branches.
   9. Use only the retrieved context that is genuinely relevant; do not restate the whole interview.
-  10. Keep it plain and natural. Avoid AI-assistant phrases such as "to better understand" or "could you walk me through".
-  11. Do not answer the question.
-  12. Do not provide explanations, bullet points, or multiple alternatives.
+  10. Keep it plain and natural.
+  11. Write it the way a human engineer would ask a teammate, not the way an assistant frames a task.
+  12. Avoid AI-sounding openings or filler such as "to better understand", "could you walk me through", "specifically", "in Q3", "as mentioned above", or "based on the previous answer".
+  13. Avoid redundant references to earlier turn numbers unless they are strictly necessary.
+  14. Do not answer the question.
+  15. Do not provide explanations, bullet points, or multiple alternatives.
 required_variables:
   - system_prompt
   - current_stage
