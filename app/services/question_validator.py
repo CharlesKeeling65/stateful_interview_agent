@@ -146,6 +146,20 @@ def validate_question_for_stage(
     elif current_stage == CODE_DETAIL_STAGE and text.count("?") != 1:
         reasons.append("Question must contain exactly one question mark.")
 
+    # Detect closed yes/no questions — applies to every stage.
+    # Strip the "Q<n>: " prefix before matching so the check targets the actual body.
+    _body_for_closed_check = re.sub(r"^Q\d+[:.\s]+", "", text, flags=re.IGNORECASE).strip()
+    if re.match(
+        r"^(?:Does|Is|Are|Was|Were|Can|Could|Will|Would|Should|Has|Have|Had)\b",
+        _body_for_closed_check,
+        re.IGNORECASE,
+    ):
+        reasons.append(
+            "Avoid yes/no questions. Rephrase as an open-ended question "
+            "(e.g., 'How does X handle Y?' instead of 'Does X handle Y?'; "
+            "'What role does Z play?' instead of 'Is Z responsible for W?')."
+        )
+
     if len(text) < 15:
         reasons.append("Question is too short.")
     if current_stage == CODE_DETAIL_STAGE and len(text) > MAX_QUESTION_LENGTH:

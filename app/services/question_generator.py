@@ -224,7 +224,7 @@ def generate_next_question_from_history(
             response = provider.generate_text(
                 model=settings.openai_model if settings.llm_provider == "openai_compatible" else None,
                 messages=prompt.messages,
-                temperature=0.4,
+                temperature=0.65,
             )
             if llm_step:
                 llm_step.set_meta(model=response.model, prompt_id=prompt.prompt_id)

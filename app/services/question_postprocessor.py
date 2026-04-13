@@ -1,4 +1,11 @@
 import re
+
+# Parenthetical asides that signal AI-generated padding; these start with known filler words
+# and are safe to remove without breaking code references like func() or .py paths.
+_EXPLANATORY_PAREN_RE = re.compile(
+    r"\s*\((?:which|that\s+(?:is|are|was)|i\.?e\.?\,?|e\.?g\.?\,?|such as|also known as|also called|the|this is|these are|including|and|or)[^()]{0,80}\)",
+    re.IGNORECASE,
+)
 import unicodedata
 
 CODE_DETAIL_STAGE = "Code Detail Completion"
@@ -77,6 +84,18 @@ def _remove_ai_lead_in(text: str) -> str:
         text,
         flags=re.IGNORECASE,
     ).strip()
+
+
+def _remove_explanatory_parens(text: str) -> str:
+    """Remove AI-style parenthetical asides while preserving code-syntax parens.
+
+    Targets only parentheses whose content begins with known filler words such as
+    'which', 'i.e.', 'e.g.', 'such as', etc.  Parentheses that immediately follow
+    a word character (function calls like func()) or contain file-extension dots are
+    left untouched, so code artifact references are never corrupted.
+    """
+    cleaned = _EXPLANATORY_PAREN_RE.sub("", text)
+    return re.sub(r"\s+", " ", cleaned).strip()
 
 
 def _keep_only_first_question(text: str) -> str:
@@ -184,6 +203,7 @@ def clean_generated_question(
     prefix = f"Q{expected_turn_no}: "
     body = text[len(prefix):].strip() if text.startswith(prefix) else text
     body = _remove_ai_lead_in(body)
+    body = _remove_explanatory_parens(body)
     body = _normalize_windows_safe_text(body)
     body = _capitalize_question_start(body)
     if _should_enforce_code_detail_tightening(current_stage):

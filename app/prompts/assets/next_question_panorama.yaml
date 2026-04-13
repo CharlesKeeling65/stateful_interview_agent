@@ -1,5 +1,5 @@
 id: next_question_panorama
-version: "2.3"
+version: "2.4"
 description: Panorama Mapping question-writing prompt.
 system_template: |
   {system_prompt}
@@ -41,6 +41,15 @@ user_template: |
   8. Avoid AI-sounding lead-ins or filler such as "to better understand", "could you walk me through", "specifically", "in Q{next_turn_no}", "as mentioned above", or "based on the previous answer".
   9. Avoid redundant references to earlier turn numbers unless they are strictly necessary.
   10. Do not provide explanations, alternatives, or design suggestions.
+  11. Ask an open-ended question that invites elaboration. Never write a question answerable with yes or no.
+      BAD:  "Does the scheduler retry failed jobs?"
+      GOOD: "How does the scheduler handle job failures?"
+      BAD:  "Is the AuthService responsible for token refresh?"
+      GOOD: "What does the AuthService do when a token expires?"
+  12. Do not use parentheses for side comments or clarifications. Fold any needed context directly into the sentence.
+  13. Vary the sentence opening. Do not start the question with the same word or structure as the most recent question.
+      Some natural openers to rotate: noun-first ("The scheduler..."), process-first ("When a request arrives..."),
+      inquiry ("What triggers..."), relation-first ("How do X and Y...").
 required_variables:
   - system_prompt
   - current_stage

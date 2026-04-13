@@ -94,6 +94,9 @@ def plan_next_question(
             "Write in plain natural English, not AI-assistant phrasing",
             "Use ASCII punctuation only; avoid emoji, smart quotes, arrows, em dashes, and other non-ASCII symbols",
             "Do not open with filler such as 'specifically', 'in Q3', 'as mentioned above', or similar cross-turn lead-ins",
+            "Ask an open-ended question that invites elaboration; never write a question answerable with yes or no — rephrase 'Does X...' into 'How does X...' and 'Is Y...' into 'What role does Y play...'",
+            "Do not use parentheses for side comments or clarifications; fold any needed context into the main clause",
+            "Vary the sentence opening; avoid starting with the same word or pattern used in the most recent question",
         ]
     else:
         base_constraints = [
@@ -101,6 +104,8 @@ def plan_next_question(
             mode_constraints.get("description", ""),
             "Use ASCII punctuation only; avoid emoji, smart quotes, arrows, em dashes, and other non-ASCII symbols",
             "Do not open with filler such as 'specifically', 'in Q3', 'as mentioned above', or similar cross-turn lead-ins",
+            "Ask an open-ended question that invites elaboration; avoid yes/no questions",
+            "Do not use parentheses for side comments or clarifications; fold any needed context into the main clause",
         ]
 
     if review and (

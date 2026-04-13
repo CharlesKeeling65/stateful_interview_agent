@@ -1,5 +1,5 @@
 id: next_question_code_detail
-version: "2.4"
+version: "2.5"
 description: Code Detail Completion question-writing prompt.
 system_template: |
   {system_prompt}
@@ -44,6 +44,12 @@ user_template: |
   11. Avoid redundant references to earlier turn numbers unless they are strictly necessary.
   12. Use exactly one sentence and exactly one question mark.
   13. Do not provide explanations, alternatives, or implementation proposals.
+  14. Ask an open-ended question that invites elaboration. Never write a question answerable with yes or no.
+      BAD:  "Does the retry handler use exponential backoff?"
+      GOOD: "How does the retry handler decide the delay between attempts?"
+      BAD:  "Is the connection pool configured in db.py?"
+      GOOD: "Where in db.py is the connection pool configured, and what parameters control its size?"
+  15. Do not use parentheses for side comments or clarifications. Fold any needed context directly into the sentence.
 required_variables:
   - system_prompt
   - current_stage
