@@ -1,6 +1,6 @@
 from typing import Literal
 
-from pydantic import field_validator
+from pydantic import field_validator, model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 from app.core.runtime import (
@@ -46,8 +46,13 @@ class Settings(BaseSettings):
     duplicate_guard_use_embeddings: bool = False
     duplicate_guard_embedding_threshold: float = 0.9
 
-    interview_min_turns: int = 42
-    interview_max_turns: int = 43
+    interview_min_turns: int = 36
+    interview_max_turns: int = 37
+    interview_panorama_turns: int = 1
+    interview_architecture_turns: int = 2
+    interview_code_detail_min_turns: int = 31
+    interview_code_detail_max_turns: int = 32
+    interview_use_case_turns: int = 2
 
     database_url: str = "sqlite:///./data/app.db"
 
@@ -65,6 +70,42 @@ class Settings(BaseSettings):
     @classmethod
     def validate_log_dir(cls, value: str) -> str:
         return resolve_runtime_path(value, RUNTIME_ROOT)
+
+    @model_validator(mode="after")
+    def validate_interview_turn_plan(self) -> "Settings":
+        if self.interview_min_turns > self.interview_max_turns:
+            raise ValueError("INTERVIEW_MIN_TURNS must be less than or equal to INTERVIEW_MAX_TURNS")
+        if self.interview_panorama_turns < 1:
+            raise ValueError("INTERVIEW_PANORAMA_TURNS must be at least 1")
+        if self.interview_architecture_turns < 1:
+            raise ValueError("INTERVIEW_ARCHITECTURE_TURNS must be at least 1")
+        if self.interview_use_case_turns < 1:
+            raise ValueError("INTERVIEW_USE_CASE_TURNS must be at least 1")
+        if self.interview_code_detail_min_turns < 1:
+            raise ValueError("INTERVIEW_CODE_DETAIL_MIN_TURNS must be at least 1")
+        if self.interview_code_detail_max_turns < self.interview_code_detail_min_turns:
+            raise ValueError(
+                "INTERVIEW_CODE_DETAIL_MAX_TURNS must be greater than or equal to INTERVIEW_CODE_DETAIL_MIN_TURNS"
+            )
+
+        fixed_turns = (
+            self.interview_panorama_turns
+            + self.interview_architecture_turns
+            + self.interview_use_case_turns
+        )
+        expected_min_turns = fixed_turns + self.interview_code_detail_min_turns
+        expected_max_turns = fixed_turns + self.interview_code_detail_max_turns
+
+        if self.interview_min_turns != expected_min_turns:
+            raise ValueError(
+                "INTERVIEW_MIN_TURNS must equal panorama + architecture + code_detail_min + use_case turns"
+            )
+        if self.interview_max_turns != expected_max_turns:
+            raise ValueError(
+                "INTERVIEW_MAX_TURNS must equal panorama + architecture + code_detail_max + use_case turns"
+            )
+
+        return self
 
 
 settings = Settings(_env_file=get_env_file_path())

@@ -1,3 +1,4 @@
+from app.core.config import settings
 from app.services.coverage_service import (
     default_framework_coverage,
     normalize_framework_coverage,
@@ -39,10 +40,6 @@ STAGE_SEQUENCE = [
     USE_CASE_STAGE,
     WRAP_UP_STAGE,
 ]
-
-PANORAMA_MIN_TURNS = 2
-ARCHITECTURE_MIN_TURNS = 2
-USE_CASE_RESERVED_TURNS = 2
 
 PANORAMA_REQUIRED: frozenset[str] = frozenset({
     "purpose", "target_users", "major_modules", "high_level_workflow"
@@ -143,12 +140,34 @@ def clamp_stage_not_before_current(candidate_stage: str, current_stage: str) -> 
     return candidate_stage
 
 
+def get_stage_turn_targets(*, max_turns: int | None = None) -> dict[str, int]:
+    resolved_max_turns = max_turns if max_turns is not None else settings.interview_max_turns
+    panorama_turns = settings.interview_panorama_turns
+    architecture_turns = settings.interview_architecture_turns
+    use_case_turns = settings.interview_use_case_turns
+    code_detail_turns = max(
+        0,
+        resolved_max_turns - panorama_turns - architecture_turns - use_case_turns,
+    )
+    return {
+        PANORAMA_STAGE: panorama_turns,
+        ARCHITECTURE_STAGE: architecture_turns,
+        CODE_DETAIL_STAGE: code_detail_turns,
+        USE_CASE_STAGE: use_case_turns,
+    }
+
+
 def determine_stage_by_turn(turn_no: int) -> str:
-    if 1 <= turn_no <= 2:
+    targets = get_stage_turn_targets(max_turns=settings.interview_max_turns)
+    panorama_end = targets[PANORAMA_STAGE]
+    architecture_end = panorama_end + targets[ARCHITECTURE_STAGE]
+    code_detail_end = architecture_end + settings.interview_code_detail_max_turns
+
+    if 1 <= turn_no <= panorama_end:
         return PANORAMA_STAGE
-    elif 3 <= turn_no <= 4:
+    elif turn_no <= architecture_end:
         return ARCHITECTURE_STAGE
-    elif 5 <= turn_no <= 41:
+    elif turn_no <= code_detail_end:
         return CODE_DETAIL_STAGE
     else:
         return USE_CASE_STAGE
@@ -190,6 +209,10 @@ def decide_next_stage(
         required=USE_CASE_REQUIRED,
     )
     collaboration_gaps = framework.get("gaps", {}).get("human_collaboration", [])
+    stage_targets = get_stage_turn_targets(max_turns=max_turns)
+    panorama_target_turns = stage_targets[PANORAMA_STAGE]
+    architecture_target_turns = stage_targets[ARCHITECTURE_STAGE]
+    use_case_reserved_turns = stage_targets[USE_CASE_STAGE]
 
     human_phase_ready = bool((human_review_signal or {}).get("phase_ready"))
     human_direction = (human_review_signal or {}).get("direction")
@@ -198,35 +221,45 @@ def decide_next_stage(
 
     panorama_turns = stage_turn_counts.get(PANORAMA_STAGE, 0)
     panorama_critical_gaps = _get_critical_gaps(panorama_gaps, PANORAMA_REQUIRED)
-    if current_stage == PANORAMA_STAGE and human_phase_ready and panorama_turns >= PANORAMA_MIN_TURNS and len(panorama_critical_gaps) <= 1:
+    if current_stage == PANORAMA_STAGE and human_phase_ready and panorama_turns >= panorama_target_turns and len(panorama_critical_gaps) <= 1:
         return {
             "next_stage": clamp_stage_not_before_current(ARCHITECTURE_STAGE, current_stage),
             "reason": "A human marked panorama coverage as sufficiently complete, so the interview can move into architecture understanding.",
             "gaps": architecture_gaps,
         }
-    if panorama_turns < PANORAMA_MIN_TURNS or panorama_critical_gaps or len(panorama_gaps) > 1:
+    if panorama_turns < panorama_target_turns or panorama_critical_gaps or len(panorama_gaps) > 1:
         return {
             "next_stage": clamp_stage_not_before_current(PANORAMA_STAGE, current_stage),
-            "reason": f"Panorama coverage still has macro gaps: {', '.join((panorama_critical_gaps or panorama_gaps)[:3]) or 'need at least two panorama turns'}.",
+            "reason": (
+                "Panorama coverage still has macro gaps: "
+                f"{', '.join((panorama_critical_gaps or panorama_gaps)[:3]) or f'need at least {panorama_target_turns} panorama turns'}."
+            ),
             "gaps": panorama_gaps,
         }
 
     architecture_turns = stage_turn_counts.get(ARCHITECTURE_STAGE, 0)
     architecture_critical_gaps = _get_critical_gaps(architecture_gaps, ARCHITECTURE_REQUIRED)
-    if current_stage == ARCHITECTURE_STAGE and human_phase_ready and architecture_turns >= ARCHITECTURE_MIN_TURNS and len(architecture_critical_gaps) <= 1:
+    if (
+        current_stage == ARCHITECTURE_STAGE
+        and human_phase_ready
+        and architecture_turns >= architecture_target_turns
+        and len(architecture_critical_gaps) <= 1
+    ):
         return {
             "next_stage": clamp_stage_not_before_current(CODE_DETAIL_STAGE, current_stage),
             "reason": "A human marked architecture coverage as sufficiently complete, so the interview can move into code detail.",
             "gaps": code_detail_gaps,
         }
-    if architecture_turns < ARCHITECTURE_MIN_TURNS or architecture_critical_gaps or len(architecture_gaps) > 1:
+    if architecture_turns < architecture_target_turns or architecture_critical_gaps or len(architecture_gaps) > 1:
         return {
             "next_stage": clamp_stage_not_before_current(ARCHITECTURE_STAGE, current_stage),
             "reason": f"Architecture understanding is not complete yet: {', '.join((architecture_critical_gaps or architecture_gaps)[:3]) or 'need more architecture turns'}.",
             "gaps": architecture_gaps,
         }
 
-    if remaining_turns <= 2 and use_case_gaps and (current_stage != ARCHITECTURE_STAGE or explicit_use_case_request):
+    if remaining_turns <= use_case_reserved_turns and use_case_gaps and (
+        current_stage != ARCHITECTURE_STAGE or explicit_use_case_request
+    ):
         return {
             "next_stage": clamp_stage_not_before_current(USE_CASE_STAGE, current_stage),
             "reason": f"Only a few turns remain, so use-case coverage must be completed: {', '.join(use_case_gaps[:3])}.",
@@ -235,7 +268,8 @@ def decide_next_stage(
 
     code_detail_core_gaps = _get_critical_gaps(code_detail_gaps, CODE_DETAIL_REQUIRED)
     use_case_core_gaps = _get_critical_gaps(use_case_gaps, USE_CASE_REQUIRED)
-    code_detail_exit_turn = max(5, max_turns - USE_CASE_RESERVED_TURNS + 1)
+    code_detail_start_turn = panorama_target_turns + architecture_target_turns + 1
+    code_detail_exit_turn = max(code_detail_start_turn, max_turns - use_case_reserved_turns + 1)
     in_hard_coded_code_detail_window = (
         current_stage == CODE_DETAIL_STAGE and next_turn_no < code_detail_exit_turn
     )

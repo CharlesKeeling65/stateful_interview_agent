@@ -202,8 +202,13 @@ DUPLICATE_GUARD_USE_EMBEDDINGS=false
 DUPLICATE_GUARD_EMBEDDING_THRESHOLD=0.9
 APP_NAME=Stateful Interview Agent
 APP_ENV=dev
-INTERVIEW_MIN_TURNS=35
-INTERVIEW_MAX_TURNS=40
+INTERVIEW_MIN_TURNS=36
+INTERVIEW_MAX_TURNS=37
+INTERVIEW_PANORAMA_TURNS=1
+INTERVIEW_ARCHITECTURE_TURNS=2
+INTERVIEW_CODE_DETAIL_MIN_TURNS=31
+INTERVIEW_CODE_DETAIL_MAX_TURNS=32
+INTERVIEW_USE_CASE_TURNS=2
 DATABASE_URL=sqlite:///./data/app.db
 LOG_LEVEL=INFO
 LOG_DIR=./logs
@@ -397,6 +402,11 @@ Defined in [app/core/config.py](app/core/config.py).
 - `APP_PORT`: backend listen port, used by the packaged launcher.
 - `INTERVIEW_MIN_TURNS`: minimum interview target before the goal is considered reached.
 - `INTERVIEW_MAX_TURNS`: hard upper bound for interview turns.
+- `INTERVIEW_PANORAMA_TURNS`: explicit panorama-stage turn budget.
+- `INTERVIEW_ARCHITECTURE_TURNS`: explicit architecture-stage turn budget.
+- `INTERVIEW_CODE_DETAIL_MIN_TURNS`: explicit lower bound for code-detail turns.
+- `INTERVIEW_CODE_DETAIL_MAX_TURNS`: explicit upper bound for code-detail turns.
+- `INTERVIEW_USE_CASE_TURNS`: explicit use-case-stage turn budget.
 - `DATABASE_URL`: SQLAlchemy database URL.
 - `LOG_LEVEL`: backend log level.
 - `LOG_DIR`: log root directory.
