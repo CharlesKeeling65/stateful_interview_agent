@@ -19,7 +19,9 @@ permissions:
 
 jobs:
   build-linux-bundle:
-    runs-on: ubuntu-latest
+    # Build on an older glibc baseline so the bundled libpython stays runnable on
+    # common Ubuntu/Debian server images instead of inheriting ubuntu-latest.
+    runs-on: ubuntu-22.04
 
     steps:
       - name: Check out repository

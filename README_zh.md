@@ -278,6 +278,8 @@ uv sync --extra build
 uv run pyinstaller packaging/windows/stateful_interview_agent.spec
 ```
 
+如果需要 Linux 发布包，请不要在过新的发行版或 `ubuntu-latest` 上构建。PyInstaller 会把当前环境的 `libpython` 一起带进产物，构建机 glibc 太新时，目标机器会报 `GLIBC_x.y not found`。建议固定在 Ubuntu 22.04 这类更低基线环境上执行 Linux 打包。
+
 4. 将运行时文件放到 `dist/StatefulInterviewAgent/StatefulInterviewAgent.exe` 同目录：
 
 ```text

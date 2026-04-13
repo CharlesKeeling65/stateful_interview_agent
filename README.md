@@ -329,7 +329,7 @@ dist/StatefulInterviewAgent/
 
 ### Ubuntu Linux packaging
 
-1. Build the Linux bundle on Ubuntu Linux:
+1. Build the Linux bundle on Ubuntu Linux. Use an older baseline such as Ubuntu 22.04 rather than `ubuntu-latest`, otherwise PyInstaller may bundle a `libpython` that requires a newer glibc than the target machine provides:
 
 ```bash
 uv run pyinstaller packaging/linux/stateful_interview_agent.spec

@@ -89,6 +89,16 @@ class RuntimePackagingTests(unittest.TestCase):
             self.assertTrue((runtime_root / "data").is_dir())
             self.assertTrue((runtime_root / "logs").is_dir())
 
+    def test_linux_build_workflow_pins_compatible_ubuntu_runner(self):
+        workflow = (
+            Path(__file__).resolve().parents[1]
+            / ".github"
+            / "workflows"
+            / "build-linux-bundle.yml"
+        ).read_text(encoding="utf-8")
+
+        self.assertIn("runs-on: ubuntu-22.04", workflow)
+
 
 class AppFactoryTests(unittest.TestCase):
     def test_serves_built_frontend_when_dist_is_available(self):
