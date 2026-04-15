@@ -9,8 +9,14 @@ from app.models.turn import InterviewTurn
 from app.services.coverage_service import rebuild_coverage_state, load_coverage_state
 from app.services.question_planner import plan_next_question
 from app.services.repetition_guard import is_question_semantically_redundant
-from app.services.question_validator import validate_question_for_stage
+from app.services.question_validator import validate_question_for_stage, validate_queued_sub_questions
 from app.services.stage_manager import decide_next_stage
+from app.services.question_queue_service import (
+    detect_compound_question_candidate,
+    decompose_code_detail_question_group,
+    normalize_sub_question_text,
+    renumber_sub_question_queue,
+)
 
 
 class FrameworkCoverageTests(unittest.TestCase):
@@ -653,6 +659,41 @@ class StageControllerTests(unittest.TestCase):
 
         self.assertEqual(decision["next_stage"], "Code Detail Completion")
         self.assertIn("turn 43", decision["reason"].lower())
+
+
+class QuestionQueueTests(unittest.TestCase):
+    def test_detect_compound_question_candidate(self):
+        self.assertTrue(detect_compound_question_candidate("What does function X do? And how does it handle errors?"))
+        self.assertFalse(detect_compound_question_candidate("What does function X do?"))
+        
+    def test_decompose_code_detail_question_group(self):
+        queued = decompose_code_detail_question_group(
+            "How does handle_request work? What is the edge case policy?",
+            base_turn_no=12
+        )
+        self.assertEqual(len(queued), 2)
+        self.assertEqual(queued[0].question_text, "Q12: How does handle_request work?")
+        self.assertEqual(queued[0].turn_offset, 0)
+        self.assertEqual(queued[1].question_text, "Q13: What is the edge case policy?")
+        self.assertEqual(queued[1].turn_offset, 1)
+
+    def test_renumber_sub_question_queue(self):
+        queued = decompose_code_detail_question_group(
+            "First question? Second question?",
+            base_turn_no=5
+        )
+        # Shift to base_turn_no = 8
+        renumbered = renumber_sub_question_queue(queued, 8)
+        self.assertEqual(renumbered[0].question_text, "Q8: First question?")
+        self.assertEqual(renumbered[1].question_text, "Q9: Second question?")
+
+    def test_validate_queued_sub_questions(self):
+        reasons = validate_queued_sub_questions([
+            "Q12: How does auth.py handle missing tokens?",  # Valid
+            "Q13: Does it retry?"                            # Invalid (yes/no, relies on 'it')
+        ])
+        self.assertTrue(any("avoid yes/no" in r for r in reasons))
+        self.assertTrue(any("rely on previous siblings" in r for r in reasons))
 
 
 class PlannerAndValidatorTests(unittest.TestCase):

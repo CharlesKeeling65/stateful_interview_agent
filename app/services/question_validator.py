@@ -143,8 +143,6 @@ def validate_question_for_stage(
 
     if "?" not in text:
         reasons.append("Question must contain a question mark.")
-    elif current_stage == CODE_DETAIL_STAGE and text.count("?") != 1:
-        reasons.append("Question must contain exactly one question mark.")
 
     # Detect closed yes/no questions — applies to every stage.
     # Strip the "Q<n>: " prefix before matching so the check targets the actual body.
@@ -244,6 +242,20 @@ def validate_question_for_stage(
         "is_valid": len(reasons) == 0,
         "reasons": reasons,
     }
+
+
+def validate_queued_sub_questions(questions: list[str]) -> list[str]:
+    reasons = []
+    for q in questions:
+        norm = q.lower()
+        body = re.sub(r"^q\d+[:.\s]+", "", norm).strip()
+        if re.match(r"^(?:does|is|are|was|were|can|could|will|would|should|has|have|had)\b", body, re.IGNORECASE):
+            reasons.append(f"Queued sub-question '{q}' should avoid yes/no framing.")
+        if not any(m in norm for m in CODE_DETAIL_MARKERS):
+            reasons.append(f"Queued sub-question '{q}' must remain implementation-specific.")
+        if any(re.search(rf"\b{m}\b", norm) for m in ("it", "this", "that", "the previous", "the above")):
+            reasons.append(f"Queued sub-question '{q}' must be self-contained and not rely on previous siblings for interpretation.")
+    return reasons
 
 
 def validate_question_against_repository(
