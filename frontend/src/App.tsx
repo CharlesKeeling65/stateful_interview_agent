@@ -34,6 +34,7 @@ function App() {
     runs,
     runOpenCodePlanStep,
     saveAnswer,
+    saveCurrentQuestion,
     selectProject,
     startProject,
     status,
@@ -133,6 +134,7 @@ function App() {
     creating: `${t('sidebar.createProject')}...`,
     starting: `${t('status.start')}...`,
     saving_answer: `${t('composer.saveAnswer')}...`,
+    saving_question: `${t('status.savingQuestion')}`,
     sending_opencode: `${t('composer.sendToOpenCode')}...`,
     generating_next: `${t('status.generating')}`,
     regenerating: `${t('status.regeneratingCurrent')}`,
@@ -297,6 +299,13 @@ function App() {
                     onOpenCodeSend={async (questionText) => {
                       setSkippedOpencodeTurnId(null)
                       await runOpenCodePlanStep(null, questionText ?? null)
+                    }}
+                    onOpenCodeSaveQuestion={async (questionText) => {
+                      if (!latestTurn) {
+                        return
+                      }
+                      setSkippedOpencodeTurnId(null)
+                      await saveCurrentQuestion(latestTurn.id, questionText)
                     }}
                     onOpenCodeRegenerateCurrentQuestion={async (humanReview) => {
                       if (!latestTurn) {

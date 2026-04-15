@@ -2,6 +2,7 @@ import type {
   AnswerSubmitResponse,
   CreateProjectPayload,
   CurrentQuestionRegenerateResponse,
+  CurrentQuestionSaveResponse,
   HumanReviewInput,
   NextQuestionRequestPayload,
   OpenCodePlanStepPayload,
@@ -126,6 +127,14 @@ export async function regenerateCurrentQuestion(projectId: number, turnId: numbe
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ human_review: human_review ?? null }),
+  })
+}
+
+export async function saveCurrentQuestion(projectId: number, turnId: number, question_text: string) {
+  return request<CurrentQuestionSaveResponse>(`/projects/${projectId}/turns/${turnId}/question`, {
+    method: 'PATCH',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ question_text }),
   })
 }
 

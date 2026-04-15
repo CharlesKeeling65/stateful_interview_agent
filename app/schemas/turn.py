@@ -157,6 +157,16 @@ class CurrentQuestionRegenerateRequest(BaseModel):
     human_review: HumanReviewInput | None = None
 
 
+class CurrentQuestionSaveRequest(BaseModel):
+    question_text: str = Field(..., min_length=1, max_length=500)
+
+
+class CurrentQuestionSaveResponse(BaseModel):
+    project_id: int
+    turn: TurnRead
+    message: str
+
+
 class CurrentQuestionRegenerateAppliedChanges(BaseModel):
     review_persisted: bool
     planner_followed_review: bool

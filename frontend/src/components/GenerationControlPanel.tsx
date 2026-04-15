@@ -20,6 +20,7 @@ type GenerationControlPanelProps = {
   savedAnswer?: string | null
   workingLabel?: string | null
   onGenerateNext: (payload?: NextQuestionRequestPayload) => Promise<void> | void
+  onOpenCodeSaveQuestion?: (questionText: string) => Promise<void> | void
   onOpenCodeSend?: (questionText?: string) => Promise<void> | void
   onOpenCodeRegenerateCurrentQuestion?: (humanReview: HumanReviewInput | null) => Promise<void> | void
   onOpenCodeSkip?: () => void
@@ -43,6 +44,7 @@ export function GenerationControlPanel({
   savedAnswer = null,
   workingLabel = null,
   onGenerateNext,
+  onOpenCodeSaveQuestion,
   onOpenCodeSend,
   onOpenCodeRegenerateCurrentQuestion,
   onOpenCodeSkip,
@@ -178,6 +180,16 @@ export function GenerationControlPanel({
             >
               {isEditingOpenCodeQuestion ? t('composer.sendEditedQuestion') : t('composer.sendToOpenCode')}
             </button>
+            {isEditingOpenCodeQuestion ? (
+              <button
+                type="button"
+                className="rounded-full border border-indigo-300 px-4 py-2 text-sm font-medium text-indigo-700 transition hover:bg-white disabled:cursor-not-allowed disabled:text-indigo-300"
+                onClick={() => void onOpenCodeSaveQuestion?.(activeOpenCodeQuestion.trim() || opencodePlan.pendingQuestionText)}
+                disabled={disabled}
+              >
+                {t('composer.saveEditedQuestion')}
+              </button>
+            ) : null}
             <button
               type="button"
               className="rounded-full border border-indigo-300 px-4 py-2 text-sm font-medium text-indigo-700 transition hover:bg-white disabled:cursor-not-allowed disabled:text-indigo-300"

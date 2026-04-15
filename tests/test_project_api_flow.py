@@ -52,6 +52,17 @@ class _FakeClient:
         self.chat = SimpleNamespace(completions=_FakeChatCompletions())
 
 
+class _FakeProvider:
+    def generate_text(self, *, messages, **_kwargs):
+        response = _FakeChatCompletions().create(messages=messages)
+        return SimpleNamespace(
+            text=response.choices[0].message.content,
+            model="fake-model",
+            usage=response.usage,
+            raw=response,
+        )
+
+
 class _RegenerationFromPreviousAnswerChatCompletions:
     def create(self, *, messages, **_kwargs):
         user_content = messages[-1]["content"]
@@ -69,6 +80,17 @@ class _RegenerationFromPreviousAnswerChatCompletions:
 class _RegenerationFromPreviousAnswerClient:
     def __init__(self):
         self.chat = SimpleNamespace(completions=_RegenerationFromPreviousAnswerChatCompletions())
+
+
+class _RegenerationFromPreviousAnswerProvider:
+    def generate_text(self, *, messages, **_kwargs):
+        response = _RegenerationFromPreviousAnswerChatCompletions().create(messages=messages)
+        return SimpleNamespace(
+            text=response.choices[0].message.content,
+            model="fake-model",
+            usage=response.usage,
+            raw=response,
+        )
 
 
 class ProjectApiFlowTests(unittest.TestCase):
@@ -97,18 +119,18 @@ class ProjectApiFlowTests(unittest.TestCase):
         self.original_session_local = graph_module.SessionLocal
         graph_module.SessionLocal = self.SessionLocal
 
-        self.original_question_client = question_generator.get_openai_client
-        self.original_summary_client = summarization_service.get_openai_client
-        question_generator.get_openai_client = lambda: _FakeClient()
-        summarization_service.get_openai_client = lambda: _FakeClient()
+        self.original_question_provider = question_generator.get_llm_provider
+        self.original_summary_provider = summarization_service.get_llm_provider
+        question_generator.get_llm_provider = lambda: _FakeProvider()
+        summarization_service.get_llm_provider = lambda: _FakeProvider()
 
         self.client = TestClient(app)
 
     def tearDown(self):
         app.dependency_overrides.clear()
         graph_module.SessionLocal = self.original_session_local
-        question_generator.get_openai_client = self.original_question_client
-        summarization_service.get_openai_client = self.original_summary_client
+        question_generator.get_llm_provider = self.original_question_provider
+        summarization_service.get_llm_provider = self.original_summary_provider
         self.engine.dispose()
         self.temp_dir.cleanup()
 
@@ -448,6 +470,60 @@ class ProjectApiFlowTests(unittest.TestCase):
             0,
         )
 
+    def test_save_current_question_persists_manual_edit_into_turn_history(self):
+        created = self.client.post(
+            "/projects",
+            json={
+                "project_name": "Manual Question Edit Session",
+                "system_prompt": "You are a stateful interview agent.",
+            },
+        )
+        self.assertEqual(created.status_code, 200)
+        project_id = created.json()["id"]
+
+        started = self.client.post(f"/projects/{project_id}/start")
+        self.assertEqual(started.status_code, 200)
+        current_turn = started.json()["first_turn"]
+
+        saved = self.client.patch(
+            f"/projects/{project_id}/turns/{current_turn['id']}/question",
+            json={
+                "question_text": "Which modules coordinate the request path after startup?",
+            },
+        )
+        self.assertEqual(saved.status_code, 200)
+        payload = saved.json()
+        self.assertEqual(
+            payload["turn"]["question_text"],
+            "Q1: Which modules coordinate the request path after startup?",
+        )
+        self.assertEqual(
+            payload["turn"]["question_text_for_copy"],
+            "Which modules coordinate the request path after startup?",
+        )
+        self.assertEqual(payload["turn"]["current_question_version_no"], 2)
+        self.assertEqual(payload["turn"]["question_regeneration_count"], 0)
+        self.assertEqual(len(payload["turn"]["question_versions"]), 2)
+        self.assertEqual(payload["turn"]["question_versions"][-1]["generation_kind"], "human_edit")
+
+        answered = self.client.post(
+            f"/projects/{project_id}/answer",
+            json={"answer_text": "The startup path flows through auth and orchestration."},
+        )
+        self.assertEqual(answered.status_code, 200)
+
+        generated = self.client.post(f"/projects/{project_id}/next", json={})
+        self.assertEqual(generated.status_code, 200)
+
+        turns = self.client.get(f"/projects/{project_id}/turns")
+        self.assertEqual(turns.status_code, 200)
+        turns_payload = turns.json()
+        self.assertEqual(
+            turns_payload[0]["question_text"],
+            "Q1: Which modules coordinate the request path after startup?",
+        )
+        self.assertEqual(turns_payload[0]["current_question_version_no"], 2)
+
     def test_regenerate_current_question_can_correct_stage_and_persist_review(self):
         created = self.client.post(
             "/projects",
@@ -574,9 +650,9 @@ class ProjectApiFlowTests(unittest.TestCase):
         self.assertEqual(next_one.status_code, 200)
         current_turn = next_one.json()["next_turn"]
 
-        original_question_client = question_generator.get_openai_client
+        original_question_provider = question_generator.get_llm_provider
         try:
-            question_generator.get_openai_client = lambda: _RegenerationFromPreviousAnswerClient()
+            question_generator.get_llm_provider = lambda: _RegenerationFromPreviousAnswerProvider()
             regenerated = self.client.post(
                 f"/projects/{project_id}/turns/{current_turn['id']}/regenerate-question",
                 json={
@@ -587,7 +663,7 @@ class ProjectApiFlowTests(unittest.TestCase):
                 },
             )
         finally:
-            question_generator.get_openai_client = original_question_client
+            question_generator.get_llm_provider = original_question_provider
 
         self.assertEqual(regenerated.status_code, 200)
         payload = regenerated.json()

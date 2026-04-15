@@ -129,12 +129,15 @@ DRIFT_NARROW_TOPIC_MARKERS = {
 
 def default_coverage_state() -> dict[str, Any]:
     return {
-        "version": 2,
+        "version": 3,
         "branch_count": 0,
         "updated_through_turn_no": 0,
         "branches": [],
         "question_history": [],
         "framework": default_framework_coverage(),
+        "question_queue": {"status": "empty", "items": []},
+        "repo_file_coverage": {},
+        "repo_tree_summary": {},
     }
 
 
@@ -150,11 +153,14 @@ def load_coverage_state(project: ProjectSession) -> dict[str, Any]:
 
     if not isinstance(parsed, dict):
         return default_coverage_state()
-    parsed.setdefault("version", 2)
+    parsed["version"] = 3
     parsed.setdefault("branches", [])
-    parsed.setdefault("branch_count", len(parsed["branches"]))
+    parsed.setdefault("branch_count", len(parsed.get("branches", [])))
     parsed.setdefault("updated_through_turn_no", 0)
     parsed.setdefault("question_history", [])
+    parsed.setdefault("question_queue", {"status": "empty", "items": []})
+    parsed.setdefault("repo_file_coverage", {})
+    parsed.setdefault("repo_tree_summary", {})
     parsed["framework"] = normalize_framework_coverage(
         parsed.get("framework", default_framework_coverage())
     )
@@ -264,12 +270,15 @@ def rebuild_coverage_state(turns: list[InterviewTurn]) -> dict[str, Any]:
     )
     framework = rebuild_framework_coverage(turns)
     return {
-        "version": 2,
+        "version": 3,
         "branch_count": len(branches),
         "updated_through_turn_no": updated_through_turn_no,
         "branches": sorted(branches, key=lambda item: item["priority"], reverse=True),
         "question_history": question_history[-12:],
         "framework": framework,
+        "question_queue": {"status": "empty", "items": []},
+        "repo_file_coverage": {},
+        "repo_tree_summary": {},
     }
 
 

@@ -31,6 +31,8 @@ from app.schemas.turn import (
     AnswerSubmitResponse,
     TurnTailDeleteResponse,
     AnswerWithdrawResponse,
+    CurrentQuestionSaveRequest,
+    CurrentQuestionSaveResponse,
     CurrentQuestionRegenerateRequest,
     CurrentQuestionRegenerateResponse,
     NextQuestionRequest,
@@ -45,7 +47,7 @@ from app.services.opencode_execution_service import (
 )
 from app.services.opencode_session_service import ensure_opencode_session_with_status
 from app.services.question_generator import generate_first_question_result
-from app.services.question_postprocessor import strip_question_prefix
+from app.services.question_postprocessor import clean_generated_question, strip_question_prefix
 from app.services.question_version_service import (
     append_question_version,
     ensure_initial_question_version,
@@ -870,6 +872,59 @@ def regenerate_current_question(
             "regeneration_count_after": latest_turn.question_regeneration_count,
         },
         "message": "Current question refreshed from the previous answer successfully.",
+    }
+
+
+@router.patch(
+    "/{project_id}/turns/{turn_id}/question",
+    response_model=CurrentQuestionSaveResponse,
+)
+def save_current_question(
+    project_id: int,
+    turn_id: int,
+    payload: CurrentQuestionSaveRequest,
+    db: Session = Depends(get_db),
+):
+    project = db.query(ProjectSession).filter(ProjectSession.id == project_id).first()
+    if not project:
+        raise HTTPException(status_code=404, detail="Project not found")
+
+    latest_turn = (
+        db.query(InterviewTurn)
+        .filter(InterviewTurn.project_id == project_id)
+        .order_by(InterviewTurn.turn_no.desc())
+        .first()
+    )
+    if not latest_turn:
+        raise HTTPException(status_code=400, detail="Project interview has not started")
+    if latest_turn.id != turn_id:
+        raise HTTPException(status_code=400, detail="Only the latest turn can be edited")
+    if latest_turn.answer_text is not None:
+        raise HTTPException(status_code=400, detail="Cannot edit a turn that already has an answer")
+
+    latest_turn.question_text = clean_generated_question(
+        payload.question_text.strip(),
+        latest_turn.turn_no,
+        current_stage=latest_turn.stage,
+    )
+    ensure_initial_question_version(db, latest_turn)
+    append_question_version(
+        db=db,
+        turn=latest_turn,
+        generation_kind="human_edit",
+        human_review_signal=None,
+        question_plan_json=latest_turn.question_plan_json,
+        question_text=latest_turn.question_text,
+        usage_metrics_list=[],
+    )
+
+    db.commit()
+    db.refresh(latest_turn)
+
+    return {
+        "project_id": project_id,
+        "turn": latest_turn,
+        "message": "Current question saved successfully.",
     }
 
 

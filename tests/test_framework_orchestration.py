@@ -4,8 +4,9 @@ from unittest.mock import patch
 
 os.environ.setdefault("OPENAI_API_KEY", "test-key")
 
+from app.models.project import ProjectSession
 from app.models.turn import InterviewTurn
-from app.services.coverage_service import rebuild_coverage_state
+from app.services.coverage_service import rebuild_coverage_state, load_coverage_state
 from app.services.question_planner import plan_next_question
 from app.services.repetition_guard import is_question_semantically_redundant
 from app.services.question_validator import validate_question_for_stage
@@ -16,7 +17,20 @@ class FrameworkCoverageTests(unittest.TestCase):
     def test_rebuild_coverage_state_uses_same_version_as_default_state(self):
         coverage = rebuild_coverage_state([])
 
-        self.assertEqual(coverage["version"], 2)
+        self.assertEqual(coverage["version"], 3)
+        self.assertIn("question_queue", coverage)
+        self.assertIn("repo_file_coverage", coverage)
+        self.assertIn("repo_tree_summary", coverage)
+
+    def test_load_coverage_state_migrates_to_v3(self):
+        project = ProjectSession(id=1, project_name="Test")
+        # Simulate loading v2 state
+        project.coverage_state = '{"version": 2, "branches": [], "branch_count": 0, "question_history": []}'
+        coverage = load_coverage_state(project)
+        self.assertEqual(coverage["version"], 3)
+        self.assertEqual(coverage["question_queue"]["status"], "empty")
+        self.assertEqual(coverage["repo_file_coverage"], {})
+        self.assertEqual(coverage["repo_tree_summary"], {})
 
     def test_rebuild_coverage_state_tracks_framework_targets_and_code_detail_counts(self):
         turns = [

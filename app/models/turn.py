@@ -110,7 +110,11 @@ class InterviewTurn(Base):
 
     @property
     def question_regeneration_count(self) -> int:
-        return max(0, self.current_question_version_no - 1)
+        return sum(
+            1
+            for version in self.question_versions
+            if version.generation_kind == "human_regeneration"
+        )
 
     @property
     def human_intervention_regeneration_usage_summary(self) -> dict[str, int]:

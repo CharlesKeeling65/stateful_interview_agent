@@ -93,6 +93,35 @@ class QuestionHistoryDebug(BaseModel):
     question_text: str
 
 
+class QueuedQuestionDebug(BaseModel):
+    id: str
+    turn_offset: int
+    question_text: str
+    intent: str
+    target_branch_id: str | None = None
+    target_type: str | None = None
+    target_label: str | None = None
+
+
+class QuestionQueueDebug(BaseModel):
+    status: str
+    items: list[QueuedQuestionDebug] = Field(default_factory=list)
+    parent_turn_no: int | None = None
+    parent_group_intent: str | None = None
+
+
+class RepoFileCoverageDebug(BaseModel):
+    path: str
+    importance_score: float = 0.0
+    exploration_score: float = 0.0
+    coverage_gap_score: float = 0.0
+    times_asked: int = 0
+    times_answered: int = 0
+    last_turn_no: int | None = None
+    linked_branch_ids: list[str] = Field(default_factory=list)
+    tree_depth: int = 0
+
+
 class CoverageDebugResponse(BaseModel):
     version: int
     branch_count: int
@@ -100,6 +129,9 @@ class CoverageDebugResponse(BaseModel):
     branches: list[CoverageBranchDebug]
     question_history: list[QuestionHistoryDebug]
     framework: dict
+    question_queue: QuestionQueueDebug = Field(default_factory=lambda: QuestionQueueDebug(status="empty"))
+    repo_file_coverage: dict[str, RepoFileCoverageDebug] = Field(default_factory=dict)
+    repo_tree_summary: dict[str, Any] = Field(default_factory=dict)
 
 
 class ContextPreviewRequest(BaseModel):

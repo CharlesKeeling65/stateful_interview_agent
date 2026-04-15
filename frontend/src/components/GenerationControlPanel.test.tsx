@@ -132,6 +132,42 @@ describe('GenerationControlPanel', () => {
     expect(onOpenCodeSend).toHaveBeenCalledWith('How is the repository bootstrapped in development?')
   })
 
+  it('lets users save the edited current question into project history', () => {
+    const onOpenCodeSaveQuestion = vi.fn()
+
+    render(
+      <GenerationControlPanel
+        canGenerateNext
+        estimateDraftUsage={() => ({
+          estimatedAnswerInputTokens: 0,
+          estimatedNextPromptTokens: 0,
+          estimatedNextOutputTokens: 0,
+        })}
+        onGenerateNext={vi.fn()}
+        onOpenCodeSaveQuestion={onOpenCodeSaveQuestion}
+        onOpenCodeSend={vi.fn()}
+        onOpenCodeRegenerateCurrentQuestion={vi.fn()}
+        onOpenCodeSkip={vi.fn()}
+        opencodePlan={{
+          enabled: true,
+          sessionId: 'sess_123',
+          pendingQuestionText: 'How is the repository bootstrapped?',
+        }}
+        projectStarted
+        savedAnswer="saved answer"
+        t={createTranslator('en')}
+      />,
+    )
+
+    fireEvent.click(screen.getByRole('button', { name: 'Edit before sending' }))
+    fireEvent.change(screen.getByDisplayValue('How is the repository bootstrapped?'), {
+      target: { value: 'How is the repository bootstrapped after config loading?' },
+    })
+    fireEvent.click(screen.getByRole('button', { name: 'Save edited question' }))
+
+    expect(onOpenCodeSaveQuestion).toHaveBeenCalledWith('How is the repository bootstrapped after config loading?')
+  })
+
   it('passes human review details when users regenerate the current question', () => {
     const onOpenCodeRegenerateCurrentQuestion = vi.fn()
 

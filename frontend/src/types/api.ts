@@ -348,6 +348,12 @@ export type CurrentQuestionRegenerateResponse = {
   message: string
 }
 
+export type CurrentQuestionSaveResponse = {
+  project_id: number
+  turn: TurnRead
+  message: string
+}
+
 export type OpenCodeSessionResponse = {
   project_id: number
   session_id: string
@@ -370,4 +376,70 @@ export type OpenCodePlanStepResponse = {
   minimum_goal_reached: boolean
   usage_summary: TokenUsageSummary
   message: string
+}
+
+export type QueuedQuestionDebug = {
+  id: string
+  turn_offset: number
+  question_text: string
+  intent: string
+  target_branch_id?: string | null
+  target_type?: string | null
+  target_label?: string | null
+}
+
+export type QuestionQueueDebug = {
+  status: string
+  items: QueuedQuestionDebug[]
+  parent_turn_no?: number | null
+  parent_group_intent?: string | null
+}
+
+export type RepoFileCoverageDebug = {
+  path: string
+  importance_score: number
+  exploration_score: number
+  coverage_gap_score: number
+  times_asked: number
+  times_answered: number
+  last_turn_no?: number | null
+  linked_branch_ids: string[]
+  tree_depth: number
+}
+
+export type CoverageBranchDebug = {
+  branch_id: string
+  label: string
+  stage: string
+  status: string
+  priority: number
+  keywords: string[]
+  evidence_turn_ids: number[]
+  evidence_turn_nos: number[]
+  summary: string
+  unresolved_points: string[]
+  last_turn_no: number
+}
+
+export type QuestionHistoryDebug = {
+  turn_no: number
+  stage: string
+  intent: string
+  branch_id: string
+  target_type: string
+  target_label: string
+  signature: string
+  question_text: string
+}
+
+export type CoverageDebugResponse = {
+  version: number
+  branch_count: number
+  updated_through_turn_no: number
+  branches: CoverageBranchDebug[]
+  question_history: QuestionHistoryDebug[]
+  framework: Record<string, unknown>
+  question_queue: QuestionQueueDebug
+  repo_file_coverage: Record<string, RepoFileCoverageDebug>
+  repo_tree_summary: Record<string, unknown>
 }

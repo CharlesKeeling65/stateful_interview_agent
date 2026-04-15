@@ -15,6 +15,7 @@ import {
   getProjectTurns,
   listProjects,
   regenerateCurrentQuestion,
+  saveCurrentQuestion,
   runOpenCodePlanStep,
   submitAnswer,
   startProject,
@@ -55,6 +56,7 @@ export type BusyAction =
   | 'sending_opencode'
   | 'generating_next'
   | 'regenerating'
+  | 'saving_question'
   | 'updating'
   | 'deleting'
   | null
@@ -583,6 +585,31 @@ export function useProject() {
     }
   }
 
+  async function handleSaveCurrentQuestion(turnId: number, questionText: string) {
+    if (!project || !questionText.trim()) {
+      return
+    }
+
+    setBusyAction('saving_question')
+    setLoading(true)
+    setError('')
+    setLastMessageKey('status.savingQuestion')
+    setLastRegenerationFeedback(null)
+
+    try {
+      await saveCurrentQuestion(project.id, turnId, questionText.trim())
+      startTransition(() => {
+        setLastMessageKey('status.currentQuestionSaved')
+      })
+      await refreshSelected(project.id)
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Unable to save the current question.')
+    } finally {
+      setBusyAction(null)
+      setLoading(false)
+    }
+  }
+
   async function handleUpdateProject(projectId: number, payload: UpdateProjectPayload) {
     setBusyAction('updating')
     setLoading(true)
@@ -724,6 +751,7 @@ export function useProject() {
     submitNext: handleGenerateNext,
     autoStep: handleAutoStep,
     regenerateCurrentQuestion: handleRegenerateCurrentQuestion,
+    saveCurrentQuestion: handleSaveCurrentQuestion,
     deleteTurnTail: handleDeleteTurnTail,
     deleteProject: handleDeleteProject,
     updateProject: handleUpdateProject,
