@@ -155,7 +155,7 @@ def debug_next_context_preview(
     pending_turn = turns[-1]
     original_answer_text = pending_turn.answer_text
     pending_turn.answer_text = payload.answer_text
-    coverage_state = rebuild_coverage_state(turns)
+    coverage_state = rebuild_coverage_state(turns, project)
     pending_turn.answer_text = original_answer_text
     save_coverage_state(project, coverage_state)
     db.commit()

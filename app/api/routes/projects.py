@@ -428,7 +428,7 @@ def withdraw_answer(project_id: int, db: Session = Depends(get_db)):
         .order_by(InterviewTurn.turn_no.asc())
         .all()
     )
-    refreshed_coverage_state = rebuild_coverage_state(turns)
+    refreshed_coverage_state = rebuild_coverage_state(turns, project)
     save_coverage_state(project, refreshed_coverage_state)
 
     db.commit()
@@ -506,7 +506,7 @@ def delete_turn_tail(project_id: int, turn_id: int, db: Session = Depends(get_db
         .order_by(InterviewTurn.turn_no.asc())
         .all()
     )
-    save_coverage_state(project, rebuild_coverage_state(remaining_turns))
+    save_coverage_state(project, rebuild_coverage_state(remaining_turns, project))
     project.pending_gate_json = "null"
     project.turn_count = len(remaining_turns)
     project.current_stage = remaining_turns[-1].stage if remaining_turns else "Panorama Mapping"
@@ -738,7 +738,7 @@ def regenerate_current_question(
                     detail="Current question can only be regenerated from the previous answered turn.",
                 )
             source_turn = source_turns[-1]
-            source_coverage_state = rebuild_coverage_state(source_turns)
+            source_coverage_state = rebuild_coverage_state(source_turns, project)
             stage_decision = decide_next_stage(
                 next_turn_no=latest_turn.turn_no,
                 coverage_state=source_coverage_state,

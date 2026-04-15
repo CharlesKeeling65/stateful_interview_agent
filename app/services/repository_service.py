@@ -317,6 +317,7 @@ def build_repository_manifest(root_path: Path) -> dict[str, Any]:
         "key_files": key_files[:12],
         "symbol_count": symbol_count,
         "last_indexed_at": datetime.now(timezone.utc).isoformat(),
+        "files_list": files[:2000],
     }
 
 

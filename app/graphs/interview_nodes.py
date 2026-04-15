@@ -115,7 +115,7 @@ def generate_question_for_state(
     review_result: dict | None = None,
     force_llm_generation: bool = False,
 ) -> dict:
-    coverage_state = rebuild_coverage_state(turns)
+    coverage_state = rebuild_coverage_state(turns, project)
     task_board = sync_task_board(
         deserialize_task_board(project.rubric_task_board),
         coverage_state=coverage_state,
@@ -451,7 +451,7 @@ def draft_question_from_answered_history(
         if include_latest_answer_in_coverage and turns and not turns[-1].answer_text:
             original_answer_text = turns[-1].answer_text
             turns[-1].answer_text = latest_answer_text
-        coverage_state = rebuild_coverage_state(turns)
+        coverage_state = rebuild_coverage_state(turns, project)
         if include_latest_answer_in_coverage and turns and not original_answer_text:
             turns[-1].answer_text = original_answer_text
         if coverage_step:
@@ -825,7 +825,7 @@ def persist_next_step(state, db: Session):
             .order_by(InterviewTurn.turn_no.asc())
             .all()
         )
-        refreshed_coverage_state = rebuild_coverage_state(all_turns)
+        refreshed_coverage_state = rebuild_coverage_state(all_turns, project)
         save_coverage_state(project, refreshed_coverage_state)
         task_board = sync_task_board(
             deserialize_task_board(project.rubric_task_board),
@@ -927,7 +927,7 @@ def persist_next_step(state, db: Session):
         project.current_stage = state["next_stage"]
         project.agent_mode = state.get("agent_mode", project.agent_mode)
         project.pending_gate_json = "null"
-        refreshed_coverage_state = rebuild_coverage_state([*all_turns, next_turn])
+        refreshed_coverage_state = rebuild_coverage_state([*all_turns, next_turn], project)
         save_coverage_state(project, refreshed_coverage_state)
         project.rubric_task_board = serialize_task_board(
             sync_task_board(

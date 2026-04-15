@@ -2,6 +2,23 @@ import json
 import re
 from typing import Any
 
+def calculate_structural_importance(path: str) -> float:
+    depth = path.count("/")
+    score = 0.9 ** depth
+    
+    if path.startswith("src/") or path.startswith("app/") or path.startswith("lib/"):
+        score += 0.2
+    if path.startswith("tests/") or path.startswith("docs/") or path.startswith("scripts/"):
+        score -= 0.4
+    
+    if path.endswith((".json", ".yaml", ".yml", ".toml", ".ini")):
+        score -= 0.3
+    elif path.endswith(".md") and not path.lower().endswith("readme.md"):
+        score -= 0.5
+        
+    return max(0.0, min(1.0, score))
+
+
 from app.models.project import ProjectSession
 from app.models.turn import InterviewTurn
 from app.services.repetition_guard import build_question_history_entry
@@ -136,7 +153,7 @@ def default_coverage_state() -> dict[str, Any]:
         "question_history": [],
         "framework": default_framework_coverage(),
         "question_queue": {"status": "empty", "items": []},
-        "repo_file_coverage": {},
+        "repo_file_coverage": repo_file_coverage,
         "repo_tree_summary": {},
     }
 
@@ -171,10 +188,28 @@ def save_coverage_state(project: ProjectSession, coverage_state: dict[str, Any])
     project.coverage_state = json.dumps(coverage_state, ensure_ascii=True, sort_keys=True)
 
 
-def rebuild_coverage_state(turns: list[InterviewTurn]) -> dict[str, Any]:
+def rebuild_coverage_state(turns: list[InterviewTurn], project: ProjectSession | None = None) -> dict[str, Any]:
     branches: list[dict[str, Any]] = []
     question_history: list[dict[str, Any]] = []
     question_queue = {"status": "empty", "items": []}
+    repo_file_coverage = {}
+    if project:
+        manifest = project.repo_manifest_data
+        files_list = manifest.get("files_list", [])
+        for fpath in files_list:
+            if fpath not in repo_file_coverage:
+                repo_file_coverage[fpath] = {
+                    "path": fpath,
+                    "importance_score": calculate_structural_importance(fpath),
+                    "exploration_score": 0.0,
+                    "coverage_gap_score": 0.0,
+                    "times_asked": 0,
+                    "times_answered": 0,
+                    "last_turn_no": None,
+                    "linked_branch_ids": [],
+                    "tree_depth": fpath.count("/"),
+                }
+
 
     from app.services.question_queue_service import prune_question_queue
 
@@ -193,6 +228,28 @@ def rebuild_coverage_state(turns: list[InterviewTurn]) -> dict[str, Any]:
                 target_label=(turn.question_plan or {}).get("target_label"),
             )
         )
+
+        plan = turn.question_plan or {}
+        repo_paths = plan.get("repo_selected_paths", [])
+        for path in repo_paths:
+            if path not in repo_file_coverage:
+                repo_file_coverage[path] = {
+                    "path": path,
+                    "importance_score": calculate_structural_importance(path),
+                    "exploration_score": 0.0,
+                    "coverage_gap_score": 0.0,
+                    "times_asked": 0,
+                    "times_answered": 0,
+                    "last_turn_no": None,
+                    "linked_branch_ids": [],
+                    "tree_depth": path.count("/"),
+                }
+            repo_file_coverage[path]["times_asked"] += 1
+            if turn.answer_text:
+                repo_file_coverage[path]["times_answered"] += 1
+                repo_file_coverage[path]["last_turn_no"] = turn.turn_no
+                repo_file_coverage[path]["exploration_score"] = min(1.0, repo_file_coverage[path]["exploration_score"] + 0.4)
+                
         if not turn.answer_text:
             continue
 
@@ -289,7 +346,7 @@ def rebuild_coverage_state(turns: list[InterviewTurn]) -> dict[str, Any]:
         "question_history": question_history[-12:],
         "framework": framework,
         "question_queue": {"status": "empty", "items": []},
-        "repo_file_coverage": {},
+        "repo_file_coverage": repo_file_coverage,
         "repo_tree_summary": {},
     }
 
