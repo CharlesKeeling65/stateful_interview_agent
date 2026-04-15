@@ -502,7 +502,6 @@ export function StatsDashboard({
   status,
   t,
   turns,
-  coverageDebug,
   queueSummary,
   fileCoverageSummary,
 }: StatsDashboardProps) {
