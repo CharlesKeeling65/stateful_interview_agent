@@ -174,8 +174,14 @@ def save_coverage_state(project: ProjectSession, coverage_state: dict[str, Any])
 def rebuild_coverage_state(turns: list[InterviewTurn]) -> dict[str, Any]:
     branches: list[dict[str, Any]] = []
     question_history: list[dict[str, Any]] = []
+    question_queue = {"status": "empty", "items": []}
+
+    from app.services.question_queue_service import prune_question_queue
 
     for turn in turns:
+        if turn.question_plan and "generated_queue" in turn.question_plan:
+            question_queue = turn.question_plan["generated_queue"]
+            
         question_history.append(
             build_question_history_entry(
                 turn_no=turn.turn_no,
@@ -192,6 +198,12 @@ def rebuild_coverage_state(turns: list[InterviewTurn]) -> dict[str, Any]:
 
         summary = turn.answer_summary or turn.answer_text
         answer_analysis = turn.answer_analysis or {}
+        
+        if question_queue.get("status") == "active":
+            question_queue = prune_question_queue(
+                question_queue, turn.answer_text, summary, answer_analysis
+            )
+            
         answer_memory_text = " ".join(
             [
                 *answer_analysis.get("key_points", []),

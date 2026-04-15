@@ -728,6 +728,7 @@ def regenerate_current_question(
                 run_id=run.id,
                 turn_no=latest_turn.turn_no,
                 turns=turns,
+                force_llm_generation=True,
             )
         else:
             source_turns = turns[:-1]
@@ -756,6 +757,7 @@ def regenerate_current_question(
                 human_review_signal=human_review_signal,
                 run_id=run.id,
                 include_latest_answer_in_coverage=False,
+                force_llm_generation=True,
             )
 
         ensure_initial_question_version(db, latest_turn)

@@ -113,6 +113,7 @@ def generate_question_for_state(
     turns: list[InterviewTurn],
     planner_decision_override: dict | None = None,
     review_result: dict | None = None,
+    force_llm_generation: bool = False,
 ) -> dict:
     coverage_state = rebuild_coverage_state(turns)
     task_board = sync_task_board(
@@ -151,20 +152,67 @@ def generate_question_for_state(
     )
     context_payload["repo_grounding_context"] = repo_grounding_payload["repo_grounding_context"]
     context_payload["repo_grounding_meta"] = repo_grounding_payload["repo_grounding_meta"]
-    next_question_result = generate_next_question_from_history(
-        system_prompt=project.system_prompt,
-        recent_context=context_payload["recent_context"],
-        retrieved_context=context_payload["retrieved_context"],
-        repo_grounding_context=context_payload["repo_grounding_context"],
-        coverage_priorities=context_payload["coverage_priorities"],
-        next_turn_no=turn_no,
-        current_stage=current_stage,
-        planner_decision=planner_decision,
-        project_id=project.id,
-        run_id=run_id,
+
+    question_queue = coverage_state.get("question_queue", {"status": "empty", "items": []})
+    should_use_queue = (
+        current_stage == "Code Detail Completion"
+        and question_queue.get("status") == "active"
+        and question_queue.get("items")
+        and not human_review_signal
+        and not force_llm_generation
     )
-    next_question = next_question_result["question_text"]
-    question_usage_metrics = [next_question_result["usage_metrics"]]
+
+    if should_use_queue:
+        next_item = question_queue["items"].pop(0)
+        from app.services.question_queue_service import renumber_sub_question_queue
+        question_queue["items"] = renumber_sub_question_queue(question_queue["items"], turn_no + 1)
+        if not question_queue["items"]:
+            question_queue["status"] = "empty"
+
+        planner_decision["question_intent"] = next_item.get("intent", planner_decision.get("question_intent"))
+        planner_decision["target_branch_id"] = next_item.get("target_branch_id", planner_decision.get("target_branch_id"))
+        planner_decision["target_type"] = next_item.get("target_type", planner_decision.get("target_type"))
+        planner_decision["target_label"] = next_item.get("target_label", planner_decision.get("target_label"))
+        
+        planner_decision["generated_queue"] = question_queue
+        next_question = next_item.get("question_text", "")
+        question_usage_metrics = []
+        next_question_result = {"prompt_id": "queue_pop", "prompt_version": "1.0"}
+
+    else:
+        planner_decision["generated_queue"] = {"status": "empty", "items": []}
+        next_question_result = generate_next_question_from_history(
+            system_prompt=project.system_prompt,
+            recent_context=context_payload["recent_context"],
+            retrieved_context=context_payload["retrieved_context"],
+            repo_grounding_context=context_payload["repo_grounding_context"],
+            coverage_priorities=context_payload["coverage_priorities"],
+            next_turn_no=turn_no,
+            current_stage=current_stage,
+            planner_decision=planner_decision,
+            project_id=project.id,
+            run_id=run_id,
+        )
+        next_question = next_question_result["question_text"]
+        question_usage_metrics = [next_question_result["usage_metrics"]]
+
+        from app.services.question_queue_service import detect_compound_question_candidate, decompose_code_detail_question_group
+        if current_stage == "Code Detail Completion" and detect_compound_question_candidate(next_question):
+            new_items = decompose_code_detail_question_group(
+                next_question,
+                base_turn_no=turn_no,
+                intent=planner_decision.get("question_intent", "code_detail_deep_dive"),
+                target_branch_id=planner_decision.get("target_branch_id"),
+                target_type=planner_decision.get("target_type"),
+                target_label=planner_decision.get("target_label"),
+            )
+            if new_items:
+                next_question = new_items[0].question_text
+                question_queue["status"] = "active"
+                question_queue["parent_turn_no"] = turn_no
+                question_queue["parent_group_intent"] = planner_decision.get("question_intent")
+                question_queue["items"] = [{"question_text": i.question_text, "turn_offset": i.turn_offset, "intent": i.intent, "target_branch_id": i.target_branch_id, "target_type": i.target_type, "target_label": i.target_label} for i in new_items[1:]]
+                planner_decision["generated_queue"] = question_queue
 
     old_questions = [turn.question_text for turn in turns[:-1]]
     recent_question_signatures = coverage_state.get("question_history", [])[-8:]
@@ -334,6 +382,7 @@ def draft_question_from_answered_history(
     include_latest_answer_in_coverage: bool = False,
     planner_decision_override: dict | None = None,
     review_result: dict | None = None,
+    force_llm_generation: bool = False,
 ) -> dict:
     answered_turns = [turn for turn in turns if turn.answer_text]
     with traced_run_step(
@@ -432,6 +481,7 @@ def draft_question_from_answered_history(
         turns=turns,
         planner_decision_override=planner_decision_override,
         review_result=review_result,
+        force_llm_generation=force_llm_generation,
     )
 
     return {

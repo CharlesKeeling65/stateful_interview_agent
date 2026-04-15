@@ -3,6 +3,7 @@ from typing import Any
 import uuid
 
 from app.schemas.debug import QueuedQuestionDebug
+from app.services.repetition_guard import infer_question_target
 
 def detect_compound_question_candidate(question_text: str) -> bool:
     question_text = question_text.strip()
@@ -46,9 +47,51 @@ def decompose_code_detail_question_group(
         )
     return queued
 
-def renumber_sub_question_queue(queue_items: list[QueuedQuestionDebug], next_turn_no: int) -> list[QueuedQuestionDebug]:
+def renumber_sub_question_queue(queue_items: list[QueuedQuestionDebug | dict], next_turn_no: int) -> list[QueuedQuestionDebug | dict]:
+    renumbered = []
     for idx, item in enumerate(queue_items):
-        item.turn_offset = idx
-        raw_text = re.sub(r"^Q\d+[:.\-\s]*", "", item.question_text).strip()
-        item.question_text = f"Q{next_turn_no + idx}: {raw_text}"
-    return queue_items
+        is_dict = isinstance(item, dict)
+        q_text = item.get("question_text", "") if is_dict else item.question_text
+        raw_text = re.sub(r"^Q\d+[:.\-\s]*", "", q_text).strip()
+        new_text = f"Q{next_turn_no + idx}: {raw_text}"
+        if is_dict:
+            item["turn_offset"] = idx
+            item["question_text"] = new_text
+            renumbered.append(item)
+        else:
+            item.turn_offset = idx
+            item.question_text = new_text
+            renumbered.append(item)
+    return renumbered
+
+def prune_question_queue(
+    queue_state: dict[str, Any], 
+    answer_text: str, 
+    summary: str,
+    analysis: dict[str, Any],
+) -> dict[str, Any]:
+    if not queue_state.get("items"):
+        queue_state["status"] = "empty"
+        return queue_state
+
+    corpus = (answer_text + " " + summary + " " + " ".join(analysis.get("key_points", []))).lower()
+    
+    remaining = []
+    for item in queue_state["items"]:
+        q_text = item.get("question_text", "") if isinstance(item, dict) else item.question_text
+        
+        target_type, target_label = infer_question_target(q_text)
+        
+        if len(target_label) > 4 and target_label.lower() in corpus and "?" not in corpus:
+            # A bit dangerous heuristic, checking if the question's target was heavily discussed
+            # Let's just look for strong overlap
+            overlap = sum(1 for word in target_label.lower().split() if word in corpus)
+            if overlap >= len(target_label.split()) and len(target_label) > 3:
+                continue # Question target was explored
+        
+        remaining.append(item)
+
+    queue_state["items"] = remaining
+    if not remaining:
+        queue_state["status"] = "empty"
+    return queue_state
