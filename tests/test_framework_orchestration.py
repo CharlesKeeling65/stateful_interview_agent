@@ -13,6 +13,11 @@ from app.services.stage_manager import decide_next_stage
 
 
 class FrameworkCoverageTests(unittest.TestCase):
+    def test_rebuild_coverage_state_uses_same_version_as_default_state(self):
+        coverage = rebuild_coverage_state([])
+
+        self.assertEqual(coverage["version"], 2)
+
     def test_rebuild_coverage_state_tracks_framework_targets_and_code_detail_counts(self):
         turns = [
             InterviewTurn(

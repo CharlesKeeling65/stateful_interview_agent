@@ -264,7 +264,7 @@ def rebuild_coverage_state(turns: list[InterviewTurn]) -> dict[str, Any]:
     )
     framework = rebuild_framework_coverage(turns)
     return {
-        "version": 1,
+        "version": 2,
         "branch_count": len(branches),
         "updated_through_turn_no": updated_through_turn_no,
         "branches": sorted(branches, key=lambda item: item["priority"], reverse=True),
