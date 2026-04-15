@@ -4,6 +4,12 @@ import type { ProjectRead, ProjectStatusResponse, TurnRead } from '../types/api'
 import { buildProjectAnalytics, type StageTransitionItem, type TurnTokenTrendItem } from '../utils/analytics'
 import { formatDurationMs } from '../utils/format'
 import { formatTokenCount } from '../utils/tokens'
+import { RepositoryCoverageTree } from './RepositoryCoverageTree'
+import type { 
+  CoverageDebugResponse, 
+  FileCoverageSummaryDebug, 
+  QueueSummaryDebug 
+} from '../types/api'
 
 type StatsDashboardProps = {
   locale?: Locale
@@ -12,6 +18,9 @@ type StatsDashboardProps = {
   status: ProjectStatusResponse | null
   t: Translator
   turns: TurnRead[]
+  coverageDebug?: CoverageDebugResponse | null
+  queueSummary?: QueueSummaryDebug | null
+  fileCoverageSummary?: FileCoverageSummaryDebug | null
 }
 
 const STAGE_SWATCHES = ['#0f172a', '#0ea5e9', '#f97316', '#10b981', '#a855f7', '#ef4444']
@@ -493,6 +502,9 @@ export function StatsDashboard({
   status,
   t,
   turns,
+  coverageDebug,
+  queueSummary,
+  fileCoverageSummary,
 }: StatsDashboardProps) {
   if (!project) {
     return <EmptyStats t={t} />
@@ -625,6 +637,69 @@ export function StatsDashboard({
             stageBreakdown={analytics.stageBreakdown}
             transitions={analytics.stageTransitions}
           />
+        </ChartCard>
+      </div>
+
+      <div className="grid gap-4 xl:grid-cols-[minmax(0,1.4fr)_minmax(0,0.6fr)]">
+        <ChartCard
+          eyebrow={t('status.repository')}
+          title={t('analytics.repositoryCoverage')}
+          subtitle={t('analytics.topCoverageGapsHint')}
+        >
+          <RepositoryCoverageTree 
+            locale={locale} 
+            summary={fileCoverageSummary ?? null} 
+            t={t} 
+          />
+        </ChartCard>
+
+        <ChartCard
+          eyebrow={t('analytics.queueStatus')}
+          title={t('analytics.queuedItems')}
+          subtitle={t('composer.opencodePlanHint')}
+        >
+           {queueSummary && queueSummary.status !== 'empty' ? (
+             <div className="space-y-4">
+                <div className="flex items-center justify-between p-4 rounded-2xl bg-slate-900 text-white shadow-lg">
+                  <div>
+                    <p className="text-[10px] font-bold uppercase tracking-widest text-white/50">{t('analytics.queueStatus')}</p>
+                    <p className="mt-1 font-serif text-xl">{t('analytics.activeQueue')}</p>
+                  </div>
+                  <div className="text-right">
+                    <p className="text-2xl font-bold">{queueSummary.item_count}</p>
+                    <p className="text-[10px] text-white/70 uppercase font-medium">{t('analytics.itemsPending')}</p>
+                  </div>
+                </div>
+
+                {queueSummary.parent_group_intent && (
+                  <div className="rounded-xl border border-slate-200 bg-slate-50 p-3">
+                    <p className="text-[10px] font-semibold text-slate-400 uppercase">{t('analytics.parentTurn')} #{queueSummary.parent_turn_no}</p>
+                    <p className="text-sm font-medium text-slate-700 mt-1">{queueSummary.parent_group_intent}</p>
+                  </div>
+                )}
+
+                <div className="space-y-2">
+                  {queueSummary.pending_questions.map((q, i) => (
+                    <div key={i} className="flex items-start gap-3 p-3 rounded-xl border border-white bg-white shadow-sm">
+                      <span className="flex-shrink-0 flex h-6 w-6 items-center justify-center rounded-full bg-slate-100 text-[10px] font-bold text-slate-500">
+                        {i + 1}
+                      </span>
+                      <p className="text-sm text-slate-600 line-clamp-2 italic">“{q.question_text}”</p>
+                    </div>
+                  ))}
+                </div>
+             </div>
+           ) : (
+             <div className="flex h-64 flex-col items-center justify-center rounded-[2rem] border border-dashed border-slate-200 bg-slate-50/50 text-center p-6">
+                <div className="h-12 w-12 rounded-full bg-slate-100 flex items-center justify-center mb-3">
+                   <svg className="h-6 w-6 text-slate-300" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
+                   </svg>
+                </div>
+                <p className="text-sm font-medium text-slate-400">{t('analytics.emptyQueue')}</p>
+                <p className="text-xs text-slate-300 mt-1">Planner queue is currently clear.</p>
+             </div>
+           )}
         </ChartCard>
       </div>
 

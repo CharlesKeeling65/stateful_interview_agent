@@ -110,12 +110,13 @@ def debug_project_file_coverage_summary(project_id: int, db: Session = Depends(g
     exploration_scores = [f.get("exploration_score", 0.0) for f in all_files]
     median_exploration = sorted(exploration_scores)[len(exploration_scores) // 2] if exploration_scores else 0.0
 
-    # Top files by gap score
+    # Top files by gap: Sort by importance (desc) then gap (desc), filtering for those with non-zero gap
+    underexplored_files = [f for f in all_files if f.get("coverage_gap_score", 0.0) > 0.05]
     top_gap_files = sorted(
-        all_files,
-        key=lambda f: f.get("coverage_gap_score", 0.0),
+        underexplored_files,
+        key=lambda f: (f.get("importance_score", 0.0), f.get("coverage_gap_score", 0.0)),
         reverse=True,
-    )[:10]
+    )[:14]
 
     # Concentration ratio: what fraction of total asks are on top 1 / top 3 files?
     files_by_asks = sorted(all_files, key=lambda f: f.get("times_asked", 0), reverse=True)

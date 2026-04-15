@@ -44,6 +44,10 @@ function App() {
     updateProject,
     estimateDraftUsage,
     activeRun,
+    coverageDebug,
+    queueSummary,
+    fileCoverageSummary,
+    loadCoverageDebug,
   } = useProject()
   const [locale, setLocale] = useState<Locale>(() => normalizeLocale(localStorage.getItem(LOCALE_STORAGE_KEY)))
   const [page, setPage] = useState<'workspace' | 'analytics'>('workspace')
@@ -127,6 +131,11 @@ function App() {
     )
     window.setTimeout(() => setExportLabel(null), 1200)
   }
+  useEffect(() => {
+    if (page === 'analytics' && project) {
+      void loadCoverageDebug()
+    }
+  }, [page, project?.id])
 
   const projectStarted = hasInterviewStarted(project)
   const projectFinished = isProjectFinished(project, status)
@@ -398,6 +407,9 @@ function App() {
               status={status}
               t={t}
               turns={turns}
+              coverageDebug={coverageDebug}
+              queueSummary={queueSummary}
+              fileCoverageSummary={fileCoverageSummary}
             />
           )}
         </div>
