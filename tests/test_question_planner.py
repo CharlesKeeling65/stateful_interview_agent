@@ -36,10 +36,14 @@ class QuestionPlannerTests(unittest.TestCase):
         # Check constraints
         constraint_found = False
         for c in decision["constraints"]:
-            if "Prioritize asking about unexplored but highly important files" in c:
+            if "STRATEGIC PRIORITY" in c:
                 self.assertIn("src/neglected.py", c)
                 constraint_found = True
         self.assertTrue(constraint_found)
+
+        # Check rationale
+        self.assertIn("coverage rebalancing strategy", decision["why_this_question"])
+        self.assertIn("src/neglected.py", decision["why_this_question"])
 
 if __name__ == "__main__":
     unittest.main()

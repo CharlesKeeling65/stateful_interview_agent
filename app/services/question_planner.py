@@ -329,15 +329,17 @@ def plan_next_question(
                 high_priority_unexplored.append((gap, path))
         
         rebalancing_constraints = []
+        is_rebalanced = False
         if high_priority_unexplored:
             high_priority_unexplored.sort(reverse=True, key=lambda x: x[0])
             top_paths = [path for _, path in high_priority_unexplored[:3]]
             rebalancing_constraints.append(
-                f"Prioritize asking about unexplored but highly important files: {', '.join(top_paths)}"
+                f"STRATEGIC PRIORITY: You must prioritize exploration of the following highly important files that remain underexplored: {', '.join(top_paths)}. Ensure the next question targets one of these concrete areas if it aligns with the current investigative thread."
             )
             if not target_type or target_type not in ("file", "class", "method"):
                 target_type = "file"
                 target_label = top_paths[0]
+                is_rebalanced = True
 
         return {
             "question_intent": "code_detail_deep_dive",
@@ -375,6 +377,7 @@ def plan_next_question(
                 target_type=target_type,
                 target_label=target_label,
                 recent_question_history=recent_question_history,
+                is_rebalanced=is_rebalanced,
             ),
         }
 
@@ -635,12 +638,19 @@ def build_code_detail_why_text(
     target_type: str,
     target_label: str,
     recent_question_history: list[dict[str, Any]],
+    is_rebalanced: bool = False,
 ) -> str:
     recent_targets = {
         normalize_target_label(str(item.get("target_label", "")))
         for item in recent_question_history[-4:]
     }
     normalized_target = normalize_target_label(target_label)
+    if is_rebalanced:
+        return (
+            f"This target was chosen as part of a coverage rebalancing strategy to ensure the interview "
+            f"explores the underexplored but highly important file '{target_label}'."
+        )
+
     if normalized_target and normalized_target not in recent_targets:
         return (
             f"Code-detail should dominate now, and this target avoids recently repeated questions by focusing on the concrete "
