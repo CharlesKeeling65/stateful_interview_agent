@@ -443,3 +443,42 @@ export type CoverageDebugResponse = {
   repo_file_coverage: Record<string, RepoFileCoverageDebug>
   repo_tree_summary: Record<string, unknown>
 }
+
+export type QueueSummaryDebug = {
+  status: string
+  item_count: number
+  parent_turn_no: number | null
+  parent_group_intent: string | null
+  pending_questions: Array<{
+    turn_offset: number | null
+    question_text: string
+    intent: string
+    target_label: string | null
+  }>
+}
+
+export type FileCoverageTopEntry = {
+  path: string
+  importance_score: number
+  exploration_score: number
+  coverage_gap_score: number
+  times_asked: number
+  times_answered: number
+  last_turn_no: number | null
+}
+
+export type FileCoverageSummaryDebug = {
+  total_tracked_files: number
+  important_files_count: number
+  underexplored_important_count: number
+  median_exploration_score: number
+  concentration_ratio_top1: number
+  concentration_ratio_top3: number
+  top_gap_files: FileCoverageTopEntry[]
+  tree_summary: Record<string, {
+    file_count: number
+    total_importance: number
+    total_exploration: number
+    unexplored_important_count: number
+  }>
+}

@@ -153,7 +153,7 @@ def default_coverage_state() -> dict[str, Any]:
         "question_history": [],
         "framework": default_framework_coverage(),
         "question_queue": {"status": "empty", "items": []},
-        "repo_file_coverage": repo_file_coverage,
+        "repo_file_coverage": {},
         "repo_tree_summary": {},
     }
 
@@ -333,6 +333,35 @@ def rebuild_coverage_state(turns: list[InterviewTurn], project: ProjectSession |
     for branch in branches:
         branch["priority"] = compute_branch_priority(branch)
 
+    # Finalize coverage_gap_score for every tracked file
+    for metrics in repo_file_coverage.values():
+        if isinstance(metrics, dict):
+            metrics["coverage_gap_score"] = max(
+                0.0,
+                metrics.get("importance_score", 0.0) - metrics.get("exploration_score", 0.0),
+            )
+
+    # Build compact repo_tree_summary grouped by top-level directory
+    repo_tree_summary: dict[str, Any] = {}
+    for path, metrics in repo_file_coverage.items():
+        if not isinstance(metrics, dict):
+            continue
+        parts = path.split("/")
+        top_dir = parts[0] if len(parts) > 1 else "."
+        if top_dir not in repo_tree_summary:
+            repo_tree_summary[top_dir] = {
+                "file_count": 0,
+                "total_importance": 0.0,
+                "total_exploration": 0.0,
+                "unexplored_important_count": 0,
+            }
+        entry = repo_tree_summary[top_dir]
+        entry["file_count"] += 1
+        entry["total_importance"] += metrics.get("importance_score", 0.0)
+        entry["total_exploration"] += metrics.get("exploration_score", 0.0)
+        if metrics.get("coverage_gap_score", 0.0) > 0.2:
+            entry["unexplored_important_count"] += 1
+
     updated_through_turn_no = max(
         (turn.turn_no for turn in turns if turn.answer_text),
         default=0,
@@ -345,9 +374,9 @@ def rebuild_coverage_state(turns: list[InterviewTurn], project: ProjectSession |
         "branches": sorted(branches, key=lambda item: item["priority"], reverse=True),
         "question_history": question_history[-12:],
         "framework": framework,
-        "question_queue": {"status": "empty", "items": []},
+        "question_queue": question_queue,
         "repo_file_coverage": repo_file_coverage,
-        "repo_tree_summary": {},
+        "repo_tree_summary": repo_tree_summary,
     }
 
 

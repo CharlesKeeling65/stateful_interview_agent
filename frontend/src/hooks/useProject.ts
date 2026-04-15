@@ -9,6 +9,9 @@ import {
   ensureOpenCodeSession,
   getProject,
   getLatestProjectRun,
+  getProjectCoverageDebug,
+  getProjectFileCoverageSummary,
+  getProjectQueueSummary,
   getProjectRuns,
   getProjectStatus,
   getProjectTranscript,
@@ -23,12 +26,15 @@ import {
   updateProject,
 } from '../api/client'
 import type {
+  CoverageDebugResponse,
   CreateProjectPayload,
   CurrentQuestionRegenerateResponse,
+  FileCoverageSummaryDebug,
   HumanReviewInput,
   NextQuestionRequestPayload,
   ProjectRead,
   ProjectStatusResponse,
+  QueueSummaryDebug,
   RunRead,
   TranscriptResponse,
   TurnRead,
@@ -92,6 +98,9 @@ export function useProject() {
   const [lastMessageKey, setLastMessageKey] = useState('')
   const [lastRegenerationFeedback, setLastRegenerationFeedback] =
     useState<CurrentQuestionRegenerateResponse | null>(null)
+  const [coverageDebug, setCoverageDebug] = useState<CoverageDebugResponse | null>(null)
+  const [queueSummary, setQueueSummary] = useState<QueueSummaryDebug | null>(null)
+  const [fileCoverageSummary, setFileCoverageSummary] = useState<FileCoverageSummaryDebug | null>(null)
 
   async function refreshProjects(preferredProjectId?: number) {
     const items = await listProjects()
@@ -700,6 +709,24 @@ export function useProject() {
     }
   }
 
+  async function handleLoadCoverageDebug() {
+    if (!project) return
+    try {
+      const [coverage, queue, fileCoverage] = await Promise.all([
+        getProjectCoverageDebug(project.id),
+        getProjectQueueSummary(project.id),
+        getProjectFileCoverageSummary(project.id),
+      ])
+      startTransition(() => {
+        setCoverageDebug(coverage)
+        setQueueSummary(queue)
+        setFileCoverageSummary(fileCoverage)
+      })
+    } catch {
+      // Non-critical: debug data is optional
+    }
+  }
+
   const initializeProjects = useEffectEvent(() => {
     setBusyAction('initializing')
     void refreshProjects()
@@ -731,6 +758,9 @@ export function useProject() {
     turns,
     activeRun,
     opencodeElapsedSeconds,
+    coverageDebug,
+    queueSummary,
+    fileCoverageSummary,
     estimateDraftUsage: (answerDraft: string) => ({
       estimatedAnswerInputTokens: estimateTokenCount(answerDraft),
       estimatedNextPromptTokens: estimateNextPromptTokens({
@@ -755,5 +785,6 @@ export function useProject() {
     deleteTurnTail: handleDeleteTurnTail,
     deleteProject: handleDeleteProject,
     updateProject: handleUpdateProject,
+    loadCoverageDebug: handleLoadCoverageDebug,
   }
 }

@@ -1,8 +1,10 @@
 import type {
   AnswerSubmitResponse,
+  CoverageDebugResponse,
   CreateProjectPayload,
   CurrentQuestionRegenerateResponse,
   CurrentQuestionSaveResponse,
+  FileCoverageSummaryDebug,
   HumanReviewInput,
   NextQuestionRequestPayload,
   OpenCodePlanStepPayload,
@@ -12,6 +14,7 @@ import type {
   ProjectRead,
   ProjectStartResponse,
   ProjectStatusResponse,
+  QueueSummaryDebug,
   RunRead,
   TranscriptResponse,
   TurnTailDeleteResponse,
@@ -184,4 +187,16 @@ export async function deleteTurnTail(projectId: number, turnId: number) {
   return request<TurnTailDeleteResponse>(`/projects/${projectId}/turns/${turnId}/tail`, {
     method: 'DELETE',
   })
+}
+
+export async function getProjectCoverageDebug(projectId: number) {
+  return request<CoverageDebugResponse>(`/debug/projects/${projectId}/coverage`)
+}
+
+export async function getProjectQueueSummary(projectId: number) {
+  return request<QueueSummaryDebug>(`/debug/projects/${projectId}/queue-summary`)
+}
+
+export async function getProjectFileCoverageSummary(projectId: number) {
+  return request<FileCoverageSummaryDebug>(`/debug/projects/${projectId}/file-coverage-summary`)
 }

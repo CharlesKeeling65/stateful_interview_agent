@@ -43,7 +43,107 @@ def debug_project_coverage(project_id: int, db: Session = Depends(get_db)):
     project = db.query(ProjectSession).filter(ProjectSession.id == project_id).first()
     if not project:
         raise HTTPException(status_code=404, detail="Project not found")
-    return project.coverage_state_data
+    turns = (
+        db.query(InterviewTurn)
+        .filter(InterviewTurn.project_id == project_id)
+        .order_by(InterviewTurn.turn_no.asc())
+        .all()
+    )
+    coverage_state = rebuild_coverage_state(turns, project)
+    return coverage_state
+
+
+@router.get("/projects/{project_id}/queue-summary")
+def debug_project_queue_summary(project_id: int, db: Session = Depends(get_db)):
+    """Return active sub-question queue summary for the project."""
+    project = db.query(ProjectSession).filter(ProjectSession.id == project_id).first()
+    if not project:
+        raise HTTPException(status_code=404, detail="Project not found")
+    turns = (
+        db.query(InterviewTurn)
+        .filter(InterviewTurn.project_id == project_id)
+        .order_by(InterviewTurn.turn_no.asc())
+        .all()
+    )
+    coverage_state = rebuild_coverage_state(turns, project)
+    queue = coverage_state.get("question_queue", {"status": "empty", "items": []})
+    return {
+        "status": queue.get("status", "empty"),
+        "item_count": len(queue.get("items", [])),
+        "parent_turn_no": queue.get("parent_turn_no"),
+        "parent_group_intent": queue.get("parent_group_intent"),
+        "pending_questions": [
+            {
+                "turn_offset": item.get("turn_offset"),
+                "question_text": item.get("question_text", ""),
+                "intent": item.get("intent", ""),
+                "target_label": item.get("target_label"),
+            }
+            for item in queue.get("items", [])
+        ],
+    }
+
+
+@router.get("/projects/{project_id}/file-coverage-summary")
+def debug_project_file_coverage_summary(project_id: int, db: Session = Depends(get_db)):
+    """Return file importance/exploration metrics and tree summary for the project."""
+    project = db.query(ProjectSession).filter(ProjectSession.id == project_id).first()
+    if not project:
+        raise HTTPException(status_code=404, detail="Project not found")
+    turns = (
+        db.query(InterviewTurn)
+        .filter(InterviewTurn.project_id == project_id)
+        .order_by(InterviewTurn.turn_no.asc())
+        .all()
+    )
+    coverage_state = rebuild_coverage_state(turns, project)
+    repo_coverage = coverage_state.get("repo_file_coverage", {})
+    tree_summary = coverage_state.get("repo_tree_summary", {})
+
+    # Compute summary analytics
+    all_files = [v for v in repo_coverage.values() if isinstance(v, dict)]
+    important_files = [f for f in all_files if f.get("importance_score", 0.0) >= 0.5]
+    underexplored = [
+        f for f in important_files
+        if f.get("coverage_gap_score", 0.0) > 0.2
+    ]
+    exploration_scores = [f.get("exploration_score", 0.0) for f in all_files]
+    median_exploration = sorted(exploration_scores)[len(exploration_scores) // 2] if exploration_scores else 0.0
+
+    # Top files by gap score
+    top_gap_files = sorted(
+        all_files,
+        key=lambda f: f.get("coverage_gap_score", 0.0),
+        reverse=True,
+    )[:10]
+
+    # Concentration ratio: what fraction of total asks are on top 1 / top 3 files?
+    files_by_asks = sorted(all_files, key=lambda f: f.get("times_asked", 0), reverse=True)
+    total_asks = sum(f.get("times_asked", 0) for f in all_files)
+    top1_asks = files_by_asks[0].get("times_asked", 0) if files_by_asks else 0
+    top3_asks = sum(f.get("times_asked", 0) for f in files_by_asks[:3])
+
+    return {
+        "total_tracked_files": len(all_files),
+        "important_files_count": len(important_files),
+        "underexplored_important_count": len(underexplored),
+        "median_exploration_score": round(median_exploration, 3),
+        "concentration_ratio_top1": round(top1_asks / total_asks, 3) if total_asks > 0 else 0.0,
+        "concentration_ratio_top3": round(top3_asks / total_asks, 3) if total_asks > 0 else 0.0,
+        "top_gap_files": [
+            {
+                "path": f["path"],
+                "importance_score": round(f.get("importance_score", 0.0), 3),
+                "exploration_score": round(f.get("exploration_score", 0.0), 3),
+                "coverage_gap_score": round(f.get("coverage_gap_score", 0.0), 3),
+                "times_asked": f.get("times_asked", 0),
+                "times_answered": f.get("times_answered", 0),
+                "last_turn_no": f.get("last_turn_no"),
+            }
+            for f in top_gap_files
+        ],
+        "tree_summary": tree_summary,
+    }
 
 
 @router.get("/projects/{project_id}/state", response_model=DebugInfoResponse)
