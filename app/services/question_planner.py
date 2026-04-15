@@ -318,6 +318,27 @@ def plan_next_question(
                 excluded_branch_ids=excluded_branch_ids,
                 excluded_target_signatures=excluded_target_signatures,
             )
+
+        repo_coverage = coverage_state.get("repo_file_coverage", {})
+        high_priority_unexplored = []
+        for path, metrics in repo_coverage.items():
+            if not isinstance(metrics, dict):
+                continue
+            gap = metrics.get("importance_score", 0.0) - metrics.get("exploration_score", 0.0)
+            if gap > 0.2:
+                high_priority_unexplored.append((gap, path))
+        
+        rebalancing_constraints = []
+        if high_priority_unexplored:
+            high_priority_unexplored.sort(reverse=True, key=lambda x: x[0])
+            top_paths = [path for _, path in high_priority_unexplored[:3]]
+            rebalancing_constraints.append(
+                f"Prioritize asking about unexplored but highly important files: {', '.join(top_paths)}"
+            )
+            if not target_type or target_type not in ("file", "class", "method"):
+                target_type = "file"
+                target_label = top_paths[0]
+
         return {
             "question_intent": "code_detail_deep_dive",
             "phase": current_stage,
@@ -334,7 +355,7 @@ def plan_next_question(
             "rubric_task_label": next_rubric_task.label if next_rubric_task else None,
             "confidence": 0.7,
             "retrieval_focus": "code-detail counts, unresolved implementation gaps, and the most evidence-backed branch",
-            "constraints": base_constraints + [
+            "constraints": base_constraints + rebalancing_constraints + [
                 "Must reference a specific file, class, method, execution path, library usage, or error path",
                 "Reject broad implementation questions without a concrete target",
                 "Prefer actual code artifact names when available",
