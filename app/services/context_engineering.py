@@ -159,6 +159,10 @@ def build_recent_context(
             "Latest answer follow-up anchors: "
             + " | ".join(latest_analysis.get("follow_up_anchors", [])[:3])
         )
+    if latest_analysis.get("question_evaluation"):
+        lines.append(
+            f"Latest Human Evaluation (use to adjust question style): {latest_analysis['question_evaluation']}"
+        )
 
     prior_completed_turns = [turn for turn in turns[:-1] if turn.answer_text]
     if prior_completed_turns:

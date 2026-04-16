@@ -163,6 +163,83 @@ def summarize_answer(
     }
 
 
+def evaluate_turn_question(
+    *,
+    project_id: int,
+    turn: InterviewTurn,
+    system_prompt: str,
+    answer_summary: str,
+):
+    provider = get_llm_provider()
+    prompt = get_prompt_manager().render(
+        "evaluate_question",
+        {
+            "system_prompt": system_prompt,
+            "question_text": turn.question_text,
+            "answer_summary": answer_summary,
+        },
+    )
+    prompt_text = "\n\n".join(message["content"] for message in prompt.messages)
+    start_time = time.perf_counter()
+    emit_event(
+        "llm",
+        "llm.call.start",
+        "Starting question evaluation LLM call",
+        operation="question_evaluation",
+        project_id=project_id,
+        turn_no=turn.turn_no,
+        stage=turn.stage,
+        status="started",
+    )
+
+    try:
+        response = provider.generate_text(
+            model=settings.openai_model if settings.llm_provider == "openai_compatible" else None,
+            messages=prompt.messages,
+            temperature=0.2,
+        )
+    except Exception as exc:
+        emit_event(
+            "llm",
+            "llm.call.error",
+            "Question evaluation LLM call failed",
+            level=40,
+            operation="question_evaluation",
+            project_id=project_id,
+            turn_no=turn.turn_no,
+            status="error",
+            duration_ms=round((time.perf_counter() - start_time) * 1000, 2),
+            exc_info=exc,
+        )
+        return None
+
+    content = response.text.strip()
+    if not content:
+        return None
+
+    usage_metrics = extract_usage_metrics(response, prompt_text=prompt_text, completion_text=content)
+    emit_event(
+        "llm",
+        "llm.call.complete",
+        "Completed question evaluation LLM call",
+        operation="question_evaluation",
+        project_id=project_id,
+        turn_no=turn.turn_no,
+        status="success",
+        duration_ms=round((time.perf_counter() - start_time) * 1000, 2),
+    )
+
+    return {
+        "evaluation": content,
+        "usage_record": create_usage_record(
+            project_id=project_id,
+            turn_id=turn.id,
+            operation_type="question_evaluation",
+            usage_metrics=usage_metrics,
+        ),
+    }
+
+
 def _split_sentences(*texts: str) -> list[str]:
     sentences: list[str] = []
     for text in texts:
@@ -258,7 +335,7 @@ def _extract_follow_up_anchors(stage: str, sentences: list[str], key_points: lis
     return anchors[:4]
 
 
-def build_answer_analysis(*, stage: str, answer_text: str, summary: str, summary_source: str) -> dict:
+def build_answer_analysis(*, stage: str, answer_text: str, summary: str, summary_source: str, question_evaluation: str | None = None) -> dict:
     sentences = _split_sentences(summary, answer_text)
     key_points = _pick_stage_points(stage, sentences)
     return {
@@ -267,6 +344,7 @@ def build_answer_analysis(*, stage: str, answer_text: str, summary: str, summary
         "key_points": key_points,
         "follow_up_anchors": _extract_follow_up_anchors(stage, sentences, key_points),
         "rag_chunks": _chunk_text(answer_text),
+        "question_evaluation": question_evaluation,
     }
 
 
@@ -289,6 +367,7 @@ def refresh_turn_answer_memory(
 
     summary_source = "llm"
     usage_record = None
+    question_evaluation = None
     try:
         result = summarize_answer(
             project_id=project_id,
@@ -298,6 +377,18 @@ def refresh_turn_answer_memory(
         summary = result["summary"]
         usage_record = result["usage_record"]
         db.add(usage_record)
+
+        if turn.stage == "Code Detail Completion":
+            eval_result = evaluate_turn_question(
+                project_id=project_id,
+                turn=turn,
+                system_prompt=system_prompt,
+                answer_summary=summary,
+            )
+            if eval_result:
+                question_evaluation = eval_result["evaluation"]
+                db.add(eval_result["usage_record"])
+
     except Exception:
         summary = _fallback_summary(turn.answer_text)
         summary_source = "fallback"
@@ -307,6 +398,7 @@ def refresh_turn_answer_memory(
         answer_text=turn.answer_text,
         summary=summary,
         summary_source=summary_source,
+        question_evaluation=question_evaluation,
     )
     turn.answer_summary = summary
     turn.answer_analysis_json = json.dumps(analysis, ensure_ascii=True, sort_keys=True)

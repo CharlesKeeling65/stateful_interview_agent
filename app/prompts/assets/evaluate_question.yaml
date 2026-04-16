@@ -1,0 +1,23 @@
+id: evaluate_question
+version: "1.0"
+description: Evaluate a generated question based on the user's answer summary to guide future questions.
+system_template: |
+  {system_prompt}
+  You are assessing how effectively an AI agent's previous question performed, based on the human user's response.
+user_template: |
+  Review the interaction below:
+
+  Original Question Asked by Agent:
+  {question_text}
+
+  Summary of Human's Answer:
+  {answer_summary}
+
+  Based on the answer, provide a 1-2 sentence evaluation of the question's effectiveness.
+  Did the user understand the question easily? Did they find it too broad or misaligned, leading to clarification? Was it a highly productive question that yielded concrete code details?
+
+  Output a concise critique structured to help an AI agent adjust its future generation style (e.g., "The question was productive but slightly too broad; future questions should focus on tighter code boundaries."). DO NOT output any XML tags, just the plain text evaluation.
+required_variables:
+  - system_prompt
+  - question_text
+  - answer_summary
