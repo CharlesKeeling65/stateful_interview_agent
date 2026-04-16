@@ -452,6 +452,8 @@ def draft_question_from_answered_history(
             original_answer_text = turns[-1].answer_text
             turns[-1].answer_text = latest_answer_text
         coverage_state = rebuild_coverage_state(turns, project)
+        save_coverage_state(project, coverage_state)
+
         if include_latest_answer_in_coverage and turns and not original_answer_text:
             turns[-1].answer_text = original_answer_text
         if coverage_step:

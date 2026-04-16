@@ -349,6 +349,7 @@ def plan_next_question(
             "target_type": target_type,
             "target_label": target_label,
             "target_identifier": target_label,
+            "repo_selected_paths": [target_label] if target_type == "file" else [],
             "target_branch_id": branch.get("branch_id") if branch else None,
             "selected_framework_gap": selected_framework_gap,
             "selected_branch_ids": [branch.get("branch_id")] if branch and branch.get("branch_id") else [],

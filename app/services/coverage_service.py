@@ -256,6 +256,17 @@ def rebuild_coverage_state(turns: list[InterviewTurn], project: ProjectSession |
         summary = turn.answer_summary or turn.answer_text
         answer_analysis = turn.answer_analysis or {}
         
+        # Discovery Pass: Check for implicit exploration of other files
+        if summary:
+            for path, file_info in repo_file_coverage.items():
+                if path in repo_paths:
+                    continue  # Already received the explicit target bonus
+                    
+                basename = path.split("/")[-1]
+                # If path or basename is explicitly mentioned, bump exploration slightly
+                if path in summary or f"`{basename}`" in summary or f" {basename} " in summary:
+                    file_info["exploration_score"] = min(1.0, file_info["exploration_score"] + 0.1)
+        
         if question_queue.get("status") == "active":
             question_queue = prune_question_queue(
                 question_queue, turn.answer_text, summary, answer_analysis

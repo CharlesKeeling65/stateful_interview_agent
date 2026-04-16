@@ -76,6 +76,36 @@ class CoverageServiceTests(unittest.TestCase):
         self.assertEqual(repo_coverage["README.md"]["times_asked"], 0)
         self.assertEqual(repo_coverage["README.md"]["times_answered"], 0)
 
+    def test_rebuild_coverage_state_implicit_discovery(self):
+        project = ProjectSession(id=1, project_name="Test")
+        project.repo_manifest_json = '{"files_list": ["src/main.py", "src/auth.py", "README.md"]}'
+
+        turn = InterviewTurn(
+            id=1,
+            turn_no=1,
+            stage="Code Detail Completion",
+            question_text="Tell me about tests",
+            question_plan_json='{"repo_selected_paths": ["src/main.py"]}',
+            answer_text="Here is the test behavior.",
+            answer_summary="The tests in src/main.py also interact with src/auth.py and mention `README.md`.",
+        )
+
+        state = rebuild_coverage_state([turn], project)
+        repo_coverage = state.get("repo_file_coverage", {})
+
+        # src/main.py is explicit target (+0.4)
+        self.assertEqual(repo_coverage["src/main.py"]["times_asked"], 1)
+        self.assertEqual(repo_coverage["src/main.py"]["times_answered"], 1)
+        self.assertAlmostEqual(repo_coverage["src/main.py"]["exploration_score"], 0.4)
+
+        # src/auth.py is implicit discovery (+0.1)
+        self.assertEqual(repo_coverage["src/auth.py"]["times_asked"], 0)
+        self.assertAlmostEqual(repo_coverage["src/auth.py"]["exploration_score"], 0.1)
+
+        # README.md is implicit discovery (+0.1)
+        self.assertEqual(repo_coverage["README.md"]["times_asked"], 0)
+        self.assertAlmostEqual(repo_coverage["README.md"]["exploration_score"], 0.1)
+
 
 if __name__ == "__main__":
     unittest.main()
