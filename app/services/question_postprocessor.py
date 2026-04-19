@@ -217,3 +217,40 @@ def clean_generated_question(
         text = text.rstrip(".") + "?"
 
     return text
+
+
+def split_multiple_questions(text: str) -> list[str]:
+    """Split a compound question block into individual questions using regex."""
+    # Split by ? and keep the ?
+    parts = re.split(r'(?<=\?)', text)
+    questions = [p.strip() for p in parts if p.strip()]
+    if not questions:
+        return [text]
+    return questions
+
+
+def detect_strong_ai_flavor(text: str) -> bool:
+    """Detect if a question has strong AI-flavored characteristics that warrant refining."""
+    norm = text.lower()
+    
+    # Pre-embedded frameworks
+    if re.search(r'\b(from|into)\s+(three|four|five|several)\s+(aspects|perspectives|parts)\b', norm):
+        return True
+    
+    # Review style checklists
+    if re.search(r'\b(responsibilities|edge cases|bottlenecks|concurrency risks|maintainability)\b', norm):
+        return True
+    
+    # Exact line numbers
+    if re.search(r'\b(l\d+|lines?\s+\d+(?:-\d+)?)\b', norm):
+        return True
+        
+    # Command tone
+    if norm.startswith("analyze") or norm.startswith("task:"):
+        return True
+        
+    # Multiple choices or heavy options in parens
+    if re.search(r'\([^)]*\bor\b[^)]*\)', norm):
+        return True
+        
+    return False

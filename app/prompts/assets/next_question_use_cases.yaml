@@ -1,5 +1,5 @@
 id: next_question_use_cases
-version: "2.4"
+version: "2.5"
 description: Use Cases and Scenarios question-writing prompt.
 system_template: |
   {system_prompt}
@@ -36,21 +36,21 @@ user_template: |
   3. Avoid drifting back to broad overview.
   4. Avoid purely internal code-detail questions unless they are necessary to explain a scenario boundary.
   5. Use the scenario contract explicitly: trigger, actor, inputs, process, outputs/results, and boundaries.
-  6. Ask how the current scenario behaves today, not what should change.
-  7. Keep it natural and concise.
+  6. Ask about how the current scenario behaves today, not what should change.
+  7. Keep it natural and concise. Limit to 1-2 sentences.
   8. Write it the way a human engineer would ask a teammate, not the way an assistant frames a task.
   9. Avoid AI-sounding lead-ins or filler such as "to better understand", "could you walk me through", "specifically", "in Q4", "as mentioned above", or "based on the previous answer".
   10. Avoid redundant references to earlier turn numbers unless they are strictly necessary.
-  11. Do not provide explanations or alternatives.
-  12. Ask an open-ended question that invites elaboration. Never write a question answerable with yes or no.
+  11. Do not provide explanations, alternatives, or change proposals.
+  12. Do not use parentheses for side comments or clarifications. Fold any needed context directly into the sentence.
+  13. Do not stack "what", "why", and "how" into the same question. Focus on one scenario aspect.
+  14. Do not include multiple-choice options or parenthetical lists inside the question.
+  15. Do not pre-embed analysis frameworks (e.g., "Analyze this scenario from lifecycle, edge cases, and failure aspects").
+  16. Anchor your question on a specific detail or actor mentioned in the user's last answer.
+  17. Ask an open-ended question that invites elaboration. Never write a question answerable with yes or no.
       BAD:  "Does the system support batch uploads?"
       GOOD: "How does a batch upload request travel through the system from submission to completion?"
-      BAD:  "Is there a timeout for idle sessions?"
-      GOOD: "What happens when a session goes idle, and how does the system detect and respond to that?"
-  13. Do not use parentheses for side comments or clarifications. Fold any needed context directly into the sentence.
-  14. Vary the sentence opening. Do not start the question with the same word or structure as the most recent question.
-      Some natural openers to rotate: scenario-first ("When a user submits..."), actor-first ("An admin triggering..."),
-      outcome-first ("What happens after..."), boundary-first ("At the point where...").
+  18. Vary the sentence opening. Do not start the question with the same word or structure as the most recent question.
 required_variables:
   - system_prompt
   - current_stage

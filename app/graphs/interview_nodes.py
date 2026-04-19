@@ -196,12 +196,13 @@ def generate_question_for_state(
         next_question = next_question_result["question_text"]
         question_usage_metrics = [next_question_result["usage_metrics"]]
 
-        from app.services.question_queue_service import detect_compound_question_candidate, decompose_code_detail_question_group
-        if current_stage == "Code Detail Completion" and detect_compound_question_candidate(next_question):
+        from app.services.question_postprocessor import split_multiple_questions
+        if len(split_multiple_questions(next_question)) > 1:
+            from app.services.question_queue_service import decompose_code_detail_question_group
             new_items = decompose_code_detail_question_group(
                 next_question,
                 base_turn_no=turn_no,
-                intent=planner_decision.get("question_intent", "code_detail_deep_dive"),
+                intent=planner_decision.get("question_intent", "follow_up"),
                 target_branch_id=planner_decision.get("target_branch_id"),
                 target_type=planner_decision.get("target_type"),
                 target_label=planner_decision.get("target_label"),

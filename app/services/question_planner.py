@@ -97,7 +97,19 @@ def plan_next_question(
             "Ask an open-ended question that invites elaboration; never write a question answerable with yes or no — rephrase 'Does X...' into 'How does X...' and 'Is Y...' into 'What role does Y play...'",
             "Do not use parentheses for side comments or clarifications; fold any needed context into the main clause",
             "Vary the sentence opening; avoid starting with the same word or pattern used in the most recent question",
+            "Do not provide multiple-choice options or lists within the question",
+            "Do not pre-embed analysis frameworks (e.g., 'Analyze this from X, Y, Z aspects')",
+            "Do not use review-style tone like 'What are its responsibilities, edge cases, and bottlenecks?'. Focus on one specific mechanism",
+            "Do not stack 'what', 'why', and 'how' in the same question",
+            "Do not reference exact line numbers like 'L123' or 'lines 87-90'. Reference logical function names instead",
+            "Never start your question with 'You mentioned...', 'You noted...', or 'You showed...'",
+            "Never use command tone such as 'Analyze the module' or 'Provide the key classes'",
+            "Limit the question to 1 or 2 concise sentences maximum",
         ]
+        if answer_anchor:
+            base_constraints.append(f"Anchor your question naturally on '{answer_anchor}' from the user's last response.")
+        else:
+            base_constraints.append("Anchor your next question on a specific detail from the user's most recent answer to make the follow-up feel natural.")
     else:
         base_constraints = [
             f"Stay in {mode.value} mode",
@@ -106,6 +118,12 @@ def plan_next_question(
             "Do not open with filler such as 'specifically', 'in Q3', 'as mentioned above', or similar cross-turn lead-ins",
             "Ask an open-ended question that invites elaboration; avoid yes/no questions",
             "Do not use parentheses for side comments or clarifications; fold any needed context into the main clause",
+            "Do not provide multiple-choice options or lists within the question",
+            "Do not pre-embed analysis frameworks",
+            "Do not stack 'what', 'why', and 'how' in the same question",
+            "Do not reference exact line numbers like 'L123' or 'lines 87-90'",
+            "Never start your question with 'You mentioned...', 'You noted...', or 'You showed...'",
+            "Limit the question to 1 or 2 concise sentences maximum",
         ]
 
     if review and (
@@ -340,8 +358,11 @@ def plan_next_question(
                 target_type = "file"
                 target_label = top_paths[0]
                 is_rebalanced = True
+                rebalancing_constraints.append(
+                    "Acknowledge the shift in topic explicitly since we are moving to a new module (e.g., 'Moving on to...', 'Let's shift gears to...')."
+                )
 
-        return {
+        planner_decision = {
             "question_intent": "code_detail_deep_dive",
             "phase": current_stage,
             "intent_mode": intent_mode,
@@ -374,13 +395,29 @@ def plan_next_question(
                 f"must stay in {agent_mode}",
                 "must reference a concrete artifact or execution path",
             ],
-            "why_this_question": build_code_detail_why_text(
-                target_type=target_type,
-                target_label=target_label,
-                recent_question_history=recent_question_history,
-                is_rebalanced=is_rebalanced,
-            ),
         }
+
+        # Topic Transition Logic
+        last_turn = recent_question_history[-1] if recent_question_history else None
+        current_target = str(last_turn.get("target_label", "")) if last_turn else ""
+        new_target = str(target_label or "")
+        if current_target and new_target and current_target != new_target:
+            if is_target_related(current_target, new_target):
+                transition = f"Building on {current_target}, let's look at {new_target}..."
+            else:
+                transition = f"Moving from {current_target} to a related area: {new_target}..."
+            planner_decision["transition_hook"] = transition
+            planner_decision["constraints"].append(
+                f"Use a natural transition like: '{transition}'"
+            )
+
+        planner_decision["why_this_question"] = build_code_detail_why_text(
+            target_type=target_type,
+            target_label=target_label,
+            recent_question_history=recent_question_history,
+            is_rebalanced=is_rebalanced,
+        )
+        return planner_decision
 
     if current_stage == USE_CASE_STAGE:
         scenario_target = pick_use_case_target(stage_gaps, branch)
@@ -658,3 +695,51 @@ def build_code_detail_why_text(
             f"{target_type} '{target_label}'."
         )
     return f"Code-detail should dominate now, so the next question targets the concrete {target_type} '{target_label}'."
+
+
+def extract_answer_anchor(answer_summary: str) -> str | None:
+    """Extract a key technical term or noun phrase from the answer to use as a conversational anchor."""
+    if not answer_summary or len(answer_summary) < 5:
+        return None
+        
+    # Look for quoted terms first (high confidence)
+    quoted = re.search(r"['\"]([^'\"]+)['\"]", answer_summary)
+    if quoted:
+        return quoted.group(1)
+        
+    # Look for CamelCase or snake_case symbols
+    symbols = re.findall(r'\b[a-z]+[A-Z][a-zA-Z]*|[a-z]+_[a-z_]+\b', answer_summary)
+    if symbols:
+        return symbols[0]
+        
+    # Fallback: Extract the most interesting noun from the last sentence
+    sentences = [s.strip() for s in re.split(r'[.!?]', answer_summary) if s.strip()]
+    if not sentences:
+        return None
+    last_sent = sentences[-1]
+    
+    # Very basic noun phrase extraction: find "the X" or "X function"
+    match = re.search(r'\b(?:the|this|that|regarding)\s+([a-zA-Z]{4,})', last_sent, re.I)
+    if match:
+        return match.group(1)
+        
+    return None
+
+def is_target_related(t1: str, t2: str) -> bool:
+    """Check if two targets are likely related (same directory, common prefix, etc.)."""
+    t1_low = t1.lower()
+    t2_low = t2.lower()
+    
+    # Shared path components
+    parts1 = set(t1_low.replace("\\", "/").split("/"))
+    parts2 = set(t2_low.replace("\\", "/").split("/"))
+    if len(parts1 & parts2) >= 1:
+        return True
+        
+    # Common prefix (e.g. AuthService vs AuthRepo)
+    if len(t1_low) > 4 and len(t2_low) > 4:
+        if t1_low[:4] == t2_low[:4]:
+            return True
+            
+    return False
+

@@ -14,6 +14,7 @@ from app.services.stage_manager import (
     WRAP_UP_STAGE,
     get_stage_instruction,
 )
+from app.services.question_postprocessor import detect_strong_ai_flavor, clean_generated_question
 from app.services.usage_service import extract_usage_metrics
 
 
@@ -236,6 +237,31 @@ def generate_next_question_from_history(
                 next_turn_no,
                 current_stage=current_stage,
             )
+            
+            # Sub-module: Local Question Refiner
+            if detect_strong_ai_flavor(cleaned):
+                refiner_prompt = get_prompt_manager().render("refine_question", {"original_question": cleaned})
+                with traced_run_step(
+                    run_id=run_id,
+                    project_id=project_id or 0,
+                    turn_no=next_turn_no,
+                    step_key="refine_question",
+                    description="Refine strong AI flavor locally to reduce generation loops.",
+                    next_step_hint="Extract usage",
+                ):
+                    refine_response = provider.generate_text(
+                        model=settings.openai_model if settings.llm_provider == "openai_compatible" else None,
+                        messages=refiner_prompt.messages,
+                        temperature=0.3,
+                    )
+                    refined_content = refine_response.text.strip()
+                    if refined_content:
+                        cleaned = clean_generated_question(
+                            refined_content,
+                            next_turn_no,
+                            current_stage=current_stage,
+                        )
+
             usage_metrics = extract_usage_metrics(
                 response,
                 prompt_text=prompt_text,

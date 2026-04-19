@@ -163,6 +163,20 @@ def validate_question_for_stage(
     if current_stage == CODE_DETAIL_STAGE and len(text) > MAX_QUESTION_LENGTH:
         reasons.append("Question is too long; keep it concise and direct.")
 
+    # AI-flavor checks
+    if text.count("?") > 1:
+        reasons.append("Avoid compound questions; focus on one specific inquiry.")
+    
+    if re.search(r'\([^)]*\bor\b[^)]*\)', normalized):
+        reasons.append("Avoid providing multiple-choice options in parentheses (AI-flavor).")
+        
+    if re.search(r'\b(l\d+|lines?\s+\d+(?:-\d+)?)\b', normalized):
+        reasons.append("Do not use exact line numbers (e.g., L123) in questions; reference logical names instead.")
+
+    if re.search(r'\b(responsibilities|edge cases|bottlenecks|concurrency risks|maintainability)\b', normalized):
+        if current_stage not in ("Use Cases & Scenarios", "Final Wrap-up"):
+             reasons.append("Avoid rigid review-style checklists. Focus on a specific implementation detail or call path.")
+
     # Mode-specific validation
     if effective_mode == "understand_current_code":
         # Check for change proposal markers

@@ -50,6 +50,10 @@ user_template: |
   13. Vary the sentence opening. Do not start the question with the same word or structure as the most recent question.
       Some natural openers to rotate: noun-first ("The scheduler..."), process-first ("When a request arrives..."),
       inquiry ("What triggers..."), relation-first ("How do X and Y...").
+  14. Do not stack "what", "why", and "how" into the same question. Pick one angle and ask it cleanly.
+  15. Do not include multiple-choice options inside the question (e.g., avoid "retry, timeout, or fallback?").
+  16. Do not use exact line numbers or file paths in this macro-level stage.
+  17. If the conversation is shifting to a new topic, acknowledge the shift naturally (e.g., "Shifting to...", "On a related note...").
 required_variables:
   - system_prompt
   - current_stage

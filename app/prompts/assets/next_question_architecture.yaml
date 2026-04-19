@@ -51,6 +51,13 @@ user_template: |
   14. Vary the sentence opening. Do not start the question with the same word or structure as the most recent question.
       Some natural openers to rotate: noun-first ("The event bus..."), call-direction ("When a service calls..."),
       relation ("How do the router and the handler..."), contrast ("Unlike the panorama layer...").
+  15. Do not stack "what", "why", and "how" into the same question. Pick one angle and ask it cleanly.
+  16. Do not include multiple-choice options inside the question.
+  17. Do not pre-embed analysis frameworks (e.g., "Analyze this from responsibility, coupling, and extensibility aspects").
+  18. Do not use review-checklist tone (e.g., "What are its responsibilities, edge cases, and performance bottlenecks?").
+  19. Anchor your question on a specific detail or mechanism the user mentioned in their last answer when possible.
+  20. Limit the question to 1-2 sentences. Never exceed two question marks.
+
 required_variables:
   - system_prompt
   - current_stage

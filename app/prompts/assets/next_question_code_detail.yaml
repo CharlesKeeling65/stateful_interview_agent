@@ -50,6 +50,15 @@ user_template: |
       BAD:  "Is the connection pool configured in db.py?"
       GOOD: "Where in db.py is the connection pool configured, and what parameters control its size?"
   15. Do not use parentheses for side comments or clarifications. Fold any needed context directly into the sentence.
+  16. Do not stack "what", "why", and "how" into the same question. Pick one implementation angle.
+  17. Do not include multiple-choice options inside the question (e.g., avoid "retry, timeout, or fallback?").
+  18. Do not pre-embed analysis frameworks (e.g., "Analyze this from lifecycle, dependency, and failure aspects").
+  19. Do not use review-checklist tone (e.g., "What are its responsibilities, edge cases, and bottlenecks?").
+  20. Do not reference exact line numbers like "L123" or "lines 87-90". Reference function or class names instead.
+  21. Limit the question to 1-2 sentences. Never exceed two question marks.
+  22. If jumping to a new file or module after finishing the current thread, acknowledge the shift briefly (e.g., "Moving to the database layer now...").
+  23. Anchor your question on a specific detail from the user's last answer rather than picking a new target from scratch.
+
 required_variables:
   - system_prompt
   - current_stage
