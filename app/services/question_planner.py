@@ -59,6 +59,11 @@ def plan_next_question(
     branches = coverage_state.get("branches", [])
     question_history = coverage_state.get("question_history", [])
     recent_question_history = question_history[-8:]
+    
+    # Extract Answer Anchor for natural flow
+    last_turn = recent_question_history[-1] if recent_question_history else None
+    last_answer = last_turn.get("answer_summary", "") if last_turn else ""
+    answer_anchor = extract_answer_anchor(last_answer)
     excluded_branch_ids = excluded_branch_ids or set()
     excluded_target_signatures = excluded_target_signatures or set()
 
