@@ -84,6 +84,34 @@ This project is not just a CRUD wrapper around an LLM. Its main innovations are 
 - `agent_runs` and `agent_run_steps` store UI-facing execution traces per generation run.
 - Structured logs are written as JSONL under `logs/`, separate from the run-trace API contract.
 
+## Question Generation Pipeline
+
+The main `/next` workflow is intentionally layered so the system can spend fewer tokens on avoidable retries:
+
+1. `load_context` restores the project, latest answered turn, coverage snapshot, and any active human-review signal.
+2. `decide_progress` determines whether the interview should continue and which stage owns the next turn.
+3. `plan_question` picks the next target branch / framework gap / repository artifact and can now emit `decomposition_mode` plus `subquestion_specs` for complex code-detail topics.
+4. `review_question_plan` checks confidence, drift, mode compliance, and human gates before drafting.
+5. `draft_question` rebuilds compact context, attaches repo grounding, drafts exactly one visible question, and persists any deferred code-detail sub-questions into the internal queue.
+6. `persist` stores the new turn, version metadata, token usage, and run trace.
+
+Inside question drafting, the code-detail path now includes two token-saving control points:
+
+- Planner-level decomposition: complex implementation topics are split into queued single-focus follow-ups before the writer model has to generate them.
+- Validator-driven repair: low-risk failures such as yes/no framing or line-number references are repaired locally before the system escalates to a second LLM rewrite or a full regenerate.
+
+This keeps the UX at one visible question per turn while reducing both token waste and regeneration pressure.
+
+## Recent Improvements
+
+Recent repository changes have focused on making long interviews cheaper, more inspectable, and less repetitive:
+
+- Repository-aware coverage balancing tracks file importance, exploration progress, and coverage gaps so code-detail planning rotates toward underexplored important files.
+- Internal sub-question queues let the system unfold complex code-detail investigations across multiple turns without exposing compound questions to the operator.
+- The code-detail prompt, validator, and postprocessor are now aligned around one visible question per turn.
+- Current-question regeneration reuses the same planner / validator stack as `/next`, so manual correction stays consistent with the main workflow.
+- Run-trace and debug surfaces expose queue state, file-coverage summaries, planner reasoning, and next-question context assembly.
+
 ## Feature Summary
 
 - Project/session management
@@ -111,6 +139,7 @@ This project is not just a CRUD wrapper around an LLM. Its main innovations are 
   - Track per-run execution steps and durations.
   - Expose cumulative generation time and run counts.
   - Emit structured JSONL logs for backend observability.
+  - Inspect queue state, file coverage, planner reasoning, and next-question context through dedicated debug endpoints.
 
 - Operator experience
   - Provide a bilingual workspace with stable top navigation.
@@ -129,6 +158,8 @@ This project is not just a CRUD wrapper around an LLM. Its main innovations are 
 
 - LLM integration
   - OpenAI-compatible Chat Completions API
+  - Anthropic provider support
+  - OpenCode provider support
   - Optional embedding-based duplicate checking
 
 - Frontend
@@ -280,6 +311,25 @@ On Windows PowerShell, the equivalent is typically:
 uv run python .\main.py
 ```
 
+## Development Workflow
+
+A practical local workflow for this repository is:
+
+1. Run `uv sync` at the repo root and `npm install` under `frontend/`.
+2. Start the stack with either separate backend/frontend commands or `uv run python main.py`.
+3. Create a project in the UI, optionally attach repository context, and use the debug routes to inspect coverage and planner behavior while iterating.
+4. Run targeted backend tests for orchestration logic and frontend tests or builds for UI changes.
+5. Use run traces plus debug endpoints for workflow inspection, and use JSONL logs for backend-level debugging.
+
+Useful commands:
+
+```bash
+uv run python -m unittest tests.test_framework_orchestration tests.test_interview_nodes -v
+uv run python -m unittest tests.test_question_planner tests.test_question_generation_repair -v
+cd frontend && npm test
+cd frontend && npm run build
+```
+
 ## Packaging
 
 The project can now be packaged for Windows and Ubuntu Linux without requiring a preinstalled Python runtime.
@@ -420,23 +470,47 @@ Defined in [app/core/config.py](app/core/config.py).
 ## Typical Workflow
 
 1. Create a project with a meaningful title and system prompt.
-2. Start the interview to generate `Q1`.
-3. Paste the latest answer into the composer.
-4. Optionally provide a human review signal:
+2. Optionally configure repository grounding so the planner can target real files and symbols.
+3. Start the interview to generate `Q1`.
+4. Review the initial stage, transcript baseline, and status card in the UI.
+5. Paste the latest answer into the composer.
+6. Optionally provide a human review signal:
    - sufficient / insufficient / drifted
    - continue / redirect
    - preferred next focus
    - note
    - stage correction
    - phase ready
-5. Submit the answer and watch the execution trace update live.
-6. If the newly drafted current question is still not right, rewrite it from the previous answer without advancing the turn:
+7. Submit the answer and watch the execution trace update live.
+8. If the newly drafted current question is still not right, rewrite it from the previous answer without advancing the turn:
    - store the review on the current turn
    - optionally correct the stage
    - generate a new question version
    - inspect the applied-change summary and version diff
-7. Review the generated question, transcript state, analytics panel, status panel, and run trace.
-8. Continue until the interview reaches wrap-up readiness.
+9. Review the generated question, transcript state, analytics panel, status panel, run trace, queue summary, and repository-coverage summary.
+10. Continue until the interview reaches wrap-up readiness.
+
+## Debugging And Inspection
+
+The repository exposes two complementary inspection layers:
+
+- Structured logs in `logs/` for backend engineering and incident-style debugging.
+- Run-trace plus debug endpoints for operator-facing workflow inspection.
+
+The most useful inspection routes during development are:
+
+- `GET /debug/projects/{id}/coverage`
+  Full coverage state, including framework gaps, branch evidence, queue state, and repository file coverage metrics.
+- `GET /debug/projects/{id}/queue-summary`
+  Compact summary of queued internal sub-questions during complex code-detail work.
+- `GET /debug/projects/{id}/file-coverage-summary`
+  Importance vs exploration ranking for tracked repository files.
+- `POST /debug/projects/{id}/next-context`
+  Preview the assembled context bundle and planner decision used to draft the next question.
+- `GET /projects/{id}/runs/latest`
+  The latest orchestration run trace with step labels, timings, and status.
+
+This split is intentional: logs are append-only backend artifacts, while run traces and debug responses are stable API contracts for tooling and the UI.
 
 ## API Overview
 

@@ -84,6 +84,34 @@ Stateful Interview Agent 是一个本地全栈应用，用于针对目标仓库�
 - `agent_runs` / `agent_run_steps` 为每次 `/next` 生成提供 UI 友好的执行轨迹。
 - 后端结构化日志写入 `logs/`，与 run-trace API 分层，不直接拿日志当 UI 协议。
 
+## 问题生成主链路
+
+当前 `/next` 主流程已经被拆成更明确的多层链路，以减少无谓 token 消耗和整题重生成：
+
+1. `load_context` 恢复项目、最新已回答 turn、coverage 快照，以及当前的人类评审信号。
+2. `decide_progress` 决定访谈是否继续，以及下一轮属于哪个阶段。
+3. `plan_question` 选择下一题的 branch / framework gap / 仓库 artifact；对于复杂 code-detail 主题，还可以产出 `decomposition_mode` 和 `subquestion_specs`。
+4. `review_question_plan` 在真正写题前检查置信度、模式漂移、human gate 和规划合法性。
+5. `draft_question` 负责重建 compact context、附加 repo grounding、生成一个可见问题，并把后续 code-detail 子问题写入内部 queue。
+6. `persist` 持久化 turn、question version、token usage 和 run trace。
+
+在 code-detail 路径里，现在多了两个节省 token 的控制点：
+
+- 规划级拆分：复杂实现主题会先被拆成多个单焦点子问题，再进入 queue，而不是让 writer 先写 compound question。
+- 校验驱动修复：像 yes/no 开头、line number 这类低风险问题会先本地修复，只有修不掉时才进入 refiner 或整题重生成。
+
+这样既保留了“一轮只显示一个问题”的交互契约，也显著降低了重生成压力。
+
+## 近期改进
+
+近期仓库的主要改动方向，是让长访谈更稳定、更可检查，也更省：
+
+- 引入 repository-aware coverage balancing，利用文件重要性、探索度和 coverage gap 在 code-detail 阶段做再平衡。
+- 引入内部 sub-question queue，把复杂代码细节话题按多轮展开，而不是一次输出复合问题。
+- 对齐了 code-detail prompt、validator 和 postprocessor：用户永远只看到单题，多轮追问由系统内部 queue 管理。
+- 当前问题重写继续沿用 `/next` 的 planner / validator 体系，而不是走一条独立旁路。
+- Debug 与 analytics 面板现在可以直接查看 queue 状态、文件覆盖摘要、planner reasoning 和 next-context。
+
 ## 功能概览
 
 - 项目/会话管理
@@ -111,6 +139,7 @@ Stateful Interview Agent 是一个本地全栈应用，用于针对目标仓库�
   - 展示每次 run 的步骤与耗时。
   - 展示累计生成耗时与 run 次数。
   - 输出结构化 JSONL backend logs。
+  - 通过 debug 接口检查 queue、文件覆盖、planner reasoning 和 next-context。
 
 - 操作台体验
   - 顶部导航统一承载页面切换和语言切换。
@@ -129,6 +158,8 @@ Stateful Interview Agent 是一个本地全栈应用，用于针对目标仓库�
 
 - LLM 集成
   - OpenAI-compatible Chat Completions API
+  - Anthropic provider 支持
+  - OpenCode provider 支持
   - 可选 embedding 辅助重复问题判重
 
 - 前端
@@ -243,6 +274,52 @@ npm run dev
 http://127.0.0.1:5173
 ```
 
+### 6. 一键同时启动前后端
+
+如果希望从仓库根目录用一个入口同时拉起前后端，可以执行：
+
+```bash
+uv run python main.py
+```
+
+这个根目录的 `main.py` 会同时启动：
+
+- 使用当前 Python 解释器启动 FastAPI 后端
+- 在 `frontend/` 下执行 `npm run dev`
+
+这是在 `uv` 环境里最稳妥的开发入口，因为它会复用 `uv sync` 创建的解释器，不需要你手动先激活 `.venv`。
+
+如果你已经手动激活了环境，也可以直接执行：
+
+```bash
+python main.py
+```
+
+在 Windows PowerShell 中通常写成：
+
+```powershell
+uv run python .\main.py
+```
+
+## 开发与调试工作流
+
+一个比较实用的本地开发流程通常是：
+
+1. 仓库根目录执行一次 `uv sync`，前端目录执行一次 `npm install`。
+2. 用单独的 dev server 或 `uv run python main.py` 启动整套系统。
+3. 在 UI 中创建项目，必要时配置 repository grounding。
+4. 一边修改后端编排逻辑，一边用 debug routes 和 run trace 观察 planner / coverage / queue 是否符合预期。
+5. 提交前跑针对性的 backend unittest，以及 frontend test / build。
+
+常用命令：
+
+```bash
+uv run python -m unittest tests.test_framework_orchestration tests.test_interview_nodes -v
+uv run python -m unittest tests.test_question_planner tests.test_question_generation_repair -v
+cd frontend && npm test
+cd frontend && npm run build
+```
+
 ## Windows 打包
 
 这个项目现在可以打成 Windows 可执行分发包，目标机器不需要预装 Python。
@@ -334,23 +411,47 @@ dist/StatefulInterviewAgent/
 ## 典型使用流程
 
 1. 创建一个项目，填写有意义的标题和 system prompt。
-2. 启动访谈，生成 `Q1`。
-3. 将回答粘贴到 composer 中。
-4. 可选填写 human review signal：
+2. 如有需要，先配置 repository grounding，让 planner 能命中真实文件和符号。
+3. 启动访谈，生成 `Q1`。
+4. 先看一眼 UI 中的初始阶段、status panel 和 transcript baseline。
+5. 将回答粘贴到 composer 中。
+6. 可选填写 human review signal：
    - sufficient / insufficient / drifted
    - continue / redirect
    - preferred next focus
    - note
    - stage correction
    - phase ready
-5. 提交答案，观察 execution trace 实时更新。
-6. 如果当前生成的问题仍然不合适，可以基于上一轮回答重写当前问题，而不推进 turn：
+7. 提交答案，观察 execution trace 实时更新。
+8. 如果当前生成的问题仍然不合适，可以基于上一轮回答重写当前问题，而不推进 turn：
    - 保存本轮人工评审
    - 可选纠正阶段
    - 生成当前问题的新版本
    - 检查实际生效项和版本 diff
-7. 检查当前问题、transcript、analytics、status panel 和 run trace。
-8. 持续推进，直到系统进入 wrap-up readiness。
+9. 检查当前问题、transcript、analytics、status panel、run trace、queue summary 和 file coverage summary。
+10. 持续推进，直到系统进入 wrap-up readiness。
+
+## 调试与检查入口
+
+仓库提供两层不同的检查能力：
+
+- `logs/` 下的结构化日志，适合后端工程排查。
+- run-trace / debug API，适合 operator 和开发时观察工作流状态。
+
+开发时最有用的接口通常是：
+
+- `GET /debug/projects/{id}/coverage`
+  返回完整 coverage state，包括 framework gaps、branch evidence、queue 状态和仓库文件覆盖指标。
+- `GET /debug/projects/{id}/queue-summary`
+  查看 code-detail 阶段尚未展开的内部子问题队列。
+- `GET /debug/projects/{id}/file-coverage-summary`
+  查看 tracked files 的重要性、探索度和 coverage gap 排名。
+- `POST /debug/projects/{id}/next-context`
+  预览下一题真正使用的 planner 决策和上下文拼装结果。
+- `GET /projects/{id}/runs/latest`
+  查看最近一次编排运行的 step、耗时和状态。
+
+这层分离是有意设计的：日志用于工程诊断，run trace / debug response 则是稳定的前端与工具消费接口。
 
 ## API 概览
 

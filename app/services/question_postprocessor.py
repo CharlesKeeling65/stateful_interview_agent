@@ -28,6 +28,12 @@ WINDOWS_SAFE_REPLACEMENTS = {
     "【": "[",
     "】": "]",
 }
+LOCAL_REPAIRABLE_REASON_MARKERS = (
+    "avoid yes/no questions",
+    "do not use exact line numbers",
+    "avoid providing multiple-choice options",
+    "avoid compound questions",
+)
 
 
 def _remove_ai_lead_in(text: str) -> str:
@@ -254,3 +260,79 @@ def detect_strong_ai_flavor(text: str) -> bool:
         return True
         
     return False
+
+
+def reasons_are_locally_repairable(reasons: list[str]) -> bool:
+    if not reasons:
+        return False
+    lowered = [reason.lower() for reason in reasons]
+    return all(
+        any(marker in reason for marker in LOCAL_REPAIRABLE_REASON_MARKERS)
+        for reason in lowered
+    )
+
+
+def _rewrite_yes_no_opening(body: str) -> str:
+    body = body.strip().rstrip("?").strip()
+    substitutions = [
+        (r"^does\s+(.+)$", r"How does \1"),
+        (r"^do\s+(.+)$", r"How do \1"),
+        (r"^did\s+(.+)$", r"How did \1"),
+        (r"^can\s+(.+)$", r"How does \1"),
+        (r"^could\s+(.+)$", r"How does \1"),
+        (r"^will\s+(.+)$", r"How does \1"),
+        (r"^would\s+(.+)$", r"How does \1"),
+        (r"^should\s+(.+)$", r"How does \1"),
+        (r"^has\s+(.+)$", r"What role does \1 have"),
+        (r"^have\s+(.+)$", r"What role do \1 have"),
+        (r"^had\s+(.+)$", r"What role did \1 have"),
+        (r"^is\s+(.+)$", r"What role does \1 play"),
+        (r"^are\s+(.+)$", r"What role do \1 play"),
+        (r"^was\s+(.+)$", r"What role did \1 play"),
+        (r"^were\s+(.+)$", r"What role did \1 play"),
+    ]
+    for pattern, replacement in substitutions:
+        rewritten = re.sub(pattern, replacement, body, flags=re.IGNORECASE)
+        if rewritten != body:
+            return rewritten
+    return body
+
+
+def repair_question_locally(
+    text: str,
+    reasons: list[str],
+    *,
+    expected_turn_no: int,
+    current_stage: str | None,
+) -> str:
+    repaired = clean_generated_question(
+        text,
+        expected_turn_no,
+        current_stage=current_stage,
+    )
+    prefix = f"Q{expected_turn_no}: "
+    body = repaired[len(prefix):].strip() if repaired.startswith(prefix) else repaired.strip()
+    lowered_reasons = [reason.lower() for reason in reasons]
+
+    if any("avoid compound questions" in reason for reason in lowered_reasons):
+        body = _keep_only_first_question(body)
+
+    if any("do not use exact line numbers" in reason for reason in lowered_reasons):
+        body = re.sub(r"\s+at\s+lines?\s+\d+(?:-\d+)?", "", body, flags=re.IGNORECASE)
+        body = re.sub(r"\s+at\s+l\d+", "", body, flags=re.IGNORECASE)
+        body = re.sub(r"\s+in\s+lines?\s+\d+(?:-\d+)?", "", body, flags=re.IGNORECASE)
+        body = re.sub(r"\s*,\s*lines?\s+\d+(?:-\d+)?", "", body, flags=re.IGNORECASE)
+
+    if any("avoid providing multiple-choice options" in reason for reason in lowered_reasons):
+        body = re.sub(r"\([^)]*\bor\b[^)]*\)", "", body, flags=re.IGNORECASE)
+        body = re.sub(r"\s+", " ", body).strip()
+
+    if any("avoid yes/no questions" in reason for reason in lowered_reasons):
+        body = _rewrite_yes_no_opening(body)
+
+    body = _remove_explanatory_parens(body)
+    body = _normalize_windows_safe_text(body)
+    body = _capitalize_question_start(body)
+    if not body.endswith("?"):
+        body += "?"
+    return f"{prefix}{body}"

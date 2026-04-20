@@ -10,6 +10,112 @@ from app.models.turn import InterviewTurn
 
 
 class InterviewNodesTests(unittest.TestCase):
+    def test_generate_question_for_state_builds_queue_from_planner_specs_before_llm(self):
+        project = ProjectSession(
+            id=22,
+            project_name="Planner Queue",
+            system_prompt="prompt",
+            agent_mode="understand_current_code",
+        )
+        turns = [
+            InterviewTurn(
+                id=1,
+                turn_no=1,
+                stage="Code Detail Completion",
+                question_text="Q1: Pending question",
+                answer_text=None,
+            ),
+        ]
+        planner_decision = {
+            "question_intent": "code_detail_deep_dive",
+            "intent_mode": "understand_current_code",
+            "target_branch_id": "branch-a",
+            "target_type": "file",
+            "target_label": "app/services/question_generator.py",
+            "selected_branch_ids": ["branch-a"],
+            "selected_turn_ids": [1],
+            "selected_framework_gap": None,
+            "confidence": 0.8,
+            "reasoning": "Complex path should be unfolded across queued single questions.",
+            "constraints": [],
+            "decomposition_mode": "queued_subquestions",
+            "subquestion_specs": [
+                {
+                    "focus_kind": "main_flow",
+                    "target_type": "file",
+                    "target_label": "app/services/question_generator.py",
+                    "reason": "Cover the main flow first.",
+                },
+                {
+                    "focus_kind": "error_path",
+                    "target_type": "file",
+                    "target_label": "app/services/question_generator.py",
+                    "reason": "Then isolate the error path.",
+                },
+            ],
+        }
+
+        with (
+            patch.object(interview_nodes, "plan_next_question", return_value=planner_decision),
+            patch.object(interview_nodes, "build_repo_grounding_context", return_value={
+                "repo_grounding_context": "Grounding for app/services/question_generator.py",
+                "repo_grounding_meta": {
+                    "enabled": True,
+                    "selected_paths": ["app/services/question_generator.py"],
+                    "selected_symbols": [],
+                    "queries": ["question_generator.py"],
+                    "tool_calls": [],
+                    "commit_sha": None,
+                },
+            }),
+            patch.object(interview_nodes, "generate_next_question_from_history", return_value={
+                "question_text": "Q2: In app/services/question_generator.py, how does generate_next_question_from_history build the main prompt?",
+                "usage_metrics": {"prompt_tokens": 11, "completion_tokens": 5, "total_tokens": 16, "is_estimated": False},
+                "prompt_id": "next_question_code_detail",
+                "prompt_version": "1.0",
+            }) as generate_mock,
+            patch.object(interview_nodes, "is_question_too_similar", return_value=False),
+            patch.object(interview_nodes, "validate_question_for_stage", return_value={"is_valid": True, "reasons": []}),
+            patch.object(interview_nodes, "validate_question_against_repository", return_value={"is_valid": True, "reasons": []}),
+            patch.object(interview_nodes, "review_question_text", return_value={"is_valid": True, "reasons": []}),
+            patch.object(interview_nodes, "check_scenario_completion", return_value={"is_complete": False, "missing_aspects": []}),
+            patch.object(interview_nodes, "rebuild_coverage_state", return_value={"question_history": [], "branches": [], "framework": {}, "question_queue": {"status": "empty", "items": []}}),
+            patch.object(interview_nodes, "build_generation_context", return_value={
+                "recent_context": "recent",
+                "retrieved_context": "retrieved",
+                "coverage_priorities": "priorities",
+                "repo_grounding_context": "stale",
+                "repo_grounding_meta": {"enabled": False, "selected_paths": [], "selected_symbols": []},
+                "selected_turn_ids": [1],
+                "selected_branch_ids": ["branch-a"],
+            }),
+            patch.object(interview_nodes, "sync_task_board", return_value={}),
+            patch.object(interview_nodes, "deserialize_task_board", return_value={}),
+            patch.object(interview_nodes, "serialize_task_board", return_value="{}"),
+        ):
+            payload = interview_nodes.generate_question_for_state(
+                current_stage="Code Detail Completion",
+                db=None,
+                human_review_signal=None,
+                latest_answer_override=None,
+                project=project,
+                run_id=None,
+                turn_no=2,
+                turns=turns,
+            )
+
+        self.assertEqual(generate_mock.call_count, 1)
+        self.assertEqual(
+            payload["generated_question"],
+            "Q2: In app/services/question_generator.py, how does generate_next_question_from_history build the main prompt?",
+        )
+        self.assertEqual(payload["planner_decision"]["generated_queue"]["status"], "active")
+        self.assertEqual(len(payload["planner_decision"]["generated_queue"]["items"]), 1)
+        self.assertEqual(
+            payload["planner_decision"]["generated_queue"]["items"][0]["question_text"],
+            "Q3: In app/services/question_generator.py, how does generate_next_question_from_history handle the error path?",
+        )
+
     def test_similarity_retry_refreshes_repo_grounding_with_new_planner_target(self):
         project = ProjectSession(
             id=21,

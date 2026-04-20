@@ -4,7 +4,12 @@ from app.core.config import settings
 from app.core.llm_client import get_llm_provider
 from app.logging import emit_event, preview_payload
 from app.prompts import get_prompt_manager
-from app.services.question_postprocessor import clean_generated_question
+from app.services.question_postprocessor import (
+    clean_generated_question,
+    detect_strong_ai_flavor,
+    repair_question_locally,
+    reasons_are_locally_repairable,
+)
 from app.services.run_trace_service import traced_run_step
 from app.services.stage_manager import (
     ARCHITECTURE_STAGE,
@@ -14,7 +19,7 @@ from app.services.stage_manager import (
     WRAP_UP_STAGE,
     get_stage_instruction,
 )
-from app.services.question_postprocessor import detect_strong_ai_flavor, clean_generated_question
+from app.services.question_validator import validate_question_for_stage
 from app.services.usage_service import extract_usage_metrics
 
 
@@ -237,9 +242,35 @@ def generate_next_question_from_history(
                 next_turn_no,
                 current_stage=current_stage,
             )
-            
-            # Sub-module: Local Question Refiner
-            if detect_strong_ai_flavor(cleaned):
+            validation = validate_question_for_stage(
+                text=cleaned,
+                expected_turn_no=next_turn_no,
+                current_stage=current_stage,
+                intent_mode=planner.get("intent_mode", "understand_current_code"),
+                branch_id=planner.get("target_branch_id"),
+                agent_mode=planner.get("mode"),
+            )
+
+            if not validation["is_valid"] and reasons_are_locally_repairable(validation["reasons"]):
+                repaired = repair_question_locally(
+                    cleaned,
+                    validation["reasons"],
+                    expected_turn_no=next_turn_no,
+                    current_stage=current_stage,
+                )
+                repaired_validation = validate_question_for_stage(
+                    text=repaired,
+                    expected_turn_no=next_turn_no,
+                    current_stage=current_stage,
+                    intent_mode=planner.get("intent_mode", "understand_current_code"),
+                    branch_id=planner.get("target_branch_id"),
+                    agent_mode=planner.get("mode"),
+                )
+                if repaired_validation["is_valid"]:
+                    cleaned = repaired
+                    validation = repaired_validation
+
+            if detect_strong_ai_flavor(cleaned) or not validation["is_valid"]:
                 refiner_prompt = get_prompt_manager().render("refine_question", {"original_question": cleaned})
                 with traced_run_step(
                     run_id=run_id,

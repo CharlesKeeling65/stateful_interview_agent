@@ -47,6 +47,95 @@ def decompose_code_detail_question_group(
         )
     return queued
 
+
+def _extract_seed_symbol(seed_question_text: str | None) -> str | None:
+    if not seed_question_text:
+        return None
+    match = re.search(
+        r"\b(?:how does|where does|what does)\s+([A-Za-z_][A-Za-z0-9_]*)\b",
+        seed_question_text,
+        re.IGNORECASE,
+    )
+    if match:
+        return match.group(1)
+    return None
+
+
+def _build_question_from_spec(
+    *,
+    spec: dict[str, Any],
+    turn_no: int,
+    seed_symbol: str | None,
+) -> str:
+    target_type = str(spec.get("target_type") or "execution_path")
+    target_label = str(spec.get("target_label") or "the current implementation path")
+    focus_kind = str(spec.get("focus_kind") or "main_flow")
+    artifact_prefix = f"In {target_label}, " if target_type in {"file", "class", "method"} else ""
+
+    if focus_kind == "error_path":
+        body = (
+            f"{artifact_prefix}how does {seed_symbol} handle the error path?"
+            if seed_symbol
+            else f"{artifact_prefix}how does the current implementation handle the error path?"
+        )
+    elif focus_kind == "state_management":
+        body = (
+            f"{artifact_prefix}how does {seed_symbol} manage state across the flow?"
+            if seed_symbol
+            else f"{artifact_prefix}how does the current implementation manage state across the flow?"
+        )
+    elif focus_kind == "library_usage":
+        body = (
+            f"{artifact_prefix}how does {seed_symbol} use its main library integration points?"
+            if seed_symbol
+            else f"{artifact_prefix}how does the current implementation use its main library integration points?"
+        )
+    elif focus_kind == "protocol_path":
+        body = (
+            f"{artifact_prefix}how does {seed_symbol} implement the protocol path?"
+            if seed_symbol
+            else f"{artifact_prefix}how does the current implementation follow the protocol path?"
+        )
+    else:
+        body = (
+            f"{artifact_prefix}how does {seed_symbol} build the main prompt?"
+            if seed_symbol
+            else f"{artifact_prefix}how does the main flow currently work?"
+        )
+    return normalize_sub_question_text(body, turn_no)
+
+
+def build_queue_from_specs(
+    specs: list[dict[str, Any]],
+    *,
+    base_turn_no: int,
+    intent: str,
+    target_branch_id: str | None,
+    target_type: str | None,
+    target_label: str | None,
+    seed_question_text: str | None = None,
+) -> list[QueuedQuestionDebug]:
+    seed_symbol = _extract_seed_symbol(seed_question_text)
+    queued: list[QueuedQuestionDebug] = []
+    for idx, spec in enumerate(specs):
+        item_text = _build_question_from_spec(
+            spec=spec,
+            turn_no=base_turn_no + idx,
+            seed_symbol=seed_symbol,
+        )
+        queued.append(
+            QueuedQuestionDebug(
+                id=str(uuid.uuid4()),
+                turn_offset=idx,
+                question_text=item_text,
+                intent=intent,
+                target_branch_id=target_branch_id,
+                target_type=str(spec.get("target_type") or target_type),
+                target_label=str(spec.get("target_label") or target_label),
+            )
+        )
+    return queued
+
 def renumber_sub_question_queue(queue_items: list[QueuedQuestionDebug | dict], next_turn_no: int) -> list[QueuedQuestionDebug | dict]:
     renumbered = []
     for idx, item in enumerate(queue_items):

@@ -79,6 +79,8 @@ def build_question_plan_payload(state: dict) -> dict:
         "repo_selected_symbols": state.get("repo_grounding_meta", {}).get("selected_symbols", []),
         "repo_commit_sha": state.get("repo_grounding_meta", {}).get("commit_sha"),
         "repo_tool_calls": state.get("repo_grounding_meta", {}).get("tool_calls", []),
+        "decomposition_mode": state.get("planner_decision", {}).get("decomposition_mode"),
+        "subquestion_specs": state.get("planner_decision", {}).get("subquestion_specs", []),
     }
 
 
@@ -154,6 +156,15 @@ def generate_question_for_state(
     context_payload["repo_grounding_meta"] = repo_grounding_payload["repo_grounding_meta"]
 
     question_queue = coverage_state.get("question_queue", {"status": "empty", "items": []})
+    planner_subquestion_specs = planner_decision.get("subquestion_specs") or []
+    should_seed_queue_from_planner = (
+        current_stage == "Code Detail Completion"
+        and planner_decision.get("decomposition_mode") == "queued_subquestions"
+        and planner_subquestion_specs
+        and question_queue.get("status") != "active"
+        and not human_review_signal
+        and not force_llm_generation
+    )
     should_use_queue = (
         current_stage == "Code Detail Completion"
         and question_queue.get("status") == "active"
@@ -181,6 +192,20 @@ def generate_question_for_state(
 
     else:
         planner_decision["generated_queue"] = {"status": "empty", "items": []}
+        deferred_queue_specs = []
+        if should_seed_queue_from_planner:
+            current_spec = planner_subquestion_specs[0]
+            deferred_queue_specs = planner_subquestion_specs[1:]
+            planner_decision["active_subquestion_spec"] = current_spec
+            planner_decision["constraints"] = planner_decision.get("constraints", []) + [
+                f"Focus only on the {current_spec.get('focus_kind', 'main flow').replace('_', ' ')} for this turn.",
+                "Ask exactly one visible question; any additional follow-ups will be queued internally.",
+            ]
+            planner_decision["reasoning"] = (
+                planner_decision.get("reasoning", "")
+                + " "
+                + str(current_spec.get("reason", "")).strip()
+            ).strip()
         next_question_result = generate_next_question_from_history(
             system_prompt=project.system_prompt,
             recent_context=context_payload["recent_context"],
@@ -196,8 +221,27 @@ def generate_question_for_state(
         next_question = next_question_result["question_text"]
         question_usage_metrics = [next_question_result["usage_metrics"]]
 
+        if deferred_queue_specs:
+            from app.services.question_queue_service import build_queue_from_specs
+
+            queued_items = build_queue_from_specs(
+                deferred_queue_specs,
+                base_turn_no=turn_no + 1,
+                intent=planner_decision.get("question_intent", "follow_up"),
+                target_branch_id=planner_decision.get("target_branch_id"),
+                target_type=planner_decision.get("target_type"),
+                target_label=planner_decision.get("target_label"),
+                seed_question_text=next_question,
+            )
+            if queued_items:
+                question_queue["status"] = "active"
+                question_queue["parent_turn_no"] = turn_no
+                question_queue["parent_group_intent"] = planner_decision.get("question_intent")
+                question_queue["items"] = [{"question_text": i.question_text, "turn_offset": i.turn_offset, "intent": i.intent, "target_branch_id": i.target_branch_id, "target_type": i.target_type, "target_label": i.target_label} for i in queued_items]
+                planner_decision["generated_queue"] = question_queue
+
         from app.services.question_postprocessor import split_multiple_questions
-        if len(split_multiple_questions(next_question)) > 1:
+        if not deferred_queue_specs and len(split_multiple_questions(next_question)) > 1:
             from app.services.question_queue_service import decompose_code_detail_question_group
             new_items = decompose_code_detail_question_group(
                 next_question,

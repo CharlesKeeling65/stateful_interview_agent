@@ -395,6 +395,8 @@ def plan_next_question(
             "drift_detected": False,
             "human_collaboration_gate": False,
             "human_review_applied": False,
+            "decomposition_mode": "none",
+            "subquestion_specs": [],
             "validation_constraints": [
                 "must be implementation-specific",
                 f"must stay in {agent_mode}",
@@ -422,6 +424,14 @@ def plan_next_question(
             recent_question_history=recent_question_history,
             is_rebalanced=is_rebalanced,
         )
+        subquestion_specs = build_code_detail_subquestion_specs(
+            branch=branch,
+            target_type=target_type,
+            target_label=target_label,
+        )
+        if subquestion_specs:
+            planner_decision["decomposition_mode"] = "queued_subquestions"
+            planner_decision["subquestion_specs"] = subquestion_specs
         return planner_decision
 
     if current_stage == USE_CASE_STAGE:
@@ -615,6 +625,81 @@ def choose_code_detail_target(branch: dict[str, Any] | None) -> tuple[str, str]:
     return "execution_path", branch.get("label", "the key execution path")
 
 
+def build_code_detail_subquestion_specs(
+    *,
+    branch: dict[str, Any] | None,
+    target_type: str,
+    target_label: str,
+) -> list[dict[str, str]]:
+    if not branch:
+        return []
+
+    source_text = " ".join(
+        [
+            str(branch.get("label", "")),
+            str(branch.get("summary", "")),
+            " ".join(str(item) for item in branch.get("unresolved_points", [])),
+        ]
+    ).lower()
+    specs: list[dict[str, str]] = []
+
+    if any(marker in source_text for marker in ("main execution path", "request path", "call chain", "main flow", "execution path")):
+        specs.append(
+            {
+                "focus_kind": "main_flow",
+                "target_type": target_type,
+                "target_label": target_label,
+                "reason": "Cover the main flow first.",
+            }
+        )
+    if any(marker in source_text for marker in ("error handling", "error path", "failure path", "exception")):
+        specs.append(
+            {
+                "focus_kind": "error_path",
+                "target_type": target_type,
+                "target_label": target_label,
+                "reason": "Then isolate the error path.",
+            }
+        )
+    if any(marker in source_text for marker in ("state management", "state changes", "state transition", "state update")):
+        specs.append(
+            {
+                "focus_kind": "state_management",
+                "target_type": target_type,
+                "target_label": target_label,
+                "reason": "Then isolate the state-management path.",
+            }
+        )
+    if any(marker in source_text for marker in ("library usage", "sdk", "third-party", "integration point")):
+        specs.append(
+            {
+                "focus_kind": "library_usage",
+                "target_type": target_type,
+                "target_label": target_label,
+                "reason": "Then isolate the library usage path.",
+            }
+        )
+    if any(marker in source_text for marker in ("protocol", "serialization", "deserialization")):
+        specs.append(
+            {
+                "focus_kind": "protocol_path",
+                "target_type": target_type,
+                "target_label": target_label,
+                "reason": "Then isolate the protocol path.",
+            }
+        )
+
+    deduped: list[dict[str, str]] = []
+    seen_focuses: set[str] = set()
+    for spec in specs:
+        focus_kind = spec["focus_kind"]
+        if focus_kind in seen_focuses:
+            continue
+        seen_focuses.add(focus_kind)
+        deduped.append(spec)
+    return deduped[:3] if len(deduped) >= 2 else []
+
+
 def choose_branch_for_stage(
     *,
     branches: list[dict[str, Any]],
@@ -747,4 +832,3 @@ def is_target_related(t1: str, t2: str) -> bool:
             return True
             
     return False
-
