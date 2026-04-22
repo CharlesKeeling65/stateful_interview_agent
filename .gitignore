@@ -13,3 +13,4 @@ dist/
 .claude
 AGENTS.md
 CLAUDE.md
+.worktrees/
