@@ -15,7 +15,10 @@ from app.services.human_gate_service import (
     resolve_gate,
     serialize_gate,
 )
-from app.services.interview_lifecycle import can_continue_interview, is_minimum_goal_reached
+from app.services.interview_lifecycle import (
+    can_continue_interview,
+    is_minimum_goal_reached,
+)
 from app.services.mode_service import AgentMode
 from app.services.question_planner import plan_next_question
 from app.services.question_generator import generate_next_question_from_history
@@ -25,7 +28,10 @@ from app.services.question_validator import (
     validate_question_against_repository,
     validate_question_for_stage,
 )
-from app.services.repetition_guard import build_question_signature, is_question_too_similar
+from app.services.repetition_guard import (
+    build_question_signature,
+    is_question_too_similar,
+)
 from app.services.repo_grounding_service import build_repo_grounding_context
 from app.services.rubric_task_service import (
     deserialize_task_board,
@@ -52,35 +58,58 @@ from app.services.usage_service import create_usage_record
 
 def build_question_plan_payload(state: dict) -> dict:
     return {
-        "mode": state.get("agent_mode") or state.get("planner_decision", {}).get("mode"),
+        "mode": state.get("agent_mode")
+        or state.get("planner_decision", {}).get("mode"),
         "phase": state.get("planner_decision", {}).get("phase"),
         "question_intent": state.get("planner_decision", {}).get("question_intent"),
         "intent_mode": state.get("planner_decision", {}).get("intent_mode"),
         "target_branch_id": state.get("planner_decision", {}).get("target_branch_id"),
         "target_type": state.get("planner_decision", {}).get("target_type"),
         "target_label": state.get("planner_decision", {}).get("target_label"),
-        "selected_framework_gap": state.get("planner_decision", {}).get("selected_framework_gap"),
-        "selected_branch_ids": state.get("planner_decision", {}).get("selected_branch_ids", []),
-        "selected_turn_ids": state.get("planner_decision", {}).get("selected_turn_ids", []),
-        "human_review_applied": state.get("planner_decision", {}).get("human_review_applied"),
+        "selected_framework_gap": state.get("planner_decision", {}).get(
+            "selected_framework_gap"
+        ),
+        "selected_branch_ids": state.get("planner_decision", {}).get(
+            "selected_branch_ids", []
+        ),
+        "selected_turn_ids": state.get("planner_decision", {}).get(
+            "selected_turn_ids", []
+        ),
+        "human_review_applied": state.get("planner_decision", {}).get(
+            "human_review_applied"
+        ),
         "drift_detected": state.get("planner_decision", {}).get("drift_detected"),
         "why_this_question": state.get("planner_decision", {}).get("why_this_question"),
         "rubric_task_id": state.get("planner_decision", {}).get("rubric_task_id"),
         "rubric_task_label": state.get("planner_decision", {}).get("rubric_task_label"),
         "confidence_score": state.get("review_result", {}).get("confidence_score")
         or state.get("planner_decision", {}).get("confidence"),
-        "human_gate_triggered": state.get("review_result", {}).get("human_gate_triggered"),
+        "human_gate_triggered": state.get("review_result", {}).get(
+            "human_gate_triggered"
+        ),
         "reviewer_reason": state.get("review_result", {}).get("review_reason"),
-        "reviewer_modifications": state.get("review_result", {}).get("suggested_modifications", []),
+        "reviewer_modifications": state.get("review_result", {}).get(
+            "suggested_modifications", []
+        ),
         "scenario_complete": state.get("scenario_status", {}).get("is_complete"),
-        "scenario_missing_aspects": state.get("scenario_status", {}).get("missing_aspects", []),
+        "scenario_missing_aspects": state.get("scenario_status", {}).get(
+            "missing_aspects", []
+        ),
         "repo_queries": state.get("repo_grounding_meta", {}).get("queries", []),
-        "repo_selected_paths": state.get("repo_grounding_meta", {}).get("selected_paths", []),
-        "repo_selected_symbols": state.get("repo_grounding_meta", {}).get("selected_symbols", []),
+        "repo_selected_paths": state.get("repo_grounding_meta", {}).get(
+            "selected_paths", []
+        ),
+        "repo_selected_symbols": state.get("repo_grounding_meta", {}).get(
+            "selected_symbols", []
+        ),
         "repo_commit_sha": state.get("repo_grounding_meta", {}).get("commit_sha"),
         "repo_tool_calls": state.get("repo_grounding_meta", {}).get("tool_calls", []),
-        "decomposition_mode": state.get("planner_decision", {}).get("decomposition_mode"),
-        "subquestion_specs": state.get("planner_decision", {}).get("subquestion_specs", []),
+        "decomposition_mode": state.get("planner_decision", {}).get(
+            "decomposition_mode"
+        ),
+        "subquestion_specs": state.get("planner_decision", {}).get(
+            "subquestion_specs", []
+        ),
     }
 
 
@@ -152,10 +181,16 @@ def generate_question_for_state(
         project_id=project.id,
         run_id=run_id,
     )
-    context_payload["repo_grounding_context"] = repo_grounding_payload["repo_grounding_context"]
-    context_payload["repo_grounding_meta"] = repo_grounding_payload["repo_grounding_meta"]
+    context_payload["repo_grounding_context"] = repo_grounding_payload[
+        "repo_grounding_context"
+    ]
+    context_payload["repo_grounding_meta"] = repo_grounding_payload[
+        "repo_grounding_meta"
+    ]
 
-    question_queue = coverage_state.get("question_queue", {"status": "empty", "items": []})
+    question_queue = coverage_state.get(
+        "question_queue", {"status": "empty", "items": []}
+    )
     planner_subquestion_specs = planner_decision.get("subquestion_specs") or []
     should_seed_queue_from_planner = (
         current_stage == "Code Detail Completion"
@@ -176,15 +211,26 @@ def generate_question_for_state(
     if should_use_queue:
         next_item = question_queue["items"].pop(0)
         from app.services.question_queue_service import renumber_sub_question_queue
-        question_queue["items"] = renumber_sub_question_queue(question_queue["items"], turn_no + 1)
+
+        question_queue["items"] = renumber_sub_question_queue(
+            question_queue["items"], turn_no + 1
+        )
         if not question_queue["items"]:
             question_queue["status"] = "empty"
 
-        planner_decision["question_intent"] = next_item.get("intent", planner_decision.get("question_intent"))
-        planner_decision["target_branch_id"] = next_item.get("target_branch_id", planner_decision.get("target_branch_id"))
-        planner_decision["target_type"] = next_item.get("target_type", planner_decision.get("target_type"))
-        planner_decision["target_label"] = next_item.get("target_label", planner_decision.get("target_label"))
-        
+        planner_decision["question_intent"] = next_item.get(
+            "intent", planner_decision.get("question_intent")
+        )
+        planner_decision["target_branch_id"] = next_item.get(
+            "target_branch_id", planner_decision.get("target_branch_id")
+        )
+        planner_decision["target_type"] = next_item.get(
+            "target_type", planner_decision.get("target_type")
+        )
+        planner_decision["target_label"] = next_item.get(
+            "target_label", planner_decision.get("target_label")
+        )
+
         planner_decision["generated_queue"] = question_queue
         next_question = next_item.get("question_text", "")
         question_usage_metrics = []
@@ -197,7 +243,9 @@ def generate_question_for_state(
             current_spec = planner_subquestion_specs[0]
             deferred_queue_specs = planner_subquestion_specs[1:]
             planner_decision["active_subquestion_spec"] = current_spec
-            planner_decision["constraints"] = planner_decision.get("constraints", []) + [
+            planner_decision["constraints"] = planner_decision.get(
+                "constraints", []
+            ) + [
                 f"Focus only on the {current_spec.get('focus_kind', 'main flow').replace('_', ' ')} for this turn.",
                 "Ask exactly one visible question; any additional follow-ups will be queued internally.",
             ]
@@ -236,13 +284,32 @@ def generate_question_for_state(
             if queued_items:
                 question_queue["status"] = "active"
                 question_queue["parent_turn_no"] = turn_no
-                question_queue["parent_group_intent"] = planner_decision.get("question_intent")
-                question_queue["items"] = [{"question_text": i.question_text, "turn_offset": i.turn_offset, "intent": i.intent, "target_branch_id": i.target_branch_id, "target_type": i.target_type, "target_label": i.target_label} for i in queued_items]
+                question_queue["parent_group_intent"] = planner_decision.get(
+                    "question_intent"
+                )
+                question_queue["items"] = [
+                    {
+                        "question_text": i.question_text,
+                        "turn_offset": i.turn_offset,
+                        "intent": i.intent,
+                        "target_branch_id": i.target_branch_id,
+                        "target_type": i.target_type,
+                        "target_label": i.target_label,
+                    }
+                    for i in queued_items
+                ]
                 planner_decision["generated_queue"] = question_queue
 
         from app.services.question_postprocessor import split_multiple_questions
-        if not deferred_queue_specs and len(split_multiple_questions(next_question)) > 1:
-            from app.services.question_queue_service import decompose_code_detail_question_group
+
+        if (
+            not deferred_queue_specs
+            and len(split_multiple_questions(next_question)) > 1
+        ):
+            from app.services.question_queue_service import (
+                decompose_code_detail_question_group,
+            )
+
             new_items = decompose_code_detail_question_group(
                 next_question,
                 base_turn_no=turn_no,
@@ -255,8 +322,20 @@ def generate_question_for_state(
                 next_question = new_items[0].question_text
                 question_queue["status"] = "active"
                 question_queue["parent_turn_no"] = turn_no
-                question_queue["parent_group_intent"] = planner_decision.get("question_intent")
-                question_queue["items"] = [{"question_text": i.question_text, "turn_offset": i.turn_offset, "intent": i.intent, "target_branch_id": i.target_branch_id, "target_type": i.target_type, "target_label": i.target_label} for i in new_items[1:]]
+                question_queue["parent_group_intent"] = planner_decision.get(
+                    "question_intent"
+                )
+                question_queue["items"] = [
+                    {
+                        "question_text": i.question_text,
+                        "turn_offset": i.turn_offset,
+                        "intent": i.intent,
+                        "target_branch_id": i.target_branch_id,
+                        "target_type": i.target_type,
+                        "target_label": i.target_label,
+                    }
+                    for i in new_items[1:]
+                ]
                 planner_decision["generated_queue"] = question_queue
 
     old_questions = [turn.question_text for turn in turns[:-1]]
@@ -301,8 +380,12 @@ def generate_question_for_state(
             project_id=project.id,
             run_id=run_id,
         )
-        context_payload["repo_grounding_context"] = repo_grounding_payload["repo_grounding_context"]
-        context_payload["repo_grounding_meta"] = repo_grounding_payload["repo_grounding_meta"]
+        context_payload["repo_grounding_context"] = repo_grounding_payload[
+            "repo_grounding_context"
+        ]
+        context_payload["repo_grounding_meta"] = repo_grounding_payload[
+            "repo_grounding_meta"
+        ]
         retried_question_result = generate_next_question_from_history(
             system_prompt=project.system_prompt,
             recent_context=context_payload["recent_context"],
@@ -597,15 +680,19 @@ def load_project_context(state, db: Session):
         human_gate_resolution = state.get("human_gate_resolution")
         human_review_signal = _merge_human_review_signal(
             state.get("human_review_signal"),
-            gate_resolution_to_human_review_signal(
-                pending_gate,
-                human_gate_resolution.get("action"),
-                preferred_next_focus=human_gate_resolution.get("preferred_next_focus"),
-                note=human_gate_resolution.get("note"),
-                phase_ready=human_gate_resolution.get("phase_ready"),
-            )
-            if pending_gate and human_gate_resolution
-            else None,
+            (
+                gate_resolution_to_human_review_signal(
+                    pending_gate,
+                    human_gate_resolution.get("action"),
+                    preferred_next_focus=human_gate_resolution.get(
+                        "preferred_next_focus"
+                    ),
+                    note=human_gate_resolution.get("note"),
+                    phase_ready=human_gate_resolution.get("phase_ready"),
+                )
+                if pending_gate and human_gate_resolution
+                else None
+            ),
         )
 
         return {
@@ -616,8 +703,12 @@ def load_project_context(state, db: Session):
             "history_text": build_compact_interview_context(turns),
             "coverage_state": project.coverage_state_data,
             "task_board": task_board.model_dump(mode="json"),
-            "pending_gate": pending_gate.model_dump(mode="json") if pending_gate else None,
-            "scenario_status": check_scenario_completion(project.coverage_state_data, turns),
+            "pending_gate": (
+                pending_gate.model_dump(mode="json") if pending_gate else None
+            ),
+            "scenario_status": check_scenario_completion(
+                project.coverage_state_data, turns
+            ),
             "event_log": latest_event_log,
             "minimum_goal_reached": is_minimum_goal_reached(project.turn_count),
             "pending_turn_id": latest_turn.id,
@@ -699,7 +790,9 @@ def plan_question(state, db: Session):
             coverage_state=state.get("coverage_state", {}),
             human_review_signal=state.get("human_review_signal"),
             agent_mode=project.agent_mode or AgentMode.UNDERSTAND_CURRENT_CODE.value,
-            task_board_json=serialize_task_board(deserialize_task_board(project.rubric_task_board)),
+            task_board_json=serialize_task_board(
+                deserialize_task_board(project.rubric_task_board)
+            ),
         )
     return {"planner_decision": planner_decision}
 
@@ -750,7 +843,10 @@ def review_question_plan_node(state, db: Session):
     message = None
     if review_result.get("human_gate_triggered") and review_result.get("human_gate"):
         pending_gate = review_result["human_gate"]
-        message = review_result.get("review_reason") or "Human decision required before the next question."
+        message = (
+            review_result.get("review_reason")
+            or "Human decision required before the next question."
+        )
 
     return {
         "planner_decision": planner_decision,
@@ -804,6 +900,7 @@ def draft_next_question(state, db: Session):
         "question_usage_metrics": generation_payload["question_usage_metrics"],
         "pending_gate": None,
     }
+
 
 def persist_next_step(state, db: Session):
     bind_log_context(project_id=state.get("project_id"))
@@ -861,7 +958,9 @@ def persist_next_step(state, db: Session):
                 turn_no=pending_turn.turn_no,
                 verdict=state["human_review_signal"].get("verdict"),
                 direction=state["human_review_signal"].get("direction"),
-                preferred_next_focus=state["human_review_signal"].get("preferred_next_focus"),
+                preferred_next_focus=state["human_review_signal"].get(
+                    "preferred_next_focus"
+                ),
                 note=state["human_review_signal"].get("note"),
                 project_id=state["project_id"],
             )
@@ -877,7 +976,9 @@ def persist_next_step(state, db: Session):
         task_board = sync_task_board(
             deserialize_task_board(project.rubric_task_board),
             coverage_state=refreshed_coverage_state,
-            current_stage=state.get("next_stage") or state.get("current_stage") or project.current_stage,
+            current_stage=state.get("next_stage")
+            or state.get("current_stage")
+            or project.current_stage,
         )
         project.rubric_task_board = serialize_task_board(task_board)
         emit_event(
@@ -890,7 +991,9 @@ def persist_next_step(state, db: Session):
             stage=pending_turn.stage,
             output={
                 "branch_count": refreshed_coverage_state.get("branch_count", 0),
-                "updated_through_turn_no": refreshed_coverage_state.get("updated_through_turn_no", 0),
+                "updated_through_turn_no": refreshed_coverage_state.get(
+                    "updated_through_turn_no", 0
+                ),
             },
         )
 
@@ -910,7 +1013,8 @@ def persist_next_step(state, db: Session):
             db.refresh(project)
             db.refresh(pending_turn)
             return {
-                "message": state.get("message") or "Human input is required before the next question can be generated.",
+                "message": state.get("message")
+                or "Human input is required before the next question can be generated.",
                 "minimum_goal_reached": is_minimum_goal_reached(pending_turn.turn_no),
                 "pending_gate_active": True,
             }
@@ -974,7 +1078,9 @@ def persist_next_step(state, db: Session):
         project.current_stage = state["next_stage"]
         project.agent_mode = state.get("agent_mode", project.agent_mode)
         project.pending_gate_json = "null"
-        refreshed_coverage_state = rebuild_coverage_state([*all_turns, next_turn], project)
+        refreshed_coverage_state = rebuild_coverage_state(
+            [*all_turns, next_turn], project
+        )
         save_coverage_state(project, refreshed_coverage_state)
         project.rubric_task_board = serialize_task_board(
             sync_task_board(
@@ -986,8 +1092,11 @@ def persist_next_step(state, db: Session):
 
         if state.get("review_result", {}).get("drift_detected"):
             drift_event = emit_drift_repair_event(
-                drift_reason=state["review_result"].get("review_reason") or state["planner_decision"].get("reasoning", ""),
-                repair_action=state["planner_decision"].get("question_intent", "drift_repair"),
+                drift_reason=state["review_result"].get("review_reason")
+                or state["planner_decision"].get("reasoning", ""),
+                repair_action=state["planner_decision"].get(
+                    "question_intent", "drift_repair"
+                ),
                 turn_no=pending_turn.turn_no,
                 project_id=state["project_id"],
             )
@@ -1017,7 +1126,9 @@ def persist_next_step(state, db: Session):
             phase=next_turn.stage,
             project_id=state["project_id"],
         )
-        next_turn.event_log_json = serialize_event_log(add_event_to_log(next_event_log, question_event))
+        next_turn.event_log_json = serialize_event_log(
+            add_event_to_log(next_event_log, question_event)
+        )
 
         db.commit()
         db.refresh(project)
