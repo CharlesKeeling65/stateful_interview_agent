@@ -249,6 +249,8 @@ def generate_next_question_from_history(
                 intent_mode=planner.get("intent_mode", "understand_current_code"),
                 branch_id=planner.get("target_branch_id"),
                 agent_mode=planner.get("mode"),
+                developer_intent=planner.get("developer_intent"),
+                relation_type=planner.get("relation_type"),
             )
 
             if not validation["is_valid"] and reasons_are_locally_repairable(validation["reasons"]):
@@ -265,6 +267,8 @@ def generate_next_question_from_history(
                     intent_mode=planner.get("intent_mode", "understand_current_code"),
                     branch_id=planner.get("target_branch_id"),
                     agent_mode=planner.get("mode"),
+                    developer_intent=planner.get("developer_intent"),
+                    relation_type=planner.get("relation_type"),
                 )
                 if repaired_validation["is_valid"]:
                     cleaned = repaired

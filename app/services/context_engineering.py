@@ -56,6 +56,10 @@ def build_generation_context(
     )
     selected_branch_ids = [branch["branch_id"] for branch in selected_branches]
     retrieved_context = build_retrieved_branch_context(selected_branches)
+    graph_context = build_graph_context(
+        turns=turns,
+        coverage_state=coverage,
+    )
     coverage_priorities = build_coverage_priorities(selected_branches, current_stage, stage_gaps)
     repo_grounding_payload = {
         "repo_grounding_context": "No repository source configured for this project.",
@@ -93,6 +97,7 @@ def build_generation_context(
                     [
                         recent_context,
                         retrieved_context,
+                        graph_context,
                         coverage_priorities,
                     ]
                 ),
@@ -110,6 +115,7 @@ def build_generation_context(
         "framework_gaps": stage_gaps,
         "recent_context": recent_context,
         "retrieved_context": retrieved_context,
+        "graph_context": graph_context,
         "repo_grounding_context": repo_grounding_payload["repo_grounding_context"],
         "repo_grounding_meta": repo_grounding_payload["repo_grounding_meta"],
         "coverage_priorities": coverage_priorities,
@@ -126,6 +132,7 @@ def build_generation_context(
             [
                 f"Recent context:\n{recent_context}",
                 f"Retrieved branch context:\n{retrieved_context}",
+                f"Graph context:\n{graph_context}",
                 f"Repository evidence:\n{repo_grounding_payload['repo_grounding_context']}",
                 f"Coverage priorities:\n{coverage_priorities}",
             ]
@@ -294,6 +301,71 @@ def build_retrieved_branch_context(branches: list[dict[str, Any]]) -> str:
         unresolved_points = branch.get("unresolved_points", [])
         if unresolved_points:
             lines.append(f"  Unresolved: {' | '.join(unresolved_points)}")
+    return "\n".join(lines)
+
+
+def build_graph_context(
+    *,
+    turns: list[InterviewTurn],
+    coverage_state: dict[str, Any],
+) -> str:
+    question_graph = coverage_state.get("question_graph", {}) or {}
+    nodes = question_graph.get("nodes", []) or []
+    edges = question_graph.get("edges", []) or []
+    frontier_items = (coverage_state.get("investigation_frontier", {}) or {}).get("items", []) or []
+    if not turns or not nodes:
+        return "No active graph context available."
+
+    latest_completed_turn = next((turn for turn in reversed(turns) if turn.answer_text), None)
+    if latest_completed_turn is None:
+        return "No active graph context available."
+    active_node_id = f"turn-{latest_completed_turn.turn_no}"
+    node_by_id = {str(node.get("node_id")): node for node in nodes}
+    active_node = node_by_id.get(active_node_id)
+    if not active_node:
+        return "No active graph context available."
+
+    parent_edges = [edge for edge in edges if edge.get("to_node_id") == active_node_id]
+    child_edges = [edge for edge in edges if edge.get("from_node_id") == active_node_id]
+    frontier_for_active = [
+        item for item in frontier_items if item.get("source_node_id") == active_node_id
+    ]
+
+    lines = [
+        "Active investigation thread:",
+        f"- Active node: {active_node_id} -> {active_node.get('target_label') or active_node.get('question_text')}",
+    ]
+    if active_node.get("unresolved_points"):
+        lines.append(f"- Active unresolved points: {' | '.join(active_node.get('unresolved_points', [])[:3])}")
+
+    lines.append("Lineage context:")
+    if parent_edges:
+        for edge in parent_edges[:2]:
+            parent_node = node_by_id.get(str(edge.get("from_node_id")))
+            if parent_node:
+                lines.append(
+                    f"- Parent via {edge.get('relation_type')}: {parent_node.get('node_id')} -> {parent_node.get('target_label')}"
+                )
+    else:
+        lines.append("- No parent lineage recorded.")
+
+    lines.append("Neighbor topics:")
+    if child_edges:
+        for edge in child_edges[:3]:
+            child_node = node_by_id.get(str(edge.get("to_node_id")))
+            if child_node:
+                lines.append(
+                    f"- Neighbor via {edge.get('relation_type')}: {child_node.get('target_label')} ({child_node.get('intent_type')})"
+                )
+    else:
+        lines.append("- No connected neighbor topics recorded.")
+
+    if frontier_for_active:
+        lines.append("Open frontier:")
+        for item in frontier_for_active[:3]:
+            lines.append(
+                f"- {item.get('label')} -> {item.get('target_label', 'unknown target')}"
+            )
     return "\n".join(lines)
 
 

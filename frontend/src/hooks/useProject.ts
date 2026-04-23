@@ -11,6 +11,7 @@ import {
   getLatestProjectRun,
   getProjectCoverageDebug,
   getProjectFileCoverageSummary,
+  getProjectQuestionNetworkSummary,
   getProjectQueueSummary,
   getProjectRuns,
   getProjectStatus,
@@ -34,6 +35,7 @@ import type {
   NextQuestionRequestPayload,
   ProjectRead,
   ProjectStatusResponse,
+  QuestionNetworkSummaryDebug,
   QueueSummaryDebug,
   RunRead,
   TranscriptResponse,
@@ -101,6 +103,7 @@ export function useProject() {
   const [coverageDebug, setCoverageDebug] = useState<CoverageDebugResponse | null>(null)
   const [queueSummary, setQueueSummary] = useState<QueueSummaryDebug | null>(null)
   const [fileCoverageSummary, setFileCoverageSummary] = useState<FileCoverageSummaryDebug | null>(null)
+  const [questionNetworkSummary, setQuestionNetworkSummary] = useState<QuestionNetworkSummaryDebug | null>(null)
 
   async function refreshProjects(preferredProjectId?: number) {
     const items = await listProjects()
@@ -712,15 +715,17 @@ export function useProject() {
   async function handleLoadCoverageDebug() {
     if (!project) return
     try {
-      const [coverage, queue, fileCoverage] = await Promise.all([
+      const [coverage, queue, fileCoverage, questionNetwork] = await Promise.all([
         getProjectCoverageDebug(project.id),
         getProjectQueueSummary(project.id),
         getProjectFileCoverageSummary(project.id),
+        getProjectQuestionNetworkSummary(project.id),
       ])
       startTransition(() => {
         setCoverageDebug(coverage)
         setQueueSummary(queue)
         setFileCoverageSummary(fileCoverage)
+        setQuestionNetworkSummary(questionNetwork)
       })
     } catch {
       // Non-critical: debug data is optional
@@ -761,6 +766,7 @@ export function useProject() {
     coverageDebug,
     queueSummary,
     fileCoverageSummary,
+    questionNetworkSummary,
     estimateDraftUsage: (answerDraft: string) => ({
       estimatedAnswerInputTokens: estimateTokenCount(answerDraft),
       estimatedNextPromptTokens: estimateNextPromptTokens({

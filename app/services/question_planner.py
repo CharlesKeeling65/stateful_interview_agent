@@ -1,6 +1,7 @@
 import re
 from typing import Any
 
+from app.core.config import settings
 from app.models.turn import InterviewTurn
 from app.services.coverage_service import (
     default_framework_coverage,
@@ -8,6 +9,7 @@ from app.services.coverage_service import (
     framework_gaps_for_stage,
     normalize_framework_coverage,
 )
+from app.services.developer_intent_service import developer_intent_undercoverage_bonus
 from app.services.mode_service import (
     AgentMode,
     get_mode_constraints,
@@ -331,8 +333,18 @@ def plan_next_question(
                 "why_this_question": "Before going deeper into implementation, the interview should record the human's prioritization choice.",
             }
 
+        frontier_candidate = None
+        if settings.graph_frontier_planning_enabled:
+            frontier_candidate = choose_graph_frontier_candidate(
+                current_stage=current_stage,
+                coverage_state=coverage_state,
+                recent_question_history=recent_question_history,
+            )
         target_type, target_label = choose_code_detail_target(branch)
-        if branch:
+        if frontier_candidate:
+            target_type = frontier_candidate.get("target_type") or target_type
+            target_label = frontier_candidate.get("target_label") or target_label
+        if branch and not frontier_candidate:
             branch, target_type, target_label = choose_non_redundant_code_detail_target(
                 branches=branches,
                 current_stage=current_stage,
@@ -397,12 +409,30 @@ def plan_next_question(
             "human_review_applied": False,
             "decomposition_mode": "none",
             "subquestion_specs": [],
+            "developer_intent": infer_default_developer_intent(
+                target_type=target_type,
+                target_label=target_label,
+            ),
+            "relation_type": "topic_shift" if is_rebalanced else "same_artifact",
             "validation_constraints": [
                 "must be implementation-specific",
                 f"must stay in {agent_mode}",
                 "must reference a concrete artifact or execution path",
             ],
         }
+        if frontier_candidate:
+            planner_decision["source_node_id"] = frontier_candidate.get("source_node_id")
+            planner_decision["relation_type"] = frontier_candidate.get("relation_type")
+            planner_decision["developer_intent"] = frontier_candidate.get("developer_intent")
+            planner_decision["depth_kind"] = frontier_candidate.get("depth_kind")
+            planner_decision["breadth_kind"] = frontier_candidate.get("breadth_kind")
+            planner_decision["frontier_rank"] = 1
+            planner_decision["retrieval_focus"] = (
+                "connected frontier first, then unresolved implementation gaps and repository balancing"
+            )
+            planner_decision["constraints"].append(
+                "Prefer a connected continuation from the current investigation thread before opening an isolated new artifact."
+            )
 
         # Topic Transition Logic
         last_turn = recent_question_history[-1] if recent_question_history else None
@@ -423,6 +453,7 @@ def plan_next_question(
             target_label=target_label,
             recent_question_history=recent_question_history,
             is_rebalanced=is_rebalanced,
+            frontier_candidate=frontier_candidate,
         )
         subquestion_specs = build_code_detail_subquestion_specs(
             branch=branch,
@@ -761,18 +792,94 @@ def choose_non_redundant_code_detail_target(
     return fallback_branch, fallback_target_type, fallback_target_label
 
 
+def choose_graph_frontier_candidate(
+    *,
+    current_stage: str,
+    coverage_state: dict[str, Any],
+    recent_question_history: list[dict[str, Any]],
+) -> dict[str, Any] | None:
+    if current_stage != CODE_DETAIL_STAGE:
+        return None
+
+    frontier_items = coverage_state.get("investigation_frontier", {}).get("items", [])
+    developer_intent_coverage = coverage_state.get("developer_intent_coverage", {})
+    if not frontier_items:
+        return None
+
+    latest_turn_no = recent_question_history[-1].get("turn_no") if recent_question_history else None
+    active_node_id = f"turn-{latest_turn_no}" if latest_turn_no else None
+    ranked: list[tuple[float, dict[str, Any]]] = []
+    for item in frontier_items:
+        if not isinstance(item, dict):
+            continue
+        score = float(item.get("priority", 0.0))
+        if active_node_id and item.get("source_node_id") == active_node_id:
+            score += 0.35
+        relation_type = str(item.get("relation_type") or "")
+        if relation_type == "same_artifact":
+            score += 0.45
+        elif relation_type in {"downstream_of", "upstream_of", "same_concept"}:
+            score += 0.2
+        depth_kind = str(item.get("depth_kind") or "")
+        if depth_kind == "deep":
+            score += 0.3
+        developer_intent = str(item.get("developer_intent") or "")
+        if developer_intent in {"investigate_failure", "follow_state_change", "trace_execution"}:
+            score += 0.12
+        if settings.developer_intent_balancing_enabled:
+            score += developer_intent_undercoverage_bonus(
+                developer_intent, developer_intent_coverage
+            )
+        ranked.append((score, item))
+
+    if not ranked:
+        return None
+
+    ranked.sort(key=lambda pair: pair[0], reverse=True)
+    selected = dict(ranked[0][1])
+    selected["_rank_score"] = round(ranked[0][0], 3)
+    return selected
+
+
+def infer_default_developer_intent(*, target_type: str, target_label: str) -> str:
+    normalized_target = str(target_label or "").lower()
+    if target_type == "execution_path" or any(
+        marker in normalized_target for marker in ("path", "flow", "chain", "handoff")
+    ):
+        return "trace_execution"
+    if any(marker in normalized_target for marker in ("error", "retry", "fallback", "exception")):
+        return "investigate_failure"
+    if target_type in {"file", "class", "method"}:
+        return "understand_responsibility"
+    return "trace_execution"
+
+
 def build_code_detail_why_text(
     *,
     target_type: str,
     target_label: str,
     recent_question_history: list[dict[str, Any]],
     is_rebalanced: bool = False,
+    frontier_candidate: dict[str, Any] | None = None,
 ) -> str:
     recent_targets = {
         normalize_target_label(str(item.get("target_label", "")))
         for item in recent_question_history[-4:]
     }
     normalized_target = normalize_target_label(target_label)
+    if frontier_candidate:
+        relation_type = str(frontier_candidate.get("relation_type") or "connected_to")
+        developer_intent = str(frontier_candidate.get("developer_intent") or "").strip()
+        if developer_intent:
+            return (
+                f"This target was chosen from the connected frontier to keep the investigation thread coherent, "
+                f"following the {relation_type} link toward the concrete {target_type} '{target_label}' "
+                f"while balancing the under-covered developer-intent '{developer_intent}'."
+            )
+        return (
+            f"This target was chosen from the connected frontier to keep the investigation thread coherent, "
+            f"following the {relation_type} link toward the concrete {target_type} '{target_label}'."
+        )
     if is_rebalanced:
         return (
             f"This target was chosen as part of a coverage rebalancing strategy to ensure the interview "

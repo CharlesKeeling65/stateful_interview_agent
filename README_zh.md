@@ -111,6 +111,24 @@ Stateful Interview Agent 是一个本地全栈应用，用于针对目标仓库�
 - 对齐了 code-detail prompt、validator 和 postprocessor：用户永远只看到单题，多轮追问由系统内部 queue 管理。
 - 当前问题重写继续沿用 `/next` 的 planner / validator 体系，而不是走一条独立旁路。
 - Debug 与 analytics 面板现在可以直接查看 queue 状态、文件覆盖摘要、planner reasoning 和 next-context。
+- 问题规划不再只基于 branch，而是显式构建 `question_graph` 和 `investigation_frontier`，沿着父子、同级、上下游、同概念关系继续追问，减少孤立问题。
+- 系统开始跟踪真实开发者式的提问意图分布，例如 `trace_execution`、`investigate_failure`、`inspect_inputs_outputs`、`follow_state_change`，并用 under-coverage 压力避免角度单一。
+- Debug API 和 analytics 现在会直接暴露网络退化诊断，例如孤立问题比例、重复开头簇、frontier 枯竭、intent collapse 和 degradation reasons。
+
+## 问题网络模型
+
+当前 code-detail 系统不再把长访谈视为线性问答列表，而是维护一个轻量级问题网络：
+
+- `question_graph`
+  保存已回答问题节点，以及由 artifact 延续、follow-up cue 和同概念迁移推导出的边。
+- `investigation_frontier`
+  保存待展开的后续候选，包含 `parent_node_id`、`relation_type`、`developer_intent`、`depth_kind` 和 breadth 元数据。
+- `developer_intent_coverage`
+  记录当前访谈是否过度集中在单一提问意图，是否遗漏其他高价值开发者视角。
+- `question_network_stats`
+  统计连通性、breadth/depth transition、intent diversity、dominant intent ratio、重复开头簇，以及相关诊断指标。
+
+这个网络主要服务内部规划、检索、校验和调试。产品层交互契约不变：用户每轮仍只看到一个问题。
 
 ## 功能概览
 
@@ -247,7 +265,18 @@ LOG_LLM_PAYLOADS=true
 LOG_ARTIFACTS_ENABLED=false
 LOG_PRETTY_JSON=false
 LOG_TEXT_PREVIEW_CHARS=240
+QUESTION_GRAPH_ENABLED=true
+GRAPH_FRONTIER_PLANNING_ENABLED=true
+DEVELOPER_INTENT_BALANCING_ENABLED=true
+GRAPH_CONTINUITY_VALIDATION_ENABLED=true
 ```
+
+问题网络层相关 feature flag：
+
+- `QUESTION_GRAPH_ENABLED`：是否在 `coverage_state` 中重建问题图、frontier、intent coverage 和 network stats。
+- `GRAPH_FRONTIER_PLANNING_ENABLED`：是否让 planner 在 code-detail 阶段优先选择 connected frontier。
+- `DEVELOPER_INTENT_BALANCING_ENABLED`：是否根据 intent under-coverage 给 frontier 排名加权，减少角度单一。
+- `GRAPH_CONTINUITY_VALIDATION_ENABLED`：是否要求 code-detail 问题携带 `developer_intent` 和 `relation_type` 等图状连续性元数据。
 
 ### 4. 启动后端
 
@@ -310,6 +339,23 @@ uv run python .\main.py
 3. 在 UI 中创建项目，必要时配置 repository grounding。
 4. 一边修改后端编排逻辑，一边用 debug routes 和 run trace 观察 planner / coverage / queue 是否符合预期。
 5. 提交前跑针对性的 backend unittest，以及 frontend test / build。
+
+如果重点在排查问题质量和网络连续性，最有价值的观测面有三处：
+
+- `/debug/projects/{project_id}/state`
+  一次性查看 `question_graph`、`investigation_frontier`、`developer_intent_coverage`、queue 状态和 repository coverage。
+- `/debug/projects/{project_id}/question-network-summary`
+  查看 `connected_ratio`、`frontier_count`、`repeat_opening_clusters`、`top_intents`、`undercovered_intents`、`top_relation_types`、`diagnostic_flags` 和 `degradation_reasons`。
+- Analytics UI
+  直接查看 `Question network` 面板中的孤立问题数、frontier 健康度、intent 分布、relation mix 和网络诊断，而不需要手读 JSON。
+
+图状规划开启后，可以重点关注这些成功指标：
+
+- `isolated_node_count` 是否持续偏低
+- 深入 code-detail 时 `frontier_count` 是否保持非零
+- 是否出现多个开发者意图，而不是被单一意图主导
+- `repeat_opening_clusters` 是否被控制住
+- 是否同时存在 breadth 和 depth 的扩展，而不是反复围着同一文件打转
 
 常用命令：
 
@@ -398,6 +444,10 @@ dist/StatefulInterviewAgent/
 - `INTERVIEW_CODE_DETAIL_MIN_TURNS`：代码细节阶段最少轮次。
 - `INTERVIEW_CODE_DETAIL_MAX_TURNS`：代码细节阶段最多轮次。
 - `INTERVIEW_USE_CASE_TURNS`：用例阶段显式轮次配置。
+- `QUESTION_GRAPH_ENABLED`：是否启用问题图、frontier 和网络诊断重建。
+- `GRAPH_FRONTIER_PLANNING_ENABLED`：是否启用 graph frontier 驱动的 code-detail 规划。
+- `DEVELOPER_INTENT_BALANCING_ENABLED`：是否启用 developer intent under-coverage 加权。
+- `GRAPH_CONTINUITY_VALIDATION_ENABLED`：是否要求 code-detail 问题携带图状连续性元数据。
 - `DATABASE_URL`：数据库连接串。
 - `LOG_LEVEL`：日志级别。
 - `LOG_DIR`：日志目录。

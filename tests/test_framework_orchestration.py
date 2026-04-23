@@ -4,14 +4,18 @@ from unittest.mock import patch
 
 os.environ.setdefault("OPENAI_API_KEY", "test-key")
 
+from app.core.config import settings
 from app.models.project import ProjectSession
 from app.models.turn import InterviewTurn
 from app.services.coverage_service import rebuild_coverage_state, load_coverage_state
 from app.services.question_planner import plan_next_question
+from app.services.question_reviewer import review_question_plan
 from app.services.repetition_guard import is_question_semantically_redundant
 from app.services.question_validator import validate_question_for_stage, validate_queued_sub_questions
+from app.services.rubric_task_service import initialize_task_board
 from app.services.stage_manager import decide_next_stage
 from app.services.question_queue_service import (
+    build_queue_from_specs,
     detect_compound_question_candidate,
     decompose_code_detail_question_group,
     normalize_sub_question_text,
@@ -27,6 +31,10 @@ class FrameworkCoverageTests(unittest.TestCase):
         self.assertIn("question_queue", coverage)
         self.assertIn("repo_file_coverage", coverage)
         self.assertIn("repo_tree_summary", coverage)
+        self.assertIn("question_graph", coverage)
+        self.assertIn("investigation_frontier", coverage)
+        self.assertIn("developer_intent_coverage", coverage)
+        self.assertIn("question_network_stats", coverage)
 
     def test_load_coverage_state_migrates_to_v3(self):
         project = ProjectSession(id=1, project_name="Test")
@@ -37,6 +45,88 @@ class FrameworkCoverageTests(unittest.TestCase):
         self.assertEqual(coverage["question_queue"]["status"], "empty")
         self.assertEqual(coverage["repo_file_coverage"], {})
         self.assertEqual(coverage["repo_tree_summary"], {})
+        self.assertEqual(coverage["question_graph"]["nodes"], [])
+        self.assertEqual(coverage["question_graph"]["edges"], [])
+        self.assertEqual(coverage["investigation_frontier"]["items"], [])
+        self.assertIn("trace_execution", coverage["developer_intent_coverage"])
+        self.assertEqual(coverage["question_network_stats"]["isolated_node_count"], 0)
+
+    def test_rebuild_coverage_state_creates_question_graph_nodes_edges_and_frontier(self):
+        turns = [
+            InterviewTurn(
+                id=1,
+                turn_no=3,
+                stage="Code Detail Completion",
+                question_text="Q3: In app/api/routes/projects.py, how does submit_answer_and_generate_next hand off into generate_question_for_state?",
+                answer_text=(
+                    "submit_answer_and_generate_next forwards the request into generate_question_for_state, "
+                    "which rebuilds coverage, plans the next topic, and then grounds the prompt with repository context. "
+                    "The follow-up gap is how the planner chooses the next target once coverage has been rebuilt."
+                ),
+                answer_summary=(
+                    "The route hands off to generate_question_for_state and then into planner and repo grounding. "
+                    "The planner target selection remains unresolved."
+                ),
+            ),
+            InterviewTurn(
+                id=2,
+                turn_no=4,
+                stage="Code Detail Completion",
+                question_text="Q4: When generate_question_for_state rebuilds coverage, how does that affect the next planner target?",
+                answer_text=(
+                    "rebuild_coverage_state updates question_history and repository coverage scores. "
+                    "That state then feeds plan_next_question. It is still unclear how neighboring files or downstream modules are considered."
+                ),
+                answer_summary=(
+                    "Coverage state is rebuilt before plan_next_question runs. "
+                    "Neighboring module expansion is still unclear."
+                ),
+            ),
+        ]
+
+        coverage = rebuild_coverage_state(turns)
+
+        self.assertGreaterEqual(len(coverage["question_graph"]["nodes"]), 2)
+        self.assertGreaterEqual(len(coverage["question_graph"]["edges"]), 1)
+        self.assertGreaterEqual(len(coverage["investigation_frontier"]["items"]), 1)
+
+        latest_node = coverage["question_graph"]["nodes"][-1]
+        self.assertEqual(latest_node["turn_no"], 4)
+        self.assertIn("artifact_keys", latest_node)
+        self.assertIn("intent_type", latest_node)
+        self.assertIn("depth_level", latest_node)
+
+        latest_edge = coverage["question_graph"]["edges"][-1]
+        self.assertIn(latest_edge["relation_type"], {"follows_from", "same_artifact", "same_concept"})
+        self.assertTrue(latest_edge["from_node_id"])
+        self.assertTrue(latest_edge["to_node_id"])
+
+    def test_rebuild_coverage_state_tracks_developer_intent_distribution_and_network_stats(self):
+        turns = [
+            InterviewTurn(
+                id=11,
+                turn_no=8,
+                stage="Code Detail Completion",
+                question_text="Q8: In app/services/question_generator.py, how does generate_next_question_from_history build the current prompt?",
+                answer_text="It builds the prompt from recent context and retrieved context before the model call.",
+                answer_summary="Prompt construction path is covered.",
+            ),
+            InterviewTurn(
+                id=12,
+                turn_no=9,
+                stage="Code Detail Completion",
+                question_text="Q9: When that prompt fails to produce a usable result, how does the current error path recover?",
+                answer_text="Validation and local repair run first, and then the fallback refiner handles repairable issues.",
+                answer_summary="Failure handling and fallback behavior are covered.",
+            ),
+        ]
+
+        coverage = rebuild_coverage_state(turns)
+
+        self.assertGreaterEqual(coverage["developer_intent_coverage"]["trace_execution"], 1)
+        self.assertGreaterEqual(coverage["developer_intent_coverage"]["investigate_failure"], 1)
+        self.assertGreaterEqual(coverage["question_network_stats"]["connected_edge_count"], 1)
+        self.assertEqual(coverage["question_network_stats"]["isolated_node_count"], 0)
 
     def test_rebuild_coverage_state_tracks_framework_targets_and_code_detail_counts(self):
         turns = [
@@ -120,6 +210,19 @@ class FrameworkCoverageTests(unittest.TestCase):
         self.assertGreaterEqual(framework["use_cases"]["input_output_patterns_count"], 1)
         self.assertGreaterEqual(framework["use_cases"]["boundary_conditions_count"], 1)
         self.assertGreaterEqual(framework["use_cases"]["extension_points_count"], 1)
+
+    def test_validator_can_skip_graph_continuity_requirements_when_flag_disabled(self):
+        with patch.object(settings, "graph_continuity_validation_enabled", False, create=True):
+            result = validate_question_for_stage(
+                text="Q6: In app/services/question_generator.py, how does generate_next_question_from_history build the current prompt?",
+                expected_turn_no=6,
+                current_stage="Code Detail Completion",
+                recent_question_signatures=[],
+                developer_intent=None,
+                relation_type=None,
+            )
+
+        self.assertTrue(result["is_valid"], result["reasons"])
 
 
 class StageControllerTests(unittest.TestCase):
@@ -687,6 +790,41 @@ class QuestionQueueTests(unittest.TestCase):
         self.assertEqual(renumbered[0].question_text, "Q8: First question?")
         self.assertEqual(renumbered[1].question_text, "Q9: Second question?")
 
+    def test_build_queue_from_specs_preserves_relation_metadata(self):
+        queued = build_queue_from_specs(
+            [
+                {
+                    "focus_kind": "error_path",
+                    "target_type": "file",
+                    "target_label": "app/services/question_generator.py",
+                    "relation_type": "same_artifact",
+                    "developer_intent": "investigate_failure",
+                    "parent_node_id": "turn-12",
+                    "priority_score": 0.91,
+                },
+                {
+                    "focus_kind": "library_usage",
+                    "target_type": "file",
+                    "target_label": "app/services/question_generator.py",
+                    "relation_type": "downstream_of",
+                    "developer_intent": "check_dependency_usage",
+                    "parent_node_id": "turn-12",
+                    "priority_score": 0.67,
+                },
+            ],
+            base_turn_no=13,
+            intent="code_detail_deep_dive",
+            target_branch_id="generator-thread",
+            target_type="file",
+            target_label="app/services/question_generator.py",
+            seed_question_text="Q12: In app/services/question_generator.py, how does generate_next_question_from_history build the current prompt?",
+        )
+        self.assertEqual(queued[0].parent_node_id, "turn-12")
+        self.assertEqual(queued[0].relation_type, "same_artifact")
+        self.assertEqual(queued[0].developer_intent, "investigate_failure")
+        self.assertEqual(queued[0].priority_score, 0.91)
+        self.assertTrue(queued[0].node_id)
+
     def test_validate_queued_sub_questions(self):
         reasons = validate_queued_sub_questions([
             "Q12: How does auth.py handle missing tokens?",  # Valid
@@ -923,11 +1061,101 @@ class PlannerAndValidatorTests(unittest.TestCase):
             expected_turn_no=11,
             current_stage="Code Detail Completion",
             intent_mode="understand_current_code",
+            developer_intent="trace_execution",
+            relation_type="same_artifact",
         )
 
         self.assertFalse(invalid["is_valid"])
         self.assertTrue(valid["is_valid"])
         self.assertTrue(invalid["reasons"])
+
+    def test_stage_validator_rejects_code_detail_question_without_intent_or_graph_linkage(self):
+        invalid = validate_question_for_stage(
+            text="Q11: In app/services/question_generator.py, how does generate_next_question_from_history currently work?",
+            expected_turn_no=11,
+            current_stage="Code Detail Completion",
+            intent_mode="understand_current_code",
+            developer_intent=None,
+            relation_type=None,
+        )
+        valid = validate_question_for_stage(
+            text="Q11: In app/services/question_generator.py, how does generate_next_question_from_history currently handle the validator handoff?",
+            expected_turn_no=11,
+            current_stage="Code Detail Completion",
+            intent_mode="understand_current_code",
+            developer_intent="trace_execution",
+            relation_type="same_artifact",
+        )
+
+        self.assertFalse(invalid["is_valid"])
+        self.assertTrue(any("developer intent" in reason.lower() or "graph linkage" in reason.lower() for reason in invalid["reasons"]))
+        self.assertTrue(valid["is_valid"])
+
+    def test_reviewer_flags_plan_without_developer_intent(self):
+        review = review_question_plan(
+            planner_decision={
+                "question_intent": "code_detail_deep_dive",
+                "target_label": "app/services/question_generator.py",
+                "target_type": "file",
+                "relation_type": None,
+                "developer_intent": None,
+                "confidence": 0.72,
+                "intent_mode": "understand_current_code",
+            },
+            mode="understand_current_code",
+            task_board=initialize_task_board(),
+            coverage_state={"framework": {"wrap_up_ready": False}},
+            current_stage="Code Detail Completion",
+        )
+
+        self.assertTrue(review.approved)
+        self.assertTrue(any("developer intent" in item.lower() for item in review.suggested_modifications))
+
+    def test_reviewer_surfaces_network_degradation_diagnostics(self):
+        review = review_question_plan(
+            planner_decision={
+                "question_intent": "code_detail_deep_dive",
+                "target_label": "app/services/question_generator.py",
+                "target_type": "file",
+                "relation_type": "same_artifact",
+                "developer_intent": "trace_execution",
+                "confidence": 0.82,
+                "intent_mode": "understand_current_code",
+            },
+            mode="understand_current_code",
+            task_board=initialize_task_board(),
+            coverage_state={
+                "framework": {"wrap_up_ready": False},
+                "question_network_stats": {
+                    "node_count": 6,
+                    "connected_edge_count": 2,
+                    "isolated_node_count": 3,
+                },
+                "developer_intent_coverage": {
+                    "trace_execution": 5,
+                    "investigate_failure": 0,
+                    "inspect_inputs_outputs": 0,
+                },
+                "question_history": [
+                    {
+                        "turn_no": 8,
+                        "stage": "Code Detail Completion",
+                        "question_text": "Q8: How does retry logic handle timeout escalation?",
+                    },
+                    {
+                        "turn_no": 9,
+                        "stage": "Code Detail Completion",
+                        "question_text": "Q9: How does retry logic handle retry backoff?",
+                    },
+                ],
+                "investigation_frontier": {"items": []},
+            },
+            current_stage="Code Detail Completion",
+        )
+
+        self.assertTrue(review.approved)
+        self.assertTrue(any("isolated" in item.lower() for item in review.suggested_modifications))
+        self.assertTrue(any("intent" in item.lower() for item in review.suggested_modifications))
 
     def test_question_planner_prefers_macro_panorama_gap_before_local_branch(self):
         coverage_state = {
@@ -1049,6 +1277,8 @@ class PlannerAndValidatorTests(unittest.TestCase):
             expected_turn_no=12,
             current_stage="Code Detail Completion",
             intent_mode="understand_current_code",
+            developer_intent="trace_execution",
+            relation_type="same_artifact",
         )
 
         self.assertFalse(invalid["is_valid"])
@@ -1063,6 +1293,8 @@ class PlannerAndValidatorTests(unittest.TestCase):
             expected_turn_no=18,
             current_stage="Code Detail Completion",
             intent_mode="understand_current_code",
+            developer_intent="trace_execution",
+            relation_type="same_artifact",
             recent_question_signatures=[
                 {
                     "turn_no": 17,
@@ -1079,6 +1311,41 @@ class PlannerAndValidatorTests(unittest.TestCase):
 
         self.assertFalse(invalid["is_valid"])
         self.assertTrue(any("similar" in reason.lower() or "already" in reason.lower() for reason in invalid["reasons"]))
+
+    def test_stage_validator_rejects_repeated_question_opening_pattern(self):
+        invalid = validate_question_for_stage(
+            text="Q19: In app/services/question_generator.py, how does generate_next_question_from_history handle retry recovery?",
+            expected_turn_no=19,
+            current_stage="Code Detail Completion",
+            intent_mode="understand_current_code",
+            developer_intent="investigate_failure",
+            relation_type="same_artifact",
+            recent_question_signatures=[
+                {
+                    "turn_no": 17,
+                    "stage": "Code Detail Completion",
+                    "intent": "code_detail_deep_dive",
+                    "branch_id": "question_generator",
+                    "target_type": "file",
+                    "target_label": "app/services/question_generator.py",
+                    "signature": "s1",
+                    "question_text": "Q17: In app/services/question_generator.py, how does generate_next_question_from_history build the prompt?",
+                },
+                {
+                    "turn_no": 18,
+                    "stage": "Code Detail Completion",
+                    "intent": "code_detail_deep_dive",
+                    "branch_id": "question_generator",
+                    "target_type": "file",
+                    "target_label": "app/services/question_generator.py",
+                    "signature": "s2",
+                    "question_text": "Q18: In app/services/question_generator.py, how does generate_next_question_from_history validate the repaired question?",
+                },
+            ],
+        )
+
+        self.assertFalse(invalid["is_valid"])
+        self.assertTrue(any("opening pattern" in reason.lower() for reason in invalid["reasons"]))
 
     def test_semantic_duplicate_guard_can_use_optional_embeddings(self):
         with patch("app.services.repetition_guard.settings.duplicate_guard_use_embeddings", True), patch(

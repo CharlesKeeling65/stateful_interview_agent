@@ -111,6 +111,24 @@ Recent repository changes have focused on making long interviews cheaper, more i
 - The code-detail prompt, validator, and postprocessor are now aligned around one visible question per turn.
 - Current-question regeneration reuses the same planner / validator stack as `/next`, so manual correction stays consistent with the main workflow.
 - Run-trace and debug surfaces expose queue state, file-coverage summaries, planner reasoning, and next-question context assembly.
+- Question planning is now graph-aware: answered code-detail turns form a `question_graph`, open next-step candidates are held in an `investigation_frontier`, and planning can follow parent/sibling/upstream/downstream links instead of generating isolated prompts.
+- Developer-intent balancing tracks real programmer investigation modes such as `trace_execution`, `investigate_failure`, `inspect_inputs_outputs`, and `follow_state_change`, then uses under-coverage pressure to avoid repetitive questioning angles.
+- Network diagnostics now surface isolated-question ratio, repeated opening clusters, frontier depletion, intent collapse, and degradation reasons in both debug APIs and the analytics UI.
+
+## Question Network Model
+
+The code-detail system now treats long investigations as a lightweight question network instead of a flat list of unrelated turns:
+
+- `question_graph`
+  Stores answered question nodes plus graph edges derived from artifact continuity, follow-up cues, and same-concept transitions.
+- `investigation_frontier`
+  Stores ranked next-step candidates with `parent_node_id`, `relation_type`, `developer_intent`, `depth_kind`, and breadth metadata.
+- `developer_intent_coverage`
+  Tracks whether the interview is overusing one style of question and under-covering other high-value developer intents.
+- `question_network_stats`
+  Computes connectivity, breadth/depth transitions, intent diversity, dominant intent ratio, repeated opening clusters, and related diagnostics.
+
+This remains an internal planning surface. The product contract is unchanged: the operator still sees exactly one visible question per turn.
 
 ## Feature Summary
 
@@ -247,7 +265,18 @@ LOG_LLM_PAYLOADS=true
 LOG_ARTIFACTS_ENABLED=false
 LOG_PRETTY_JSON=false
 LOG_TEXT_PREVIEW_CHARS=240
+QUESTION_GRAPH_ENABLED=true
+GRAPH_FRONTIER_PLANNING_ENABLED=true
+DEVELOPER_INTENT_BALANCING_ENABLED=true
+GRAPH_CONTINUITY_VALIDATION_ENABLED=true
 ```
+
+Feature flags for the question-network layer:
+
+- `QUESTION_GRAPH_ENABLED`: rebuild graph/frontier/intent/network stats inside `coverage_state`.
+- `GRAPH_FRONTIER_PLANNING_ENABLED`: let the planner prefer connected frontier candidates before older branch/file heuristics.
+- `DEVELOPER_INTENT_BALANCING_ENABLED`: apply under-coverage pressure so planning rotates across developer-like question intents.
+- `GRAPH_CONTINUITY_VALIDATION_ENABLED`: require code-detail questions to carry graph-linkage metadata such as `developer_intent` and `relation_type`.
 
 ### 4. Start the backend
 
@@ -320,6 +349,23 @@ A practical local workflow for this repository is:
 3. Create a project in the UI, optionally attach repository context, and use the debug routes to inspect coverage and planner behavior while iterating.
 4. Run targeted backend tests for orchestration logic and frontend tests or builds for UI changes.
 5. Use run traces plus debug endpoints for workflow inspection, and use JSONL logs for backend-level debugging.
+
+When debugging question quality, the highest-signal surfaces are:
+
+- `/debug/projects/{project_id}/state`
+  Inspect `question_graph`, `investigation_frontier`, `developer_intent_coverage`, queue state, and repository coverage in one snapshot.
+- `/debug/projects/{project_id}/question-network-summary`
+  Inspect `connected_ratio`, `frontier_count`, `repeat_opening_clusters`, `top_intents`, `undercovered_intents`, `top_relation_types`, `diagnostic_flags`, and `degradation_reasons`.
+- Analytics UI
+  Inspect the `Question network` panel for isolated-question count, frontier health, top intents, relation mix, and network diagnostics without reading raw JSON.
+
+Useful success metrics after graph-aware planning is enabled:
+
+- low isolated-question count relative to node count
+- sustained non-zero frontier count during deep code-detail work
+- multiple developer intents represented instead of one dominant angle
+- repeated opening clusters kept under control
+- visible breadth and depth transitions across related artifacts rather than repetitive same-file loops
 
 Useful commands:
 
@@ -457,6 +503,10 @@ Defined in [app/core/config.py](app/core/config.py).
 - `INTERVIEW_CODE_DETAIL_MIN_TURNS`: explicit lower bound for code-detail turns.
 - `INTERVIEW_CODE_DETAIL_MAX_TURNS`: explicit upper bound for code-detail turns.
 - `INTERVIEW_USE_CASE_TURNS`: explicit use-case-stage turn budget.
+- `QUESTION_GRAPH_ENABLED`: enable graph reconstruction and network diagnostics in `coverage_state`.
+- `GRAPH_FRONTIER_PLANNING_ENABLED`: enable graph-frontier ranking during code-detail planning.
+- `DEVELOPER_INTENT_BALANCING_ENABLED`: enable intent under-coverage bonuses during frontier ranking.
+- `GRAPH_CONTINUITY_VALIDATION_ENABLED`: require graph metadata on code-detail questions.
 - `DATABASE_URL`: SQLAlchemy database URL.
 - `LOG_LEVEL`: backend log level.
 - `LOG_DIR`: log root directory.

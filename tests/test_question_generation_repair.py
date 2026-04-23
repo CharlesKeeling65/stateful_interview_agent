@@ -140,6 +140,21 @@ class QuestionGenerationRepairTests(unittest.TestCase):
             "Q8: How does app/services/question_generator.py handle retries?",
         )
 
+    def test_repair_question_locally_varies_repeated_how_does_opening(self):
+        repaired = repair_question_locally(
+            "Q9: In app/services/question_generator.py, how does generate_next_question_from_history handle retry recovery?",
+            reasons=[
+                "Avoid repeating the same question opening pattern across consecutive code-detail turns.",
+            ],
+            expected_turn_no=9,
+            current_stage="Code Detail Completion",
+        )
+
+        self.assertEqual(
+            repaired,
+            "Q9: Where in app/services/question_generator.py is retry recovery handled?",
+        )
+
 
 if __name__ == "__main__":
     unittest.main()

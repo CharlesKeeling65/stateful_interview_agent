@@ -1,10 +1,13 @@
 import os
 import unittest
+from pathlib import Path
 
 os.environ.setdefault("OPENAI_API_KEY", "test-key")
 
 from app.models.turn import InterviewTurn
 from app.services.context_engineering import build_generation_context
+from app.services.repo_grounding_service import derive_repository_queries
+from app.services.repository_service import RepositoryWorkspace
 
 
 class ContextEngineeringTests(unittest.TestCase):
@@ -205,6 +208,141 @@ class ContextEngineeringTests(unittest.TestCase):
 
         self.assertNotIn("question_generator", result["selected_branch_ids"][:1])
         self.assertIn("persist_step", result["selected_branch_ids"])
+
+    def test_context_builder_surfaces_active_lineage_and_neighbor_topics_from_question_graph(self):
+        turns = [
+            InterviewTurn(
+                id=1,
+                turn_no=12,
+                stage="Code Detail Completion",
+                question_text="Q12: In app/services/question_generator.py, how does generate_next_question_from_history build the current prompt?",
+                answer_text="It builds the prompt from recent context and repo-grounded evidence before the model call.",
+                answer_summary="Prompt construction is covered, but error handling and downstream validator interaction remain unclear.",
+            ),
+            InterviewTurn(
+                id=2,
+                turn_no=13,
+                stage="Code Detail Completion",
+                question_text="Q13: Pending question",
+                answer_text=None,
+            ),
+        ]
+
+        coverage_state = {
+            "branches": [],
+            "question_graph": {
+                "nodes": [
+                    {
+                        "node_id": "turn-11",
+                        "turn_no": 11,
+                        "stage": "Code Detail Completion",
+                        "question_text": "Q11: In app/graphs/interview_nodes.py, how does the route hand off to question generation?",
+                        "target_label": "app/graphs/interview_nodes.py",
+                        "artifact_keys": ["app/graphs/interview_nodes.py"],
+                        "intent_type": "trace_execution",
+                        "depth_level": "medium",
+                        "status": "covered",
+                        "unresolved_points": [],
+                    },
+                    {
+                        "node_id": "turn-12",
+                        "turn_no": 12,
+                        "stage": "Code Detail Completion",
+                        "question_text": turns[0].question_text,
+                        "target_label": "app/services/question_generator.py",
+                        "artifact_keys": ["app/services/question_generator.py", "generate_next_question_from_history"],
+                        "intent_type": "trace_execution",
+                        "depth_level": "medium",
+                        "status": "needs_follow_up",
+                        "unresolved_points": ["The validator handoff is still unclear."],
+                    },
+                    {
+                        "node_id": "node-validator",
+                        "turn_no": 12,
+                        "stage": "Code Detail Completion",
+                        "question_text": "Potential next hop into validator",
+                        "target_label": "app/services/question_validator.py",
+                        "artifact_keys": ["app/services/question_validator.py"],
+                        "intent_type": "connect_related_module",
+                        "depth_level": "deep",
+                        "status": "needs_follow_up",
+                        "unresolved_points": ["Need the validator edge-case path."],
+                    },
+                ],
+                "edges": [
+                    {"from_node_id": "turn-11", "to_node_id": "turn-12", "relation_type": "downstream_of"},
+                    {"from_node_id": "turn-12", "to_node_id": "node-validator", "relation_type": "downstream_of"},
+                ],
+            },
+            "investigation_frontier": {
+                "items": [
+                    {
+                        "source_node_id": "turn-12",
+                        "label": "Follow the validator side of the same flow.",
+                        "priority": 0.82,
+                        "target_label": "app/services/question_validator.py",
+                        "relation_type": "downstream_of",
+                    }
+                ]
+            },
+        }
+
+        result = build_generation_context(
+            turns=turns,
+            current_stage="Code Detail Completion",
+            next_turn_no=14,
+            latest_answer_override="The latest answer explains prompt construction but not the validator handoff.",
+            coverage_state=coverage_state,
+        )
+
+        self.assertIn("Active investigation thread:", result["context_text"])
+        self.assertIn("Lineage context:", result["context_text"])
+        self.assertIn("Neighbor topics:", result["context_text"])
+        self.assertIn("turn-12", result["context_text"])
+        self.assertIn("app/services/question_validator.py", result["context_text"])
+        self.assertIn("Follow the validator side of the same flow.", result["context_text"])
+
+    def test_derive_repository_queries_uses_graph_neighbors_and_frontier_metadata(self):
+        workspace = RepositoryWorkspace(
+            source_type="local_path",
+            source_label="repo",
+            root_path=Path("/tmp/repo"),
+            commit_sha="abc123",
+            cache_path=None,
+            manifest={"key_files": ["app/services/question_generator.py", "app/services/question_validator.py"]},
+        )
+
+        queries = derive_repository_queries(
+            planner_decision={
+                "target_label": "app/services/question_generator.py",
+                "question_intent": "code_detail_deep_dive",
+                "source_node_id": "turn-12",
+                "parent_node_id": "turn-11",
+                "neighbor_targets": [
+                    "app/services/question_validator.py",
+                    "generate_next_question_from_history",
+                ],
+                "frontier_labels": [
+                    "validator handoff",
+                    "error path recovery",
+                ],
+            },
+            turns=[
+                InterviewTurn(
+                    id=1,
+                    turn_no=12,
+                    stage="Code Detail Completion",
+                    question_text="Q12: In app/services/question_generator.py, how does generate_next_question_from_history build the current prompt?",
+                    answer_text="It builds the prompt and then passes through validation.",
+                )
+            ],
+            latest_answer_override="The latest answer mentions validator handoff and error recovery.",
+            workspace=workspace,
+        )
+
+        self.assertIn("app/services/question_generator.py", queries)
+        self.assertIn("app/services/question_validator.py", queries)
+        self.assertIn("validator handoff", queries)
 
 
 if __name__ == "__main__":

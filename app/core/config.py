@@ -53,6 +53,10 @@ class Settings(BaseSettings):
     interview_code_detail_min_turns: int = 31
     interview_code_detail_max_turns: int = 32
     interview_use_case_turns: int = 2
+    question_graph_enabled: bool = True
+    graph_frontier_planning_enabled: bool = True
+    developer_intent_balancing_enabled: bool = True
+    graph_continuity_validation_enabled: bool = True
 
     database_url: str = "sqlite:///./data/app.db"
 

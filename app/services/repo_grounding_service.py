@@ -189,6 +189,16 @@ def derive_repository_queries(
         if value:
             raw_candidates.append(value)
 
+    for key in ("source_node_id", "parent_node_id"):
+        value = str(planner_decision.get(key) or "").strip()
+        if value:
+            raw_candidates.append(value)
+
+    for list_key in ("neighbor_targets", "frontier_labels", "artifact_keys"):
+        values = planner_decision.get(list_key) or []
+        if isinstance(values, list):
+            raw_candidates.extend(str(value).strip() for value in values if str(value).strip())
+
     human_review = planner_decision.get("human_review_signal") or {}
     for key in ("preferred_next_focus", "note"):
         value = str(human_review.get(key) or "").strip()

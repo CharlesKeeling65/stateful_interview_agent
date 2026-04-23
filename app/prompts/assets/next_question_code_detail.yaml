@@ -58,6 +58,8 @@ user_template: |
   21. Limit the question to 1-2 sentences. Use exactly one question mark.
   22. If jumping to a new file or module after finishing the current thread, acknowledge the shift briefly (e.g., "Moving to the database layer now...").
   23. Anchor your question on a specific detail from the user's last answer rather than picking a new target from scratch.
+  24. Keep the question connected to the active investigation thread. Prefer same-artifact depth, direct upstream/downstream neighbors, or an explicitly signaled topic shift.
+  25. Avoid repeating the same opening pattern across consecutive code-detail turns. If the last few questions started with "How does ...", vary the framing naturally.
 
 required_variables:
   - system_prompt

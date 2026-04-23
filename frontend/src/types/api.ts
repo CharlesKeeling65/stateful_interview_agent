@@ -432,6 +432,82 @@ export type QuestionHistoryDebug = {
   question_text: string
 }
 
+export type QuestionGraphNodeDebug = {
+  node_id: string
+  turn_no: number
+  stage: string
+  question_text: string
+  target_label: string
+  artifact_keys: string[]
+  intent_type: string
+  depth_level: string
+  status: string
+  unresolved_points: string[]
+}
+
+export type QuestionGraphEdgeDebug = {
+  from_node_id: string
+  to_node_id: string
+  relation_type: string
+}
+
+export type QuestionGraphDebug = {
+  nodes: QuestionGraphNodeDebug[]
+  edges: QuestionGraphEdgeDebug[]
+}
+
+export type InvestigationFrontierItemDebug = {
+  source_node_id: string
+  label: string
+  priority: number
+}
+
+export type InvestigationFrontierDebug = {
+  items: InvestigationFrontierItemDebug[]
+}
+
+export type QuestionNetworkStatsDebug = {
+  node_count: number
+  connected_edge_count: number
+  isolated_node_count: number
+  breadth_transition_count: number
+  depth_transition_count: number
+  developer_intent_count: number
+  dominant_intent_ratio: number
+}
+
+export type RelationCountDebug = {
+  relation_type: string
+  count: number
+}
+
+export type IntentCountDebug = {
+  intent: string
+  count: number
+}
+
+export type FrontierPreviewDebug = {
+  source_node_id: string
+  label: string
+  priority: number
+}
+
+export type QuestionNetworkSummaryDebug = {
+  node_count: number
+  connected_edge_count: number
+  isolated_node_count: number
+  connected_ratio: number
+  frontier_count: number
+  repeat_opening_clusters: number
+  health_status: string
+  diagnostic_flags: string[]
+  degradation_reasons: string[]
+  top_relation_types: RelationCountDebug[]
+  top_intents: IntentCountDebug[]
+  undercovered_intents: string[]
+  frontier_preview: FrontierPreviewDebug[]
+}
+
 export type CoverageDebugResponse = {
   version: number
   branch_count: number
@@ -442,6 +518,10 @@ export type CoverageDebugResponse = {
   question_queue: QuestionQueueDebug
   repo_file_coverage: Record<string, RepoFileCoverageDebug>
   repo_tree_summary: Record<string, unknown>
+  question_graph: QuestionGraphDebug
+  investigation_frontier: InvestigationFrontierDebug
+  developer_intent_coverage: Record<string, number>
+  question_network_stats: QuestionNetworkStatsDebug
 }
 
 export type QueueSummaryDebug = {

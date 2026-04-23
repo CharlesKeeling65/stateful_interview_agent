@@ -109,6 +109,15 @@ MAX_QUESTION_LENGTH = settings.max_question_length
 CODE_DETAIL_STAGE = "Code Detail Completion"
 
 
+def _extract_opening_pattern(text: str) -> str:
+    body = re.sub(r"^Q\d+[:.\s]+", "", text.strip(), flags=re.IGNORECASE).lower()
+    body = re.sub(r"^in\s+[^,?]+,\s*", "", body).strip()
+    for prefix in ("how does", "what does", "where does", "how do", "what role does"):
+        if body.startswith(prefix):
+            return prefix
+    return ""
+
+
 def looks_like_valid_question(text: str, expected_turn_no: int) -> bool:
     return validate_question_for_stage(
         text=text,
@@ -127,6 +136,8 @@ def validate_question_for_stage(
     recent_question_signatures: list[dict] | None = None,
     branch_id: str | None = None,
     agent_mode: str | None = None,
+    developer_intent: str | None = None,
+    relation_type: str | None = None,
 ) -> dict:
     text = text.strip()
     normalized = text.lower()
@@ -239,6 +250,26 @@ def validate_question_for_stage(
             )
         if any(marker in normalized for marker in CHANGE_PROPOSAL_MARKERS):
             reasons.append("Code-detail questions in understand mode must not drift into redesign or modification planning.")
+        if settings.graph_continuity_validation_enabled:
+            if not developer_intent:
+                reasons.append(
+                    "Code-detail questions must declare a developer intent so the investigation does not collapse into generic prompts."
+                )
+            if not relation_type:
+                reasons.append(
+                    "Code-detail questions must carry graph linkage metadata so they connect to the active investigation thread."
+                )
+        opening_pattern = _extract_opening_pattern(text)
+        if opening_pattern and recent_question_signatures:
+            repeated_openings = 0
+            for item in recent_question_signatures[-3:]:
+                previous_text = str(item.get("question_text", "")).strip()
+                if _extract_opening_pattern(previous_text) == opening_pattern:
+                    repeated_openings += 1
+            if repeated_openings >= 2:
+                reasons.append(
+                    "Avoid repeating the same question opening pattern across consecutive code-detail turns."
+                )
 
     elif current_stage == "Use Cases & Scenarios":
         if not any(marker in normalized for marker in USE_CASE_MARKERS):

@@ -174,9 +174,9 @@ def generate_question_for_state(
     )
 
     if should_use_queue:
-        next_item = question_queue["items"].pop(0)
-        from app.services.question_queue_service import renumber_sub_question_queue
-        question_queue["items"] = renumber_sub_question_queue(question_queue["items"], turn_no + 1)
+        from app.services.question_queue_service import pop_next_queue_item
+        next_item, remaining_items = pop_next_queue_item(question_queue["items"], turn_no)
+        question_queue["items"] = remaining_items
         if not question_queue["items"]:
             question_queue["status"] = "empty"
 
@@ -184,6 +184,11 @@ def generate_question_for_state(
         planner_decision["target_branch_id"] = next_item.get("target_branch_id", planner_decision.get("target_branch_id"))
         planner_decision["target_type"] = next_item.get("target_type", planner_decision.get("target_type"))
         planner_decision["target_label"] = next_item.get("target_label", planner_decision.get("target_label"))
+        planner_decision["node_id"] = next_item.get("node_id")
+        planner_decision["parent_node_id"] = next_item.get("parent_node_id")
+        planner_decision["relation_type"] = next_item.get("relation_type")
+        planner_decision["developer_intent"] = next_item.get("developer_intent")
+        planner_decision["priority_score"] = next_item.get("priority_score")
         
         planner_decision["generated_queue"] = question_queue
         next_question = next_item.get("question_text", "")
@@ -237,7 +242,23 @@ def generate_question_for_state(
                 question_queue["status"] = "active"
                 question_queue["parent_turn_no"] = turn_no
                 question_queue["parent_group_intent"] = planner_decision.get("question_intent")
-                question_queue["items"] = [{"question_text": i.question_text, "turn_offset": i.turn_offset, "intent": i.intent, "target_branch_id": i.target_branch_id, "target_type": i.target_type, "target_label": i.target_label} for i in queued_items]
+                question_queue["items"] = [
+                    {
+                        "id": i.id,
+                        "node_id": i.node_id,
+                        "parent_node_id": i.parent_node_id,
+                        "relation_type": i.relation_type,
+                        "developer_intent": i.developer_intent,
+                        "priority_score": i.priority_score,
+                        "question_text": i.question_text,
+                        "turn_offset": i.turn_offset,
+                        "intent": i.intent,
+                        "target_branch_id": i.target_branch_id,
+                        "target_type": i.target_type,
+                        "target_label": i.target_label,
+                    }
+                    for i in queued_items
+                ]
                 planner_decision["generated_queue"] = question_queue
 
         from app.services.question_postprocessor import split_multiple_questions
@@ -326,6 +347,8 @@ def generate_question_for_state(
         recent_question_signatures=recent_question_signatures,
         branch_id=planner_decision.get("target_branch_id"),
         agent_mode=project.agent_mode,
+        developer_intent=planner_decision.get("developer_intent"),
+        relation_type=planner_decision.get("relation_type"),
     )
     repo_validation = validate_question_against_repository(
         text=next_question,
@@ -366,6 +389,8 @@ def generate_question_for_state(
             recent_question_signatures=recent_question_signatures,
             branch_id=planner_decision.get("target_branch_id"),
             agent_mode=project.agent_mode,
+            developer_intent=planner_decision.get("developer_intent"),
+            relation_type=planner_decision.get("relation_type"),
         )
         repo_validation = validate_question_against_repository(
             text=next_question,

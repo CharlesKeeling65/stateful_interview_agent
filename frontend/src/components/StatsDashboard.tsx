@@ -8,6 +8,7 @@ import { RepositoryCoverageTree } from './RepositoryCoverageTree'
 import type { 
   CoverageDebugResponse, 
   FileCoverageSummaryDebug, 
+  QuestionNetworkSummaryDebug,
   QueueSummaryDebug 
 } from '../types/api'
 
@@ -21,6 +22,7 @@ type StatsDashboardProps = {
   coverageDebug?: CoverageDebugResponse | null
   queueSummary?: QueueSummaryDebug | null
   fileCoverageSummary?: FileCoverageSummaryDebug | null
+  questionNetworkSummary?: QuestionNetworkSummaryDebug | null
 }
 
 const STAGE_SWATCHES = ['#0f172a', '#0ea5e9', '#f97316', '#10b981', '#a855f7', '#ef4444']
@@ -502,8 +504,10 @@ export function StatsDashboard({
   status,
   t,
   turns,
+  coverageDebug,
   queueSummary,
   fileCoverageSummary,
+  questionNetworkSummary,
 }: StatsDashboardProps) {
   if (!project) {
     return <EmptyStats t={t} />
@@ -638,6 +642,131 @@ export function StatsDashboard({
           />
         </ChartCard>
       </div>
+
+      {questionNetworkSummary || coverageDebug ? (
+        <ChartCard
+          eyebrow={t('analytics.turnFlow')}
+          title={t('analytics.questionNetwork')}
+          subtitle={t('analytics.questionNetworkHint')}
+        >
+          {(() => {
+            const network = questionNetworkSummary ?? {
+              node_count: coverageDebug?.question_network_stats.node_count ?? 0,
+              connected_edge_count: coverageDebug?.question_network_stats.connected_edge_count ?? 0,
+              isolated_node_count: coverageDebug?.question_network_stats.isolated_node_count ?? 0,
+              connected_ratio: coverageDebug?.question_network_stats.node_count
+                ? (coverageDebug.question_network_stats.node_count - coverageDebug.question_network_stats.isolated_node_count) /
+                  coverageDebug.question_network_stats.node_count
+                : 0,
+              frontier_count: coverageDebug?.investigation_frontier.items.length ?? 0,
+              repeat_opening_clusters: 0,
+              top_relation_types: [],
+              top_intents: Object.entries(coverageDebug?.developer_intent_coverage ?? {})
+                .sort((left, right) => right[1] - left[1])
+                .slice(0, 4)
+                .map(([intent, count]) => ({ intent, count })),
+              undercovered_intents: Object.entries(coverageDebug?.developer_intent_coverage ?? {})
+                .filter(([, count]) => count === 0)
+                .map(([intent]) => intent)
+                .slice(0, 4),
+              frontier_preview: (coverageDebug?.investigation_frontier.items ?? []).slice(0, 4),
+              health_status: 'healthy',
+              diagnostic_flags: [],
+              degradation_reasons: [],
+            }
+
+            return (
+              <div className="grid gap-4 lg:grid-cols-[minmax(0,0.9fr)_minmax(0,1.1fr)]">
+                <div className="grid gap-3 sm:grid-cols-2">
+                  {[
+                    { label: t('analytics.connectedRatio'), value: formatPercent(network.connected_ratio, locale) },
+                    { label: t('analytics.frontierCount'), value: String(network.frontier_count) },
+                    { label: t('analytics.isolatedQuestions'), value: String(network.isolated_node_count) },
+                    { label: t('analytics.repeatOpeningClusters'), value: String(network.repeat_opening_clusters) },
+                  ].map((item) => (
+                    <div key={item.label} className="rounded-[1.35rem] border border-slate-200 bg-slate-50/70 px-4 py-4">
+                      <p className="text-[0.64rem] font-semibold uppercase tracking-[0.18em] text-slate-500">{item.label}</p>
+                      <p className="mt-2 text-sm font-semibold text-slate-950">{item.value}</p>
+                    </div>
+                  ))}
+                </div>
+
+                <div className="grid gap-3 md:grid-cols-2">
+                  <div className="rounded-[1.5rem] border border-slate-200/80 bg-white/80 p-4">
+                    <p className="text-[0.68rem] font-semibold uppercase tracking-[0.18em] text-slate-500">{t('analytics.topIntents')}</p>
+                    <div className="mt-3 space-y-2">
+                      {network.top_intents.map((item) => (
+                        <div key={item.intent} className="flex items-center justify-between gap-3 rounded-xl bg-slate-50 px-3 py-2 text-sm">
+                          <span className="font-medium text-slate-700">{item.intent}</span>
+                          <span className="font-semibold text-slate-950">{item.count}</span>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+
+                  <div className="rounded-[1.5rem] border border-slate-200/80 bg-white/80 p-4">
+                    <p className="text-[0.68rem] font-semibold uppercase tracking-[0.18em] text-slate-500">{t('analytics.undercoveredIntents')}</p>
+                    <div className="mt-3 flex flex-wrap gap-2">
+                      {network.undercovered_intents.map((intent) => (
+                        <span key={intent} className="rounded-full border border-amber-200 bg-amber-50 px-3 py-1 text-xs font-medium text-amber-700">
+                          {intent}
+                        </span>
+                      ))}
+                    </div>
+                  </div>
+
+                  <div className="rounded-[1.5rem] border border-slate-200/80 bg-white/80 p-4">
+                    <p className="text-[0.68rem] font-semibold uppercase tracking-[0.18em] text-slate-500">{t('analytics.topRelationTypes')}</p>
+                    <div className="mt-3 space-y-2">
+                      {network.top_relation_types.map((item) => (
+                        <div key={item.relation_type} className="flex items-center justify-between gap-3 rounded-xl bg-slate-50 px-3 py-2 text-sm">
+                          <span className="font-medium text-slate-700">{item.relation_type}</span>
+                          <span className="font-semibold text-slate-950">{item.count}</span>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+
+                  <div className="rounded-[1.5rem] border border-slate-200/80 bg-white/80 p-4">
+                    <p className="text-[0.68rem] font-semibold uppercase tracking-[0.18em] text-slate-500">{t('analytics.frontierPreview')}</p>
+                    <div className="mt-3 space-y-2">
+                      {network.frontier_preview.map((item) => (
+                        <div key={`${item.source_node_id}-${item.label}`} className="rounded-xl bg-slate-50 px-3 py-2">
+                          <p className="text-sm font-medium text-slate-700">{item.label}</p>
+                          <p className="mt-1 text-[11px] text-slate-500">
+                            {item.source_node_id} · {item.priority.toFixed(2)}
+                          </p>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+
+                  <div className="rounded-[1.5rem] border border-slate-200/80 bg-white/80 p-4 md:col-span-2">
+                    <p className="text-[0.68rem] font-semibold uppercase tracking-[0.18em] text-slate-500">{t('analytics.networkDiagnostics')}</p>
+                    <div className="mt-3 flex flex-wrap gap-2">
+                      <span className="rounded-full border border-slate-200 bg-slate-50 px-3 py-1 text-xs font-semibold text-slate-700">
+                        {network.health_status}
+                      </span>
+                      {network.diagnostic_flags.map((flag) => (
+                        <span key={flag} className="rounded-full border border-rose-200 bg-rose-50 px-3 py-1 text-xs font-medium text-rose-700">
+                          {flag}
+                        </span>
+                      ))}
+                    </div>
+                    <div className="mt-3 space-y-2">
+                      {network.degradation_reasons.map((reason) => (
+                        <p key={reason} className="rounded-xl bg-slate-50 px-3 py-2 text-sm text-slate-700">
+                          {reason}
+                        </p>
+                      ))}
+                    </div>
+                  </div>
+                </div>
+              </div>
+            )
+          })()}
+        </ChartCard>
+      ) : null}
 
       <div className="grid gap-4 xl:grid-cols-[minmax(0,1.4fr)_minmax(0,0.6fr)]">
         <ChartCard

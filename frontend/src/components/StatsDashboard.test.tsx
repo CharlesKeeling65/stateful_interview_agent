@@ -2,7 +2,12 @@ import { render, screen } from '@testing-library/react'
 import { describe, expect, it } from 'vitest'
 
 import { createTranslator } from '../i18n'
-import type { ProjectRead, ProjectStatusResponse, TurnRead } from '../types/api'
+import type {
+  ProjectRead,
+  ProjectStatusResponse,
+  QuestionNetworkSummaryDebug,
+  TurnRead,
+} from '../types/api'
 import { StatsDashboard } from './StatsDashboard'
 
 const project: ProjectRead = {
@@ -152,6 +157,34 @@ const turns: TurnRead[] = [
   },
 ]
 
+const questionNetworkSummary: QuestionNetworkSummaryDebug = {
+  node_count: 4,
+  connected_edge_count: 3,
+  isolated_node_count: 1,
+  connected_ratio: 0.75,
+  frontier_count: 2,
+  repeat_opening_clusters: 1,
+  health_status: 'watch',
+  diagnostic_flags: ['template_repetition', 'intent_collapse'],
+  degradation_reasons: [
+    'Recent code-detail turns are reusing the same opening pattern too often.',
+    'One developer intent dominates the thread, so neighboring investigation angles are being ignored.',
+  ],
+  top_relation_types: [
+    { relation_type: 'same_artifact', count: 2 },
+    { relation_type: 'follow_up_gap', count: 1 },
+  ],
+  top_intents: [
+    { intent: 'trace_execution', count: 2 },
+    { intent: 'investigate_failure', count: 1 },
+  ],
+  undercovered_intents: ['inspect_inputs_outputs', 'check_dependency_usage'],
+  frontier_preview: [
+    { source_node_id: 'q3', label: 'retry recovery path', priority: 0.9 },
+    { source_node_id: 'q2', label: 'dependency refresh trigger', priority: 0.6 },
+  ],
+}
+
 describe('StatsDashboard', () => {
   it('renders richer chart sections for trends, composition, and stage flow', () => {
     render(
@@ -171,5 +204,27 @@ describe('StatsDashboard', () => {
     expect(screen.getByText('Stage occupancy')).toBeInTheDocument()
     expect(screen.getByText('Stage transition network')).toBeInTheDocument()
     expect(screen.getByText('Regeneration pressure')).toBeInTheDocument()
+  })
+
+  it('renders question network diagnostics when summary data is provided', () => {
+    render(
+      <StatsDashboard
+        locale="en"
+        project={project}
+        projects={[project]}
+        status={status}
+        t={createTranslator('en')}
+        turns={turns}
+        questionNetworkSummary={questionNetworkSummary}
+      />,
+    )
+
+    expect(screen.getByText('Question network')).toBeInTheDocument()
+    expect(screen.getByText('Connected ratio')).toBeInTheDocument()
+    expect(screen.getByText('Under-covered intents')).toBeInTheDocument()
+    expect(screen.getByText('retry recovery path')).toBeInTheDocument()
+    expect(screen.getByText('inspect_inputs_outputs')).toBeInTheDocument()
+    expect(screen.getByText('Network diagnostics')).toBeInTheDocument()
+    expect(screen.getByText('Recent code-detail turns are reusing the same opening pattern too often.')).toBeInTheDocument()
   })
 })
