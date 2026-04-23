@@ -10,6 +10,136 @@ from app.models.turn import InterviewTurn
 
 
 class InterviewNodesTests(unittest.TestCase):
+    def test_generate_question_for_state_pops_highest_priority_queue_item_and_preserves_relation_metadata(self):
+        project = ProjectSession(
+            id=31,
+            project_name="Priority Queue",
+            system_prompt="prompt",
+            agent_mode="understand_current_code",
+        )
+        turns = [
+            InterviewTurn(
+                id=1,
+                turn_no=1,
+                stage="Code Detail Completion",
+                question_text="Q1: Previously asked question",
+                answer_text="Earlier answer",
+            ),
+            InterviewTurn(
+                id=2,
+                turn_no=2,
+                stage="Code Detail Completion",
+                question_text="Q2: Pending question",
+                answer_text=None,
+            ),
+        ]
+        planner_decision = {
+            "question_intent": "code_detail_deep_dive",
+            "intent_mode": "understand_current_code",
+            "target_branch_id": "branch-a",
+            "target_type": "file",
+            "target_label": "app/services/question_generator.py",
+            "selected_branch_ids": ["branch-a"],
+            "selected_turn_ids": [1],
+            "selected_framework_gap": None,
+            "confidence": 0.8,
+            "decomposition_mode": "none",
+            "subquestion_specs": [],
+        }
+        active_queue = {
+            "status": "active",
+            "parent_turn_no": 1,
+            "parent_group_intent": "code_detail_deep_dive",
+            "items": [
+                {
+                    "id": "low-priority",
+                    "node_id": "node-low",
+                    "parent_node_id": "turn-1",
+                    "relation_type": "downstream_of",
+                    "developer_intent": "connect_related_module",
+                    "priority_score": 0.41,
+                    "turn_offset": 0,
+                    "question_text": "Q2: In app/services/question_validator.py, how does the downstream validation path work?",
+                    "intent": "code_detail_deep_dive",
+                    "target_branch_id": "branch-a",
+                    "target_type": "file",
+                    "target_label": "app/services/question_validator.py",
+                },
+                {
+                    "id": "high-priority",
+                    "node_id": "node-high",
+                    "parent_node_id": "turn-1",
+                    "relation_type": "same_artifact",
+                    "developer_intent": "investigate_failure",
+                    "priority_score": 0.92,
+                    "turn_offset": 1,
+                    "question_text": "Q3: In app/services/question_generator.py, how does the current error path recover after validation fails?",
+                    "intent": "code_detail_deep_dive",
+                    "target_branch_id": "branch-a",
+                    "target_type": "file",
+                    "target_label": "app/services/question_generator.py",
+                },
+            ],
+        }
+
+        with (
+            patch.object(interview_nodes, "plan_next_question", return_value=planner_decision),
+            patch.object(interview_nodes, "build_repo_grounding_context", return_value={
+                "repo_grounding_context": "Grounding for app/services/question_generator.py",
+                "repo_grounding_meta": {
+                    "enabled": True,
+                    "selected_paths": ["app/services/question_generator.py"],
+                    "selected_symbols": [],
+                    "queries": ["question_generator.py"],
+                    "tool_calls": [],
+                    "commit_sha": None,
+                },
+            }),
+            patch.object(interview_nodes, "generate_next_question_from_history") as generate_mock,
+            patch.object(interview_nodes, "is_question_too_similar", return_value=False),
+            patch.object(interview_nodes, "validate_question_for_stage", return_value={"is_valid": True, "reasons": []}),
+            patch.object(interview_nodes, "validate_question_against_repository", return_value={"is_valid": True, "reasons": []}),
+            patch.object(interview_nodes, "review_question_text", return_value={"is_valid": True, "reasons": []}),
+            patch.object(interview_nodes, "check_scenario_completion", return_value={"is_complete": False, "missing_aspects": []}),
+            patch.object(interview_nodes, "rebuild_coverage_state", return_value={"question_history": [], "branches": [], "framework": {}, "question_queue": active_queue}),
+            patch.object(interview_nodes, "build_generation_context", return_value={
+                "recent_context": "recent",
+                "retrieved_context": "retrieved",
+                "coverage_priorities": "priorities",
+                "repo_grounding_context": "stale",
+                "repo_grounding_meta": {"enabled": False, "selected_paths": [], "selected_symbols": []},
+                "selected_turn_ids": [1],
+                "selected_branch_ids": ["branch-a"],
+            }),
+            patch.object(interview_nodes, "sync_task_board", return_value={}),
+            patch.object(interview_nodes, "deserialize_task_board", return_value={}),
+            patch.object(interview_nodes, "serialize_task_board", return_value="{}"),
+        ):
+            payload = interview_nodes.generate_question_for_state(
+                current_stage="Code Detail Completion",
+                db=None,
+                human_review_signal=None,
+                latest_answer_override=None,
+                project=project,
+                run_id=None,
+                turn_no=2,
+                turns=turns,
+            )
+
+        self.assertEqual(generate_mock.call_count, 0)
+        self.assertEqual(
+            payload["generated_question"],
+            "Q2: In app/services/question_generator.py, how does the current error path recover after validation fails?",
+        )
+        self.assertEqual(payload["planner_decision"]["relation_type"], "same_artifact")
+        self.assertEqual(payload["planner_decision"]["developer_intent"], "investigate_failure")
+        self.assertEqual(payload["planner_decision"]["parent_node_id"], "turn-1")
+        self.assertEqual(len(payload["planner_decision"]["generated_queue"]["items"]), 1)
+        self.assertEqual(
+            payload["planner_decision"]["generated_queue"]["items"][0]["question_text"],
+            "Q3: In app/services/question_validator.py, how does the downstream validation path work?",
+        )
+
     def test_generate_question_for_state_builds_queue_from_planner_specs_before_llm(self):
         project = ProjectSession(
             id=22,

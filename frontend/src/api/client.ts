@@ -14,6 +14,7 @@ import type {
   ProjectRead,
   ProjectStartResponse,
   ProjectStatusResponse,
+  QuestionNetworkSummaryDebug,
   QueueSummaryDebug,
   RunRead,
   TranscriptResponse,
@@ -199,4 +200,8 @@ export async function getProjectQueueSummary(projectId: number) {
 
 export async function getProjectFileCoverageSummary(projectId: number) {
   return request<FileCoverageSummaryDebug>(`/debug/projects/${projectId}/file-coverage-summary`)
+}
+
+export async function getProjectQuestionNetworkSummary(projectId: number) {
+  return request<QuestionNetworkSummaryDebug>(`/debug/projects/${projectId}/question-network-summary`)
 }

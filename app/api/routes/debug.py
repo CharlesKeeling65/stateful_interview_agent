@@ -11,6 +11,7 @@ from app.schemas.debug import (
     ContextPreviewResponse,
     CoverageDebugResponse,
     DebugInfoResponse,
+    QuestionNetworkSummaryDebug,
 )
 from app.services.mode_service import (
     AgentMode,
@@ -22,6 +23,7 @@ from app.services.context_engineering import build_generation_context
 from app.services.coverage_service import rebuild_coverage_state, save_coverage_state
 from app.services.llm_test import test_llm_call
 from app.services.question_generator import get_prompt_id_for_plan
+from app.services.question_network_diagnostics import diagnose_question_network_health
 from app.services.question_planner import plan_next_question
 from app.services.question_validator import validate_question_for_stage
 from app.services.rubric_task_service import deserialize_task_board, get_next_priority_task
@@ -31,6 +33,73 @@ from app.services.summarization_service import ensure_turn_summaries
 from app.services.transcript_event_service import deserialize_event_log
 
 router = APIRouter(prefix="/debug", tags=["debug"])
+
+
+def build_question_network_summary(coverage_state: dict) -> dict:
+    question_graph = coverage_state.get("question_graph", {}) or {}
+    nodes = question_graph.get("nodes", []) or []
+    edges = question_graph.get("edges", []) or []
+    frontier_items = ((coverage_state.get("investigation_frontier") or {}).get("items", [])) or []
+    intent_coverage = coverage_state.get("developer_intent_coverage", {}) or {}
+
+    relation_counts: dict[str, int] = {}
+    for edge in edges:
+        relation_type = edge.get("relation_type") or "unknown"
+        relation_counts[relation_type] = relation_counts.get(relation_type, 0) + 1
+
+    top_relation_types = [
+        {"relation_type": relation_type, "count": count}
+        for relation_type, count in sorted(
+            relation_counts.items(),
+            key=lambda item: (-item[1], item[0]),
+        )[:4]
+    ]
+    top_intents = [
+        {"intent": intent, "count": count}
+        for intent, count in sorted(
+            intent_coverage.items(),
+            key=lambda item: (-item[1], item[0]),
+        )
+        if count > 0
+    ][:4]
+    undercovered_intents = [
+        intent
+        for intent, count in sorted(intent_coverage.items(), key=lambda item: (item[1], item[0]))
+        if count == 0
+    ][:4]
+
+    node_count = len(nodes)
+    isolated_node_count = ((coverage_state.get("question_network_stats") or {}).get("isolated_node_count")) or 0
+    connected_edge_count = len(edges)
+
+    diagnostics = diagnose_question_network_health(coverage_state)
+
+    return {
+        "node_count": node_count,
+        "connected_edge_count": connected_edge_count,
+        "isolated_node_count": isolated_node_count,
+        "connected_ratio": diagnostics["connected_ratio"],
+        "frontier_count": len(frontier_items),
+        "repeat_opening_clusters": diagnostics["repeat_opening_clusters"],
+        "health_status": diagnostics["health_status"],
+        "diagnostic_flags": diagnostics["diagnostic_flags"],
+        "degradation_reasons": diagnostics["degradation_reasons"],
+        "top_relation_types": top_relation_types,
+        "top_intents": top_intents,
+        "undercovered_intents": undercovered_intents,
+        "frontier_preview": [
+            {
+                "source_node_id": item.get("source_node_id", ""),
+                "label": item.get("label", ""),
+                "priority": round(float(item.get("priority", 0.0) or 0.0), 3),
+            }
+            for item in sorted(
+                frontier_items,
+                key=lambda entry: float(entry.get("priority", 0.0) or 0.0),
+                reverse=True,
+            )[:4]
+        ],
+    }
 
 
 @router.get("/llm")
@@ -147,6 +216,21 @@ def debug_project_file_coverage_summary(project_id: int, db: Session = Depends(g
     }
 
 
+@router.get("/projects/{project_id}/question-network-summary", response_model=QuestionNetworkSummaryDebug)
+def debug_project_question_network_summary(project_id: int, db: Session = Depends(get_db)):
+    project = db.query(ProjectSession).filter(ProjectSession.id == project_id).first()
+    if not project:
+        raise HTTPException(status_code=404, detail="Project not found")
+    turns = (
+        db.query(InterviewTurn)
+        .filter(InterviewTurn.project_id == project_id)
+        .order_by(InterviewTurn.turn_no.asc())
+        .all()
+    )
+    coverage_state = rebuild_coverage_state(turns, project)
+    return build_question_network_summary(coverage_state)
+
+
 @router.get("/projects/{project_id}/state", response_model=DebugInfoResponse)
 def debug_project_state(project_id: int, db: Session = Depends(get_db)):
     project = db.query(ProjectSession).filter(ProjectSession.id == project_id).first()
@@ -216,6 +300,7 @@ def debug_project_state(project_id: int, db: Session = Depends(get_db)):
         "coverage_summary": {
             "branch_count": project.coverage_state_data.get("branch_count", 0),
             "updated_through_turn_no": project.coverage_state_data.get("updated_through_turn_no", 0),
+            "question_network": build_question_network_summary(project.coverage_state_data or {}),
         },
         "recent_events": deserialize_event_log(latest_turn.event_log_json if latest_turn else "[]")[-10:],
     }
@@ -315,6 +400,8 @@ def debug_next_context_preview(
         expected_turn_no=next_turn_no,
         current_stage=next_stage,
         intent_mode=planner_decision.get("intent_mode", "understand_current_code"),
+        developer_intent=planner_decision.get("developer_intent"),
+        relation_type=planner_decision.get("relation_type"),
     )
 
     return {

@@ -33,6 +33,7 @@ LOCAL_REPAIRABLE_REASON_MARKERS = (
     "do not use exact line numbers",
     "avoid providing multiple-choice options",
     "avoid compound questions",
+    "avoid repeating the same question opening pattern",
 )
 
 
@@ -298,6 +299,29 @@ def _rewrite_yes_no_opening(body: str) -> str:
     return body
 
 
+def _rewrite_repeated_opening(body: str) -> str:
+    body = body.strip()
+    patterns = [
+        (
+            r"^in\s+([^,?]+),\s*how does\s+([a-z_][a-z0-9_]*)\s+handle\s+(.+?)\?$",
+            r"Where in \1 is \3 handled?",
+        ),
+        (
+            r"^how does\s+([a-z_][a-z0-9_]*)\s+handle\s+(.+?)\?$",
+            r"Where is \2 handled in \1?",
+        ),
+        (
+            r"^in\s+([^,?]+),\s*how does\s+([a-z_][a-z0-9_]*)\s+build\s+(.+?)\?$",
+            r"Where in \1 is \3 built?",
+        ),
+    ]
+    for pattern, replacement in patterns:
+        rewritten = re.sub(pattern, replacement, body, flags=re.IGNORECASE)
+        if rewritten != body:
+            return rewritten
+    return body
+
+
 def repair_question_locally(
     text: str,
     reasons: list[str],
@@ -329,6 +353,9 @@ def repair_question_locally(
 
     if any("avoid yes/no questions" in reason for reason in lowered_reasons):
         body = _rewrite_yes_no_opening(body)
+
+    if any("avoid repeating the same question opening pattern" in reason for reason in lowered_reasons):
+        body = _rewrite_repeated_opening(body)
 
     body = _remove_explanatory_parens(body)
     body = _normalize_windows_safe_text(body)

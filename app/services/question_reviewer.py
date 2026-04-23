@@ -11,6 +11,7 @@ from typing import Any
 from pydantic import BaseModel, Field
 
 from app.core.config import settings
+from app.services.question_network_diagnostics import diagnose_question_network_health
 
 from app.services.mode_service import (
     AgentMode,
@@ -180,6 +181,29 @@ def review_question_plan(
                 "target_label": next_task.label,
                 "priority": next_task.priority,
             }
+
+    if current_stage == CODE_DETAIL_STAGE and not planner_decision.get("developer_intent"):
+        result.suggested_modifications.append(
+            "Add a concrete developer intent such as trace_execution, investigate_failure, or inspect_inputs_outputs."
+        )
+    if current_stage == CODE_DETAIL_STAGE and not planner_decision.get("relation_type"):
+        result.suggested_modifications.append(
+            "Keep the next code-detail question attached to the active graph thread with a relation_type."
+        )
+    if current_stage == CODE_DETAIL_STAGE:
+        network_diagnostics = diagnose_question_network_health(coverage_state)
+        if "isolated_questions" in network_diagnostics["diagnostic_flags"]:
+            result.suggested_modifications.append(
+                "Recent code-detail turns are becoming isolated; stitch the next question back to the active thread or a concrete neighboring module."
+            )
+        if "intent_collapse" in network_diagnostics["diagnostic_flags"]:
+            result.suggested_modifications.append(
+                "Developer intent coverage is collapsing onto one intent; rotate toward an under-covered investigation angle."
+            )
+        if "template_repetition" in network_diagnostics["diagnostic_flags"]:
+            result.suggested_modifications.append(
+                "Recent turns are reusing the same opening scaffold; vary the framing while keeping the technical thread intact."
+            )
 
     # Approved with any modifications noted
     result.review_reason = "Plan approved"

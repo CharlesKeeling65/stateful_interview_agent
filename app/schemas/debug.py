@@ -101,6 +101,11 @@ class QueuedQuestionDebug(BaseModel):
     target_branch_id: str | None = None
     target_type: str | None = None
     target_label: str | None = None
+    node_id: str | None = None
+    parent_node_id: str | None = None
+    relation_type: str | None = None
+    developer_intent: str | None = None
+    priority_score: float | None = None
 
 
 class QuestionQueueDebug(BaseModel):
@@ -122,6 +127,82 @@ class RepoFileCoverageDebug(BaseModel):
     tree_depth: int = 0
 
 
+class QuestionGraphNodeDebug(BaseModel):
+    node_id: str
+    turn_no: int
+    stage: str
+    question_text: str
+    target_label: str = ""
+    artifact_keys: list[str] = Field(default_factory=list)
+    intent_type: str
+    depth_level: str
+    status: str
+    unresolved_points: list[str] = Field(default_factory=list)
+
+
+class QuestionGraphEdgeDebug(BaseModel):
+    from_node_id: str
+    to_node_id: str
+    relation_type: str
+
+
+class QuestionGraphDebug(BaseModel):
+    nodes: list[QuestionGraphNodeDebug] = Field(default_factory=list)
+    edges: list[QuestionGraphEdgeDebug] = Field(default_factory=list)
+
+
+class InvestigationFrontierItemDebug(BaseModel):
+    source_node_id: str
+    label: str
+    priority: float = 0.0
+
+
+class InvestigationFrontierDebug(BaseModel):
+    items: list[InvestigationFrontierItemDebug] = Field(default_factory=list)
+
+
+class QuestionNetworkStatsDebug(BaseModel):
+    node_count: int = 0
+    connected_edge_count: int = 0
+    isolated_node_count: int = 0
+    breadth_transition_count: int = 0
+    depth_transition_count: int = 0
+    developer_intent_count: int = 0
+    dominant_intent_ratio: float = 0.0
+
+
+class RelationCountDebug(BaseModel):
+    relation_type: str
+    count: int
+
+
+class IntentCountDebug(BaseModel):
+    intent: str
+    count: int
+
+
+class FrontierPreviewDebug(BaseModel):
+    source_node_id: str
+    label: str
+    priority: float = 0.0
+
+
+class QuestionNetworkSummaryDebug(BaseModel):
+    node_count: int = 0
+    connected_edge_count: int = 0
+    isolated_node_count: int = 0
+    connected_ratio: float = 0.0
+    frontier_count: int = 0
+    repeat_opening_clusters: int = 0
+    health_status: str = "healthy"
+    diagnostic_flags: list[str] = Field(default_factory=list)
+    degradation_reasons: list[str] = Field(default_factory=list)
+    top_relation_types: list[RelationCountDebug] = Field(default_factory=list)
+    top_intents: list[IntentCountDebug] = Field(default_factory=list)
+    undercovered_intents: list[str] = Field(default_factory=list)
+    frontier_preview: list[FrontierPreviewDebug] = Field(default_factory=list)
+
+
 class CoverageDebugResponse(BaseModel):
     version: int
     branch_count: int
@@ -132,6 +213,10 @@ class CoverageDebugResponse(BaseModel):
     question_queue: QuestionQueueDebug = Field(default_factory=lambda: QuestionQueueDebug(status="empty"))
     repo_file_coverage: dict[str, RepoFileCoverageDebug] = Field(default_factory=dict)
     repo_tree_summary: dict[str, Any] = Field(default_factory=dict)
+    question_graph: QuestionGraphDebug = Field(default_factory=QuestionGraphDebug)
+    investigation_frontier: InvestigationFrontierDebug = Field(default_factory=InvestigationFrontierDebug)
+    developer_intent_coverage: dict[str, int] = Field(default_factory=dict)
+    question_network_stats: QuestionNetworkStatsDebug = Field(default_factory=QuestionNetworkStatsDebug)
 
 
 class ContextPreviewRequest(BaseModel):

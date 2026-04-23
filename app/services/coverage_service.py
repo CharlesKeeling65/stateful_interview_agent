@@ -2,6 +2,8 @@ import json
 import re
 from typing import Any
 
+from app.core.config import settings
+
 def calculate_structural_importance(path: str) -> float:
     depth = path.count("/")
     score = 0.9 ** depth
@@ -155,6 +157,10 @@ def default_coverage_state() -> dict[str, Any]:
         "question_queue": {"status": "empty", "items": []},
         "repo_file_coverage": {},
         "repo_tree_summary": {},
+        "question_graph": {"nodes": [], "edges": []},
+        "investigation_frontier": {"items": []},
+        "developer_intent_coverage": default_developer_intent_coverage(),
+        "question_network_stats": default_question_network_stats(),
     }
 
 
@@ -178,6 +184,10 @@ def load_coverage_state(project: ProjectSession) -> dict[str, Any]:
     parsed.setdefault("question_queue", {"status": "empty", "items": []})
     parsed.setdefault("repo_file_coverage", {})
     parsed.setdefault("repo_tree_summary", {})
+    parsed.setdefault("question_graph", {"nodes": [], "edges": []})
+    parsed.setdefault("investigation_frontier", {"items": []})
+    parsed.setdefault("developer_intent_coverage", default_developer_intent_coverage())
+    parsed.setdefault("question_network_stats", default_question_network_stats())
     parsed["framework"] = normalize_framework_coverage(
         parsed.get("framework", default_framework_coverage())
     )
@@ -378,6 +388,16 @@ def rebuild_coverage_state(turns: list[InterviewTurn], project: ProjectSession |
         default=0,
     )
     framework = rebuild_framework_coverage(turns)
+    if settings.question_graph_enabled:
+        question_graph = build_question_graph(turns)
+        investigation_frontier = build_investigation_frontier(question_graph)
+        developer_intent_coverage = build_developer_intent_coverage(question_graph)
+        question_network_stats = build_question_network_stats(question_graph)
+    else:
+        question_graph = {"nodes": [], "edges": []}
+        investigation_frontier = {"items": []}
+        developer_intent_coverage = default_developer_intent_coverage()
+        question_network_stats = default_question_network_stats()
     return {
         "version": 3,
         "branch_count": len(branches),
@@ -388,7 +408,167 @@ def rebuild_coverage_state(turns: list[InterviewTurn], project: ProjectSession |
         "question_queue": question_queue,
         "repo_file_coverage": repo_file_coverage,
         "repo_tree_summary": repo_tree_summary,
+        "question_graph": question_graph,
+        "investigation_frontier": investigation_frontier,
+        "developer_intent_coverage": developer_intent_coverage,
+        "question_network_stats": question_network_stats,
     }
+
+
+def default_developer_intent_coverage() -> dict[str, int]:
+    return {
+        "trace_execution": 0,
+        "understand_responsibility": 0,
+        "inspect_inputs_outputs": 0,
+        "investigate_failure": 0,
+        "follow_state_change": 0,
+        "check_dependency_usage": 0,
+        "understand_data_contract": 0,
+        "review_boundary_case": 0,
+        "evaluate_optimization_tradeoff": 0,
+        "connect_related_module": 0,
+    }
+
+
+def default_question_network_stats() -> dict[str, Any]:
+    return {
+        "node_count": 0,
+        "connected_edge_count": 0,
+        "isolated_node_count": 0,
+        "breadth_transition_count": 0,
+        "depth_transition_count": 0,
+        "developer_intent_count": 0,
+        "dominant_intent_ratio": 0.0,
+    }
+
+
+def build_question_graph(turns: list[InterviewTurn]) -> dict[str, Any]:
+    nodes: list[dict[str, Any]] = []
+    for turn in turns:
+        if not turn.answer_text:
+            continue
+        question_history = build_question_history_entry(
+            turn_no=turn.turn_no,
+            stage=turn.stage,
+            question_text=turn.question_text,
+            intent=(turn.question_plan or {}).get("question_intent"),
+            branch_id=(turn.question_plan or {}).get("target_branch_id"),
+            target_type=(turn.question_plan or {}).get("target_type"),
+            target_label=(turn.question_plan or {}).get("target_label"),
+        )
+        artifact_keys = merge_unique(
+            [],
+            [
+                *FILE_PATTERN.findall(turn.question_text or ""),
+                *FILE_PATTERN.findall(turn.answer_text or ""),
+                normalize_target_fragment(question_history.get("target_label", "")),
+            ],
+            limit=6,
+        )
+        intent_type = infer_developer_intent(turn.question_text, turn.answer_text or "")
+        depth_level = infer_depth_level(turn.question_text, turn.answer_text or "")
+        unresolved_points = merge_unique(
+            (turn.answer_analysis or {}).get("follow_up_anchors", []),
+            extract_unresolved_points(turn.answer_summary or turn.answer_text or ""),
+            limit=4,
+        )
+        nodes.append(
+            {
+                "node_id": f"turn-{turn.turn_no}",
+                "turn_no": turn.turn_no,
+                "stage": turn.stage,
+                "question_text": turn.question_text,
+                "target_label": question_history.get("target_label", ""),
+                "artifact_keys": [item for item in artifact_keys if item],
+                "intent_type": intent_type,
+                "depth_level": depth_level,
+                "status": "needs_follow_up" if unresolved_points else "covered",
+                "unresolved_points": unresolved_points,
+            }
+        )
+
+    edges: list[dict[str, str]] = []
+    for index in range(1, len(nodes)):
+        previous = nodes[index - 1]
+        current = nodes[index]
+        relation_type = infer_relation_type(previous, current)
+        if relation_type:
+            edges.append(
+                {
+                    "from_node_id": previous["node_id"],
+                    "to_node_id": current["node_id"],
+                    "relation_type": relation_type,
+                }
+            )
+    return {"nodes": nodes, "edges": edges}
+
+
+def build_investigation_frontier(question_graph: dict[str, Any]) -> dict[str, Any]:
+    items: list[dict[str, Any]] = []
+    for node in question_graph.get("nodes", []):
+        for index, unresolved in enumerate(node.get("unresolved_points", []), start=1):
+            items.append(
+                {
+                    "source_node_id": node["node_id"],
+                    "label": unresolved,
+                    "priority": max(0.1, 1.0 - (index - 1) * 0.1),
+                }
+            )
+    return {"items": items[:8]}
+
+
+def build_developer_intent_coverage(question_graph: dict[str, Any]) -> dict[str, int]:
+    coverage = default_developer_intent_coverage()
+    for node in question_graph.get("nodes", []):
+        intent_type = node.get("intent_type")
+        if intent_type in coverage:
+            coverage[intent_type] += 1
+    return coverage
+
+
+def build_question_network_stats(question_graph: dict[str, Any]) -> dict[str, Any]:
+    stats = default_question_network_stats()
+    nodes = question_graph.get("nodes", [])
+    edges = question_graph.get("edges", [])
+    stats["node_count"] = len(nodes)
+    stats["connected_edge_count"] = len(edges)
+    connected_node_ids = {
+        edge.get("from_node_id") for edge in edges
+    } | {
+        edge.get("to_node_id") for edge in edges
+    }
+    stats["isolated_node_count"] = sum(
+        1 for node in nodes if node.get("node_id") not in connected_node_ids
+    )
+    depth_rank = {"surface": 0, "medium": 1, "deep": 2}
+    breadth_transition_count = 0
+    depth_transition_count = 0
+    for index in range(1, len(nodes)):
+        previous = nodes[index - 1]
+        current = nodes[index]
+        previous_target = str(previous.get("target_label", ""))
+        current_target = str(current.get("target_label", ""))
+        previous_artifacts = set(previous.get("artifact_keys", []))
+        current_artifacts = set(current.get("artifact_keys", []))
+        if previous_target != current_target and not (previous_artifacts & current_artifacts):
+            breadth_transition_count += 1
+        if depth_rank.get(current.get("depth_level", "surface"), 0) > depth_rank.get(previous.get("depth_level", "surface"), 0):
+            depth_transition_count += 1
+    stats["breadth_transition_count"] = breadth_transition_count
+    stats["depth_transition_count"] = depth_transition_count
+
+    intent_counts: dict[str, int] = {}
+    for node in nodes:
+        intent_type = node.get("intent_type")
+        if not intent_type:
+            continue
+        intent_counts[intent_type] = intent_counts.get(intent_type, 0) + 1
+    stats["developer_intent_count"] = len(intent_counts)
+    total_intents = sum(intent_counts.values())
+    stats["dominant_intent_ratio"] = (
+        round(max(intent_counts.values()) / total_intents, 3) if total_intents else 0.0
+    )
+    return stats
 
 
 def default_framework_coverage() -> dict[str, Any]:
@@ -668,6 +848,70 @@ def build_branch_id(turn: InterviewTurn, keywords: list[str]) -> str:
     base = "-".join(keywords[:3]) or f"turn-{turn.turn_no}"
     slug = re.sub(r"[^a-z0-9]+", "-", base.lower()).strip("-")
     return slug or f"turn-{turn.turn_no}"
+
+
+def normalize_target_fragment(value: Any) -> str:
+    text = str(value or "").strip()
+    if not text:
+        return ""
+    return text.lower()
+
+
+def infer_developer_intent(question_text: str, answer_text: str) -> str:
+    combined = f"{question_text} {answer_text}".lower()
+    if any(marker in combined for marker in ("state", "state transition", "session", "cache", "persistence", "mutation")):
+        return "follow_state_change"
+    if any(marker in combined for marker in ("error", "failure", "exception", "fallback", "recover")):
+        return "investigate_failure"
+    if any(
+        marker in combined
+        for marker in (
+            "execution path",
+            "request path",
+            "call chain",
+            "hand off",
+            "handoff",
+            "build the current prompt",
+            "build the prompt",
+        )
+    ):
+        return "trace_execution"
+    if any(marker in combined for marker in ("input", "output", "payload", "response")):
+        return "inspect_inputs_outputs"
+    if any(marker in combined for marker in ("library", "sdk", "openai", "fastapi", "langgraph")):
+        return "check_dependency_usage"
+    if any(marker in combined for marker in ("boundary", "edge case", "unsupported", "invalid")):
+        return "review_boundary_case"
+    if any(marker in combined for marker in ("module", "service", "downstream", "upstream", "related area")):
+        return "connect_related_module"
+    return "understand_responsibility"
+
+
+def infer_depth_level(question_text: str, answer_text: str) -> str:
+    combined = f"{question_text} {answer_text}".lower()
+    if any(marker in combined for marker in ("error", "exception", "fallback", "boundary", "state")):
+        return "deep"
+    if any(marker in combined for marker in ("execution path", "request path", "call chain", "handoff")):
+        return "medium"
+    return "surface"
+
+
+def infer_relation_type(previous: dict[str, Any], current: dict[str, Any]) -> str | None:
+    previous_artifacts = set(previous.get("artifact_keys", []))
+    current_artifacts = set(current.get("artifact_keys", []))
+    if previous_artifacts and current_artifacts and previous_artifacts & current_artifacts:
+        return "same_artifact"
+
+    previous_target = str(previous.get("target_label", ""))
+    current_target = str(current.get("target_label", ""))
+    if previous_target and current_target and (
+        previous_target in current_target or current_target in previous_target
+    ):
+        return "same_concept"
+
+    if previous.get("stage") == current.get("stage"):
+        return "follows_from"
+    return None
 
 
 def extract_keywords(*texts: str) -> list[str]:

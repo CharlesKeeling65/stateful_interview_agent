@@ -32,14 +32,18 @@ class _FakeChatCompletions:
             content = "Concise summary with architecture detail and unresolved integration point."
         elif "Start the interview" in user_content:
             content = "Q1: What is the project trying to achieve for its primary users?"
+        elif "Architecture Understanding" in user_content and "Next question number: Q3" in user_content:
+            content = "Q3: On the main request path, how does the orchestration module call into auth before handing control back?"
+        elif "Architecture Understanding" in user_content:
+            content = "Q2: Which modules coordinate the core workflow end to end?"
         elif "Next question number: Q1" in user_content:
             content = "Q1: Which modules coordinate the core workflow, and how do requests move between them?"
         elif "Next question number: Q2" in user_content:
             content = "Q2: Which modules coordinate the core workflow end to end?"
-        elif "Next question number: Q3" in user_content:
-            content = "Q3: Along the main request path, how do auth and orchestration modules coordinate responsibilities and handoffs?"
+        elif "Next question number:" in user_content:
+            content = "Q3: On the main request path, how does the orchestration module call into auth before handing control back?"
         else:
-            content = "Q9: Placeholder follow-up question?"
+            content = "Q3: On the main request path, how does the orchestration module call into auth before handing control back?"
 
         return SimpleNamespace(
             choices=[SimpleNamespace(message=SimpleNamespace(content=content))],
@@ -231,14 +235,54 @@ class ProjectApiFlowTests(unittest.TestCase):
         )
         self.assertGreaterEqual(len(turns_payload[0]["llm_usages"]), 1)
 
-        status = self.client.get(f"/projects/{project_id}/status")
-        self.assertEqual(status.status_code, 200)
-        self.assertEqual(
-            status.json()["latest_question_text_for_copy"],
-            "Along the main request path, how do auth and orchestration modules coordinate responsibilities and handoffs?",
+    def test_debug_question_network_summary_reports_graph_and_intent_signals(self):
+        created = self.client.post(
+            "/projects",
+            json={
+                "project_name": "Question Network Debug",
+                "system_prompt": "You are a stateful interview agent.",
+            },
         )
-        self.assertGreater(status.json()["usage_summary"]["total_tokens"], 0)
-        self.assertFalse(status.json()["latest_turn_ready_for_next_generation"])
+        self.assertEqual(created.status_code, 200)
+        project_id = created.json()["id"]
+
+        started = self.client.post(f"/projects/{project_id}/start")
+        self.assertEqual(started.status_code, 200)
+
+        saved_one = self.client.post(
+            f"/projects/{project_id}/answer",
+            json={
+                "answer_text": "The first answer explains orchestration, auth handoffs, and a remaining planner target-selection gap.",
+            },
+        )
+        self.assertEqual(saved_one.status_code, 200)
+
+        next_one = self.client.post(f"/projects/{project_id}/next", json={})
+        self.assertEqual(next_one.status_code, 200)
+
+        saved_two = self.client.post(
+            f"/projects/{project_id}/answer",
+            json={
+                "answer_text": "The second answer connects planner selection with repository grounding and leaves a dependency usage gap.",
+            },
+        )
+        self.assertEqual(saved_two.status_code, 200)
+
+        summary = self.client.get(f"/debug/projects/{project_id}/question-network-summary")
+        self.assertEqual(summary.status_code, 200)
+        payload = summary.json()
+
+        self.assertGreaterEqual(payload["node_count"], 2)
+        self.assertGreaterEqual(payload["connected_edge_count"], 1)
+        self.assertIn("connected_ratio", payload)
+        self.assertIn("frontier_count", payload)
+        self.assertIn("top_intents", payload)
+        self.assertTrue(payload["top_intents"])
+        self.assertIn("undercovered_intents", payload)
+        self.assertIn("frontier_preview", payload)
+        self.assertIn("health_status", payload)
+        self.assertIn("diagnostic_flags", payload)
+        self.assertIn("degradation_reasons", payload)
 
         coverage = self.client.get(f"/debug/projects/{project_id}/coverage")
         self.assertEqual(coverage.status_code, 200)

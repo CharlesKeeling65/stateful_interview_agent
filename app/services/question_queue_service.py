@@ -132,6 +132,11 @@ def build_queue_from_specs(
                 target_branch_id=target_branch_id,
                 target_type=str(spec.get("target_type") or target_type),
                 target_label=str(spec.get("target_label") or target_label),
+                node_id=str(spec.get("node_id") or uuid.uuid4()),
+                parent_node_id=str(spec.get("parent_node_id") or "") or None,
+                relation_type=str(spec.get("relation_type") or "") or None,
+                developer_intent=str(spec.get("developer_intent") or "") or None,
+                priority_score=float(spec.get("priority_score", 0.0)),
             )
         )
     return queued
@@ -152,6 +157,30 @@ def renumber_sub_question_queue(queue_items: list[QueuedQuestionDebug | dict], n
             item.question_text = new_text
             renumbered.append(item)
     return renumbered
+
+
+def pop_next_queue_item(
+    queue_items: list[QueuedQuestionDebug | dict],
+    next_turn_no: int,
+) -> tuple[QueuedQuestionDebug | dict | None, list[QueuedQuestionDebug | dict]]:
+    if not queue_items:
+        return None, []
+
+    ranked = sorted(
+        queue_items,
+        key=lambda item: (
+            item.get("priority_score", 0.0) if isinstance(item, dict) else getattr(item, "priority_score", 0.0) or 0.0,
+            -(
+                item.get("turn_offset", 0) if isinstance(item, dict) else getattr(item, "turn_offset", 0)
+            ),
+        ),
+        reverse=True,
+    )
+    selected = ranked[0]
+    remaining = renumber_sub_question_queue(ranked[1:], next_turn_no + 1)
+
+    selected_list = renumber_sub_question_queue([selected], next_turn_no)
+    return selected_list[0], remaining
 
 def prune_question_queue(
     queue_state: dict[str, Any], 

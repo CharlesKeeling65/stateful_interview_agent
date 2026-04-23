@@ -9,6 +9,14 @@ from app.services.stage_manager import decide_next_stage
 
 
 class StageConfigurationTests(unittest.TestCase):
+    def test_settings_enable_question_network_features_by_default(self):
+        configured = Settings(_env_file=None)
+
+        self.assertTrue(configured.question_graph_enabled)
+        self.assertTrue(configured.graph_frontier_planning_enabled)
+        self.assertTrue(configured.developer_intent_balancing_enabled)
+        self.assertTrue(configured.graph_continuity_validation_enabled)
+
     def test_settings_expose_explicit_stage_turn_targets(self):
         configured = Settings(
             _env_file=None,

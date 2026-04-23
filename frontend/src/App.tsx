@@ -47,6 +47,7 @@ function App() {
     coverageDebug,
     queueSummary,
     fileCoverageSummary,
+    questionNetworkSummary,
     loadCoverageDebug,
   } = useProject()
   const [locale, setLocale] = useState<Locale>(() => normalizeLocale(localStorage.getItem(LOCALE_STORAGE_KEY)))
@@ -410,6 +411,7 @@ function App() {
               coverageDebug={coverageDebug}
               queueSummary={queueSummary}
               fileCoverageSummary={fileCoverageSummary}
+              questionNetworkSummary={questionNetworkSummary}
             />
           )}
         </div>

@@ -17,6 +17,8 @@ user_template: |
   3. Remove any review-style checklists (e.g., "what are the edge cases, bottlenecks, responsibilities...").
   4. Remove multiple-choice options or parenthetical lists.
   5. Do not stack "what, why, how" into one question.
-  6. Return ONLY the rewritten question text. Do not include any prefix like "Here is the rewritten question:" or "Q:".
+  6. Keep the rewritten question attached to the active implementation thread rather than turning it into an isolated new topic.
+  7. If the phrasing starts with the same opening pattern used repeatedly in nearby turns, vary the opening naturally.
+  8. Return ONLY the rewritten question text. Do not include any prefix like "Here is the rewritten question:" or "Q:".
 required_variables:
   - original_question
