@@ -2,591 +2,359 @@
 
 [English README](README.md)
 
-Stateful Interview Agent 是一个本地全栈应用，用于针对目标仓库或系统执行结构化、长上下文的软件项目访谈。它不是把每一轮都当成孤立提示词，而是持续维护访谈状态、依据覆盖缺口规划下一问、记录人工评审信号，并为每次生成过程提供可检查的执行轨迹。
+![Python](https://img.shields.io/badge/Python-3.10%2B-0f172a?style=for-the-badge&logo=python&logoColor=white)
+![FastAPI](https://img.shields.io/badge/FastAPI-本地%20API-0ea5e9?style=for-the-badge&logo=fastapi&logoColor=white)
+![React](https://img.shields.io/badge/React-操作台-14b8a6?style=for-the-badge&logo=react&logoColor=white)
+![LangGraph](https://img.shields.io/badge/LangGraph-状态化编排-f59e0b?style=for-the-badge)
+![SQLite](https://img.shields.io/badge/SQLite-持久化会话-475569?style=for-the-badge&logo=sqlite&logoColor=white)
 
-## 项目简介
+![Stateful Interview Agent hero](docs/images/readme-hero.svg)
 
-这个项目的目标是支撑一种更接近“Code Understand”交付物的访谈方式：核心任务不是先讨论“应该怎么改”，而是通过逐步追问，形成一份对现有项目实现足够深入、结构清晰、可交付的理解型 transcript。
+> 一个面向代码仓理解的本地全栈系统，用很多轮连续追问，稳定产出“真正能交付”的理解型 transcript。
 
-当前系统围绕如下阶段组织访谈：
+Stateful Interview Agent 的核心目标很明确：不是让模型随手回答几个仓库问题，而是围绕一个真实项目，持续做 30 多轮有连续性、可检查、可纠偏的理解式访谈。它会保留项目状态、追踪覆盖缺口、严格维持“一轮一个可见问题”、接收人工评审，并把每次生成过程变成可回放的 run trace。
 
-1. 全景地图构建
-2. 架构理解
-3. 代码细节补全
-4. 用例与场景
-5. 最终收口
+## 这个项目解决什么问题
 
-默认主流程始终运行在 `understand_current_code` 模式下，因此后期问题会被约束为解释“当前代码如何工作”，而不是滑向重构设计或修改建议。
+很多“问代码库”的工具做两三轮还行，但一拉长就开始出现这些问题：
 
-## 核心能力
+- 重复问同一类问题
+- 很快从“理解当前实现”滑向“应该怎么改”
+- 在单个文件里打转，失去全局结构
+- 人工纠偏没有真正进入下一轮规划
+- 很难解释“这个问题为什么会被问出来”
 
-- 基于 SQLite 的持久化项目/会话管理。
-- 基于 LangGraph 的多轮状态化访谈编排。
-- 带 planner 和 validator 的阶段感知问题生成。
-- 内置中英文切换的双语 operator console。
-- 长访谈下的历史摘要与检索式上下文压缩。
-- 面向 rubric 的 coverage state，覆盖 panorama / architecture / code detail / use cases / human collaboration。
-- 真正进入工作流的人类评审输入，而不是只停留在 UI 层的装饰信息。
-- 支持“基于上一轮回答重写当前问题”，而不是只能一路推进到下一问。
-- 每个 turn 支持问题版本历史、版本差异对比、重生成次数和人工介入 token 统计。
-- 对提问、摘要等 LLM 调用的 token 使用统计。
-- 针对 `/next` 和“重写当前问题”两类流程的 run trace / execution trace。
-- 本地 operator console，用于检查 transcript、状态、统计页、执行轨迹和导出结果。
+这个仓库就是围绕这些失效模式设计的：
 
-## 项目创新点
+- 默认锁定在 `understand_current_code` 模式
+- 明确分阶段推进：全景、架构、代码细节、用例、收口
+- 对文件、分支、框架覆盖、开发者意图和待展开 frontier 做状态追踪
+- 支持人工重定向、阶段纠偏和“重写当前问题”
+- 把版本历史、token 使用、执行轨迹和覆盖状态都暴露出来
 
-本项目的创新主要不在“调一个 prompt”，而在于把代码理解型访谈做成了可编排、可检查、可交付的系统：
+## 一眼看懂
 
-- 面向 rubric 的访谈编排  
-  系统不是简单根据上一轮回答续写，而是围绕显式的理解框架推进。coverage state、阶段控制、planner、validator 一起约束访谈节奏，使输出更接近真正的 Code Understand 交付物。
+| 能力面 | 作用 |
+| --- | --- |
+| 状态化访谈主链路 | 在 36-37 轮访谈里持续保留上下文和项目状态 |
+| Planner + Validator | 规划下一问，校验漂移，控制单题聚焦 |
+| Question network | 通过 `question_graph` 和 `investigation_frontier` 让 code-detail 追问有连续性 |
+| Coverage balancing | 用文件重要性、探索度和 gap 避免只围着一个文件转 |
+| Human review | 支持重定向、阶段修正、当前问题重生成 |
+| Operator console | 本地双语 UI，用于 transcript、analytics、trace 和项目管理 |
+| 研究脚本 | 从 SQLite 和日志抽取指标，再导出 LaTeX 表格 |
+| 打包分发 | 通过 PyInstaller 打成 Windows / Linux 可执行包 |
 
-- 将 LangGraph 的 durable execution 语义映射到项目会话  
-  通过 `thread_id = project-{project_id}` 把图执行线程和项目会话绑定，使工作流状态、轮次历史和持久化项目语义对齐。
+## 它和普通 Prompt App 最大的区别
 
-- 面向长访谈的检索式上下文工程  
-  系统不会把全部历史原文直接塞回模型，而是结合历史摘要、branch/topic evidence、coverage gap 和当前阶段，选择更高价值的上下文来生成下一问。
+- 它不是简单的聊天壳子，核心价值在编排。
+- 即使内部把复杂 code-detail 主题拆成多个子问题，产品层仍然保持“一轮只显示一个问题”。
+- 它不靠把所有历史原文粗暴塞回模型，而是做摘要与检索式上下文工程。
+- 人工评审不是摆设，会真实改变后续规划和当前问题版本。
+- 工程日志与操作者可见的 run trace 是两层设计，不混在一起。
+- repository coverage 和 question-network health 被当成产品特性，而不是藏在后端里的内部状态。
 
-- 对“理解当前代码”和“提出修改方案”做硬分离  
-  默认主流程严格保持在 `understand_current_code` 模式。planner、validator 和 prompt 资产都明确限制问题不要滑向“应该改什么、怎么重构、怎么改测试”。
+![Mechanics overview](docs/images/readme-mechanics.svg)
 
-- 将 human-in-the-loop 变成真实工作流输入  
-  用户在前端输入的 sufficiency、redirect、preferred focus、note、stage correction、phase ready 等信号会被持久化、展示，并直接影响问题规划。
+## 系统总览
 
-- 将“重生成当前问题”改造成主流程回放  
-  当前问题的重写不再是旁路 prompt，而是基于“上一轮已回答内容”重新跑一遍 `/next` 的规划与校验链路，只是不新增 turn，而是把结果写成当前 turn 的新版本。
+```mermaid
+flowchart LR
+    U[操作者回答与评审] --> UI[React 操作台]
+    UI --> API[FastAPI 路由]
+    API --> G[LangGraph 访谈工作流]
 
-- 版本化问题历史与差异检查  
-  每一问都可以保留多个问题版本。前端可以查看版本历史、前后 diff、重生成次数，以及人工介入带来的 token 成本，便于追溯人工纠偏是否真正生效。
+    G --> LC[load_context]
+    G --> DP[decide_progress]
+    G --> PQ[plan_question]
+    G --> RV[review_question_plan]
+    G --> DQ[draft_question]
+    G --> PS[persist]
 
-- 阶段纠偏与防回退约束  
-  人工纠正阶段后，项目与 turn 的阶段状态会同步更新，后续自动规划也不会再悄悄回退到更早阶段，除非再次进行人工纠偏。
+    LC --> COV[coverage_state 重建]
+    PQ --> QN[question_graph + frontier]
+    PQ --> FC[文件重要性 + 探索度]
+    RV --> HG[human review + drift gate]
+    DQ --> PM[prompt 资产 + repo grounding]
 
-- 面向 UI 的运行轨迹模型  
-  每次 `/next` 和“重写当前问题”都会被建模为一个独立 run，包含 step、状态、耗时、method/tool 信息，让操作者可以像看 agent trace 一样理解系统正在做什么。
+    PS --> DB[(SQLite)]
+    PS --> RT[agent_runs + run steps]
+    PS --> LOG[JSONL 日志]
 
-- 双层可观测性  
-  后端保留结构化 JSONL 日志，便于工程排查；同时又提供独立的 run-trace API，专门服务前端执行态展示，而不是把原始日志直接暴露给 UI。
+    DB --> UI
+    RT --> UI
+    LOG --> DBG[调试与离线分析]
+```
 
-## 高层架构
+## 一轮问题是怎么长出来的
 
-- FastAPI 提供项目、turn、status、transcript、run trace 和 debug 接口。
-- SQLAlchemy 在 SQLite 中持久化项目会话、访谈轮次、LLM usage 和 generation run。
-- LangGraph 负责 `/next` 的状态、节点和条件流编排。
-- Prompt 资产以带类型约束的 YAML 文件管理，并通过 prompt manager 渲染。
-- 服务层负责 planner、validator、coverage rebuild、摘要、上下文检索、run trace 和 usage tracking。
-- Vite + React + TypeScript + Tailwind CSS 提供本地 operator UI。
+```mermaid
+sequenceDiagram
+    participant O as 操作者
+    participant F as 前端
+    participant B as FastAPI
+    participant W as LangGraph workflow
+    participant S as 状态与数据库
 
-## 当前架构亮点
+    O->>F: 提交回答与人工评审
+    F->>B: POST /projects/{id}/answer
+    B->>S: 持久化回答、摘要、usage
+    O->>F: 生成下一问
+    F->>B: POST /projects/{id}/next
+    B->>W: invoke(project-{id})
+    W->>S: 读取 coverage、queue、stage、历史 turn
+    W->>W: 规划、校验并生成一个问题
+    W->>S: 持久化 turn、question version、run trace
+    B-->>F: 返回 next_turn + usage_summary + run
+    F-->>O: 展示 transcript、analytics 和 execution trace
+```
 
-- `coverage_state` 同时保存 branch/topic evidence 和 rubric-oriented framework coverage。
-- `question_plan_json` 会保存“为什么选这题”，包括 phase、intent、framework gap、branch 选择和 human review 是否生效。
-- `question_versions` 会保留问题版本历史，包括版本来源、人工评审、token 使用和差异对比基础数据。
-- `agent_runs` / `agent_run_steps` 为每次 `/next` 生成提供 UI 友好的执行轨迹。
-- 后端结构化日志写入 `logs/`，与 run-trace API 分层，不直接拿日志当 UI 协议。
+## 关键能力
 
-## 问题生成主链路
+### 访谈编排
 
-当前 `/next` 主流程已经被拆成更明确的多层链路，以减少无谓 token 消耗和整题重生成：
+- 创建项目、启动访谈、逐轮回答，并把 transcript 长期保存在 SQLite。
+- 通过 LangGraph 控制第一问和后续每一问的生成。
+- 支持“基于上一轮已回答内容重写当前问题”，但不推进 turn 编号。
+- 保存 question versions、重生成次数、diff 和人工干预 token 成本。
+- 在配置 OpenCode 时，可以走自动回答和 plan-step 相关流程。
 
-1. `load_context` 恢复项目、最新已回答 turn、coverage 快照，以及当前的人类评审信号。
-2. `decide_progress` 决定访谈是否继续，以及下一轮属于哪个阶段。
-3. `plan_question` 选择下一题的 branch / framework gap / 仓库 artifact；对于复杂 code-detail 主题，还可以产出 `decomposition_mode` 和 `subquestion_specs`。
-4. `review_question_plan` 在真正写题前检查置信度、模式漂移、human gate 和规划合法性。
-5. `draft_question` 负责重建 compact context、附加 repo grounding、生成一个可见问题，并把后续 code-detail 子问题写入内部 queue。
-6. `persist` 持久化 turn、question version、token usage 和 run trace。
+### 覆盖、记忆与连续性
 
-在 code-detail 路径里，现在多了两个节省 token 的控制点：
+- 维护 `coverage_state`，其中包含阶段覆盖、branch evidence、repo file coverage、queue 状态和 question-network 统计。
+- 对较早回答做摘要，降低上下文膨胀。
+- 跟踪 `question_graph`、`investigation_frontier` 和 `developer_intent_coverage`。
+- 用 `importance_score`、`exploration_score`、`coverage_gap_score` 重新平衡深挖问题。
+- 当最新回答已经隐式解决排队子问题时，自动裁剪 queue。
 
-- 规划级拆分：复杂实现主题会先被拆成多个单焦点子问题，再进入 queue，而不是让 writer 先写 compound question。
-- 校验驱动修复：像 yes/no 开头、line number 这类低风险问题会先本地修复，只有修不掉时才进入 refiner 或整题重生成。
+### 人机协作
 
-这样既保留了“一轮只显示一个问题”的交互契约，也显著降低了重生成压力。
+- 接收 sufficient、insufficient、drifted 等 verdict。
+- 把下一轮显式重定向到架构、用例或某个特定仓库主题。
+- 在阶段走偏时进行人工阶段修正。
+- 把当前问题重写成新版本，同时保留历史版本和差异。
 
-## 近期改进
+### 可观测性
 
-近期仓库的主要改动方向，是让长访谈更稳定、更可检查，也更省：
+- 使用 `agent_runs` 和 `agent_run_steps` 支撑面向操作者的 execution trace。
+- 向 `logs/` 输出结构化 JSONL 日志。
+- 提供 coverage、queue summary、file coverage summary、question-network summary 等专用 debug API。
+- 在前端 analytics 中展示 token 组成、耗时、阶段迁移、frontier 健康度和仓库覆盖情况。
 
-- 引入 repository-aware coverage balancing，利用文件重要性、探索度和 coverage gap 在 code-detail 阶段做再平衡。
-- 引入内部 sub-question queue，把复杂代码细节话题按多轮展开，而不是一次输出复合问题。
-- 对齐了 code-detail prompt、validator 和 postprocessor：用户永远只看到单题，多轮追问由系统内部 queue 管理。
-- 当前问题重写继续沿用 `/next` 的 planner / validator 体系，而不是走一条独立旁路。
-- Debug 与 analytics 面板现在可以直接查看 queue 状态、文件覆盖摘要、planner reasoning 和 next-context。
-- 问题规划不再只基于 branch，而是显式构建 `question_graph` 和 `investigation_frontier`，沿着父子、同级、上下游、同概念关系继续追问，减少孤立问题。
-- 系统开始跟踪真实开发者式的提问意图分布，例如 `trace_execution`、`investigate_failure`、`inspect_inputs_outputs`、`follow_state_change`，并用 under-coverage 压力避免角度单一。
-- Debug API 和 analytics 现在会直接暴露网络退化诊断，例如孤立问题比例、重复开头簇、frontier 枯竭、intent collapse 和 degradation reasons。
+## UI 能看什么
 
-## 问题网络模型
+| 页面 / 面板 | 价值 |
+| --- | --- |
+| Workspace | 创建项目、回答问题、查看 transcript、管理问题版本 |
+| Status panel | 查看阶段、轮次、累计耗时和当前 run 状态 |
+| Transcript panel | 浏览每一轮，复制最新问题、删除尾部 turn、触发当前问题重生成 |
+| Execution trace | 逐步查看 workflow 正在执行什么、耗时多久 |
+| Analytics | 查看 token、阶段迁移、仓库覆盖树和 question-network 诊断 |
+| 双语界面 | 可在英文和中文之间切换操作台文案 |
 
-当前 code-detail 系统不再把长访谈视为线性问答列表，而是维护一个轻量级问题网络：
-
-- `question_graph`
-  保存已回答问题节点，以及由 artifact 延续、follow-up cue 和同概念迁移推导出的边。
-- `investigation_frontier`
-  保存待展开的后续候选，包含 `parent_node_id`、`relation_type`、`developer_intent`、`depth_kind` 和 breadth 元数据。
-- `developer_intent_coverage`
-  记录当前访谈是否过度集中在单一提问意图，是否遗漏其他高价值开发者视角。
-- `question_network_stats`
-  统计连通性、breadth/depth transition、intent diversity、dominant intent ratio、重复开头簇，以及相关诊断指标。
-
-这个网络主要服务内部规划、检索、校验和调试。产品层交互契约不变：用户每轮仍只看到一个问题。
-
-## 功能概览
-
-- 项目/会话管理
-  - 创建、列出、选择、重命名、更新和删除项目。
-  - 前端持久化当前选择的项目。
-
-- 访谈编排
-  - 启动访谈并生成第一问。
-  - 提交回答并按轮生成下一问。
-  - 基于上一轮回答重写当前问题，但不推进 turn 编号。
-  - 按阶段约束提问，并保持在“理解当前代码”模式。
-  - 人工推进到更后阶段后，自动流程不会静默回退。
-
-- 记忆与覆盖
-  - 对旧回答生成摘要。
-  - 跟踪 framework gap 和 branch evidence。
-  - 尽量避免语义重复提问。
-
-- 人机协作
-  - 前端收集 human review signal。
-  - 支持阶段纠偏、方向重定向、焦点控制和 note 驱动的问题重写。
-  - transcript 中可见版本历史、diff、人工介入摘要和实际生效项。
-
-- 轨迹与可观测性
-  - 展示每次 run 的步骤与耗时。
-  - 展示累计生成耗时与 run 次数。
-  - 输出结构化 JSONL backend logs。
-  - 通过 debug 接口检查 queue、文件覆盖、planner reasoning 和 next-context。
-
-- 操作台体验
-  - 顶部导航统一承载页面切换和语言切换。
-  - 新增 analytics 页，以图表方式展示 token、耗时、重生成压力和阶段迁移。
-
-## 技术栈
-
-- 后端
-  - FastAPI
-  - SQLAlchemy
-  - Pydantic / Pydantic Settings
-  - SQLite
-
-- 工作流 / 编排
-  - LangGraph
-
-- LLM 集成
-  - OpenAI-compatible Chat Completions API
-  - Anthropic provider 支持
-  - OpenCode provider 支持
-  - 可选 embedding 辅助重复问题判重
-
-- 前端
-  - Vite
-  - React
-  - TypeScript
-  - Tailwind CSS v4
-
-## 项目结构
+## 代码结构地图
 
 ```text
 stateful_interview_agent/
 ├─ app/
-│  ├─ api/routes/              # FastAPI 路由
-│  ├─ core/                    # 配置、数据库、LLM client、应用初始化
-│  ├─ graphs/                  # LangGraph state、nodes、graph 组装
-│  ├─ logging/                 # 结构化 JSONL 日志子系统
-│  ├─ models/                  # SQLAlchemy 模型
-│  ├─ prompts/                 # Prompt 资产与渲染层
-│  ├─ schemas/                 # 请求/响应 schema
-│  └─ services/                # planner、validator、coverage、retrieval、run trace 等
+│  ├─ api/routes/              FastAPI 项目接口与调试接口
+│  ├─ core/                    配置、数据库、运行时路径、LLM provider
+│  ├─ graphs/                  LangGraph state、node 与工作流装配
+│  ├─ logging/                 JSONL 日志与 trace 上下文
+│  ├─ models/                  SQLAlchemy 持久化模型
+│  ├─ prompts/                 带类型的 YAML prompt 资产
+│  ├─ schemas/                 API 契约
+│  └─ services/                planner、validator、coverage、retrieval、run trace
 ├─ frontend/
-│  ├─ src/api/                 # 类型化 API client
-│  ├─ src/components/          # 面板、turn 卡片、trace 展示组件
-│  ├─ src/hooks/               # 前端会话 orchestration hooks
-│  ├─ src/types/               # 前端类型定义
-│  └─ src/utils/               # 格式化、导出、文本清洗
-├─ tests/                      # 后端测试
-├─ .ref_docs/                  # 本地参考文档
-├─ logs/                       # 运行日志目录（gitignored）
-├─ pyproject.toml
-├─ uv.lock
-├─ README.md
-└─ README_zh.md
+│  ├─ src/api/                 前端 API client
+│  ├─ src/components/          workspace、transcript、analytics、trace UI
+│  ├─ src/hooks/               项目级 orchestration hooks
+│  └─ src/types/               前端响应类型
+├─ tests/                      编排、覆盖、路由和前端契约相关测试
+├─ scripts/                    指标抽取与 LaTeX 导出
+├─ packaging/                  Windows / Linux PyInstaller 规格
+├─ docs/plans/                 产品与实现计划
+└─ detai_doc/                  planner、coverage、HITL、trace、prompt 资产深度笔记
 ```
 
-## 参考文档
+## 快速开始
 
-当前仓库里真实存在的本地参考资料位于 [`.ref_docs/`](.ref_docs/) 下。与当前产品能力最直接相关的是：
-
-- [`.ref_docs/问题.md`](.ref_docs/%E9%97%AE%E9%A2%98.md)  
-  一个结构化访谈问题样例文档，现已补充说明双语 UI、当前问题重写、版本历史、diff 检查和 analytics 视角等新能力。
-
-最近几轮功能迭代的实现思路与改造计划则记录在 [`docs/plans/`](docs/plans/) 中。
-
-## 安装与启动
-
-### 1. 安装后端依赖
+### 1. 安装依赖
 
 ```bash
 uv sync
+cd frontend && npm install
 ```
 
-### 2. 安装前端依赖
+### 2. 配置环境变量
+
+复制 `.env.example` 为 `.env`，然后选择你要使用的 provider。项目支持：
+
+- `LLM_PROVIDER=openai_compatible`
+- `LLM_PROVIDER=anthropic`
+- `LLM_PROVIDER=opencode`
+
+最关键的配置项通常是：
 
 ```bash
-cd frontend
-npm install
-```
-
-### 3. 配置环境变量
-
-在仓库根目录创建 `.env`：
-
-```bash
-OPENAI_API_KEY=your_api_key_here
-OPENAI_BASE_URL=https://api.scnet.cn/api/llm/v1
-OPENAI_MODEL=MiniMax-M2.5
-OPENAI_EMBEDDING_MODEL=
-DUPLICATE_GUARD_USE_EMBEDDINGS=false
-DUPLICATE_GUARD_EMBEDDING_THRESHOLD=0.9
-APP_NAME=Stateful Interview Agent
-APP_ENV=dev
-INTERVIEW_MIN_TURNS=36
-INTERVIEW_MAX_TURNS=37
-INTERVIEW_PANORAMA_TURNS=1
-INTERVIEW_ARCHITECTURE_TURNS=2
-INTERVIEW_CODE_DETAIL_MIN_TURNS=31
-INTERVIEW_CODE_DETAIL_MAX_TURNS=32
-INTERVIEW_USE_CASE_TURNS=2
+APP_HOST=127.0.0.1
+APP_PORT=8000
 DATABASE_URL=sqlite:///./data/app.db
-LOG_LEVEL=INFO
-LOG_DIR=./logs
-LOG_LLM_PAYLOADS=true
-LOG_ARTIFACTS_ENABLED=false
-LOG_PRETTY_JSON=false
-LOG_TEXT_PREVIEW_CHARS=240
+OPENAI_API_KEY=your_key
+OPENAI_BASE_URL=https://api.scnet.cn/api/llm/v1
+OPENAI_MODEL=your_model
 QUESTION_GRAPH_ENABLED=true
 GRAPH_FRONTIER_PLANNING_ENABLED=true
 DEVELOPER_INTENT_BALANCING_ENABLED=true
 GRAPH_CONTINUITY_VALIDATION_ENABLED=true
 ```
 
-问题网络层相关 feature flag：
+### 3. 启动项目
 
-- `QUESTION_GRAPH_ENABLED`：是否在 `coverage_state` 中重建问题图、frontier、intent coverage 和 network stats。
-- `GRAPH_FRONTIER_PLANNING_ENABLED`：是否让 planner 在 code-detail 阶段优先选择 connected frontier。
-- `DEVELOPER_INTENT_BALANCING_ENABLED`：是否根据 intent under-coverage 给 frontier 排名加权，减少角度单一。
-- `GRAPH_CONTINUITY_VALIDATION_ENABLED`：是否要求 code-detail 问题携带 `developer_intent` 和 `relation_type` 等图状连续性元数据。
-
-### 4. 启动后端
+只启动后端：
 
 ```bash
 uv run uvicorn app.main:app --reload
 ```
 
-默认地址：
-
-```text
-http://127.0.0.1:8000
-```
-
-### 5. 启动前端
+只启动前端：
 
 ```bash
 cd frontend
 npm run dev
 ```
 
-默认地址：
-
-```text
-http://127.0.0.1:5173
-```
-
-### 6. 一键同时启动前后端
-
-如果希望从仓库根目录用一个入口同时拉起前后端，可以执行：
+从仓库根目录一键启动前后端：
 
 ```bash
 uv run python main.py
 ```
 
-这个根目录的 `main.py` 会同时启动：
+默认地址：
 
-- 使用当前 Python 解释器启动 FastAPI 后端
-- 在 `frontend/` 下执行 `npm run dev`
+- Backend: `http://127.0.0.1:8000`
+- Frontend: `http://127.0.0.1:5173`
 
-这是在 `uv` 环境里最稳妥的开发入口，因为它会复用 `uv sync` 创建的解释器，不需要你手动先激活 `.venv`。
+## 推荐使用流
 
-如果你已经手动激活了环境，也可以直接执行：
+1. 在 UI 中创建一个项目。
+2. 如有需要，先配置 repository grounding。
+3. 启动访谈，查看 `Q1`。
+4. 保存回答，再生成下一问。
+5. 当问题漂移或阶段不对时，使用 human review 纠偏。
+6. 一边迭代，一边看 execution trace 和 analytics。
+7. 当 planner、coverage 或 queue 行为不符合预期时，转去调试接口检查。
 
-```bash
-python main.py
-```
+## 调试与 Analytics 入口
 
-在 Windows PowerShell 中通常写成：
+| 接口 / 视图 | 作用 |
+| --- | --- |
+| `GET /debug/projects/{id}/coverage` | 查看完整 `coverage_state`，包含 framework coverage、queue 和 repo file coverage |
+| `GET /debug/projects/{id}/queue-summary` | 查看 code-detail 阶段尚未展开的内部子问题队列 |
+| `GET /debug/projects/{id}/file-coverage-summary` | 查看每个文件的重要性、探索进度和 coverage gap |
+| `GET /debug/projects/{id}/question-network-summary` | 查看 connected ratio、frontier 健康度、top intents 和 degradation flags |
+| `GET /projects/{id}/runs/latest` | 查看最近一次运行的 execution trace |
+| Analytics 页面 | 可视化查看 token、阶段迁移、覆盖树和问题网络诊断 |
 
-```powershell
-uv run python .\main.py
-```
+## 测试
 
-## 开发与调试工作流
-
-一个比较实用的本地开发流程通常是：
-
-1. 仓库根目录执行一次 `uv sync`，前端目录执行一次 `npm install`。
-2. 用单独的 dev server 或 `uv run python main.py` 启动整套系统。
-3. 在 UI 中创建项目，必要时配置 repository grounding。
-4. 一边修改后端编排逻辑，一边用 debug routes 和 run trace 观察 planner / coverage / queue 是否符合预期。
-5. 提交前跑针对性的 backend unittest，以及 frontend test / build。
-
-如果重点在排查问题质量和网络连续性，最有价值的观测面有三处：
-
-- `/debug/projects/{project_id}/state`
-  一次性查看 `question_graph`、`investigation_frontier`、`developer_intent_coverage`、queue 状态和 repository coverage。
-- `/debug/projects/{project_id}/question-network-summary`
-  查看 `connected_ratio`、`frontier_count`、`repeat_opening_clusters`、`top_intents`、`undercovered_intents`、`top_relation_types`、`diagnostic_flags` 和 `degradation_reasons`。
-- Analytics UI
-  直接查看 `Question network` 面板中的孤立问题数、frontier 健康度、intent 分布、relation mix 和网络诊断，而不需要手读 JSON。
-
-图状规划开启后，可以重点关注这些成功指标：
-
-- `isolated_node_count` 是否持续偏低
-- 深入 code-detail 时 `frontier_count` 是否保持非零
-- 是否出现多个开发者意图，而不是被单一意图主导
-- `repeat_opening_clusters` 是否被控制住
-- 是否同时存在 breadth 和 depth 的扩展，而不是反复围着同一文件打转
-
-常用命令：
+后端：
 
 ```bash
-uv run python -m unittest tests.test_framework_orchestration tests.test_interview_nodes -v
-uv run python -m unittest tests.test_question_planner tests.test_question_generation_repair -v
-cd frontend && npm test
-cd frontend && npm run build
+uv run python -m unittest tests.test_project_api_flow -v
+uv run python -m unittest tests.test_question_planner tests.test_queue_lifecycle -v
+uv run python -m unittest tests.test_run_trace_api tests.test_repository_grounding -v
 ```
 
-## Windows 打包
+前端：
 
-这个项目现在可以打成 Windows 可执行分发包，目标机器不需要预装 Python。
+```bash
+cd frontend
+npm test
+npm run build
+```
 
-打包形态如下：
+## 打包分发
 
-- 先把前端构建成静态文件。
-- 用 PyInstaller 打包 FastAPI 服务、prompt 资产和前端构建产物。
-- 将 `.env`、`data/`、`logs/` 保持在 exe 外部，便于交付后继续修改配置。
+仓库支持通过 PyInstaller 打成 Windows 和 Linux 分发包。
 
-### 运行时行为
-
-- 源码模式保持不变：在仓库根目录启动后端，同时用 Vite dev server 跑前端。
-- 打包模式下，可执行文件所在目录会作为默认可写运行根目录。
-- `./data/app.db`、`./logs` 这类相对路径会自动解析到该运行根目录下。
-- 如果 `frontend/dist` 被打进包里，FastAPI 会直接托管前端静态资源，前端也会优先走同源 API。
-
-### 打包步骤
-
-1. 构建前端：
+构建步骤：
 
 ```bash
 cd frontend
 npm install
 npm run build
 cd ..
-```
-
-2. 安装打包依赖：
-
-```bash
 uv sync --extra build
 ```
 
-3. 在 Windows 上执行打包：
+Windows：
 
 ```bash
 uv run pyinstaller packaging/windows/stateful_interview_agent.spec
 ```
 
-如果需要 Linux 发布包，请不要在过新的发行版或 `ubuntu-latest` 上构建。PyInstaller 会把当前环境的 `libpython` 一起带进产物，构建机 glibc 太新时，目标机器会报 `GLIBC_x.y not found`。建议固定在 Ubuntu 22.04 这类更低基线环境上执行 Linux 打包。
+Linux：
 
-4. 将运行时文件放到 `dist/StatefulInterviewAgent/StatefulInterviewAgent.exe` 同目录：
-
-```text
-dist/StatefulInterviewAgent/
-├─ StatefulInterviewAgent.exe
-├─ .env
-├─ data/
-└─ logs/
+```bash
+uv run pyinstaller packaging/linux/stateful_interview_agent.spec
 ```
 
-### 可配置的环境文件
+打包模式会把 `.env`、`data/`、`logs/` 保留在可执行文件之外，方便交付后继续调整配置。
 
-- 源码模式默认读取仓库根目录 `.env`
-- 打包模式默认读取 exe 同目录 `.env`
-- 可通过 `STATEFUL_AGENT_ENV_FILE` 显式指定 env 文件路径
-- 可通过 `STATEFUL_AGENT_RUNTIME_DIR` 显式指定可写运行目录
+## 研究与离线分析脚本
 
-## 环境变量说明
+`scripts/` 目录不是摆设，它支撑一条轻量研究评估链路：
 
-定义位置见 [app/core/config.py](app/core/config.py)。
+- `scripts/extract_metrics.py` 读取 SQLite 与运行日志，输出 CSV 指标。
+- `scripts/generate_latex_tables.py` 把这些指标进一步整理成论文风格的 LaTeX 表格。
 
-- `OPENAI_API_KEY`：必填，模型服务 API key。
-- `OPENAI_BASE_URL`：OpenAI-compatible base URL。
-- `OPENAI_MODEL`：问题生成与摘要使用的 chat model。
-- `OPENAI_EMBEDDING_MODEL`：可选，embedding 判重模型。
-- `DUPLICATE_GUARD_USE_EMBEDDINGS`：是否开启 embedding 辅助判重。
-- `DUPLICATE_GUARD_EMBEDDING_THRESHOLD`：embedding 相似度阈值。
-- `APP_HOST`：后端监听地址，打包启动器会读取它。
-- `APP_PORT`：后端监听端口，打包启动器会读取它。
-- `INTERVIEW_MIN_TURNS`：达到最小访谈目标的轮次下限。
-- `INTERVIEW_MAX_TURNS`：访谈轮次硬上限。
-- `INTERVIEW_PANORAMA_TURNS`：全景阶段显式轮次配置。
-- `INTERVIEW_ARCHITECTURE_TURNS`：架构阶段显式轮次配置。
-- `INTERVIEW_CODE_DETAIL_MIN_TURNS`：代码细节阶段最少轮次。
-- `INTERVIEW_CODE_DETAIL_MAX_TURNS`：代码细节阶段最多轮次。
-- `INTERVIEW_USE_CASE_TURNS`：用例阶段显式轮次配置。
-- `QUESTION_GRAPH_ENABLED`：是否启用问题图、frontier 和网络诊断重建。
-- `GRAPH_FRONTIER_PLANNING_ENABLED`：是否启用 graph frontier 驱动的 code-detail 规划。
-- `DEVELOPER_INTENT_BALANCING_ENABLED`：是否启用 developer intent under-coverage 加权。
-- `GRAPH_CONTINUITY_VALIDATION_ENABLED`：是否要求 code-detail 问题携带图状连续性元数据。
-- `DATABASE_URL`：数据库连接串。
-- `LOG_LEVEL`：日志级别。
-- `LOG_DIR`：日志目录。
-- `LOG_LLM_PAYLOADS`：是否记录 LLM payload preview。
-- `LOG_ARTIFACTS_ENABLED`：是否输出更大的 prompt/context artifact。
-- `LOG_PRETTY_JSON`：本地调试用 JSON 格式开关。
-- `LOG_TEXT_PREVIEW_CHARS`：日志文本预览长度。
-- `STATEFUL_AGENT_ENV_FILE`：可选，显式指定外部 env 文件路径。
-- `STATEFUL_AGENT_RUNTIME_DIR`：可选，显式指定可写运行目录。
+示例：
 
-## 典型使用流程
+```bash
+python scripts/extract_metrics.py \
+  --db-path data/app.db \
+  --logs-root logs \
+  --output-dir results
 
-1. 创建一个项目，填写有意义的标题和 system prompt。
-2. 如有需要，先配置 repository grounding，让 planner 能命中真实文件和符号。
-3. 启动访谈，生成 `Q1`。
-4. 先看一眼 UI 中的初始阶段、status panel 和 transcript baseline。
-5. 将回答粘贴到 composer 中。
-6. 可选填写 human review signal：
-   - sufficient / insufficient / drifted
-   - continue / redirect
-   - preferred next focus
-   - note
-   - stage correction
-   - phase ready
-7. 提交答案，观察 execution trace 实时更新。
-8. 如果当前生成的问题仍然不合适，可以基于上一轮回答重写当前问题，而不推进 turn：
-   - 保存本轮人工评审
-   - 可选纠正阶段
-   - 生成当前问题的新版本
-   - 检查实际生效项和版本 diff
-9. 检查当前问题、transcript、analytics、status panel、run trace、queue summary 和 file coverage summary。
-10. 持续推进，直到系统进入 wrap-up readiness。
+python scripts/generate_latex_tables.py \
+  --input-dir results \
+  --output-dir results/tables
+```
 
-## 调试与检查入口
+## API 速览
 
-仓库提供两层不同的检查能力：
+<details>
+<summary>常用项目接口</summary>
 
-- `logs/` 下的结构化日志，适合后端工程排查。
-- run-trace / debug API，适合 operator 和开发时观察工作流状态。
-
-开发时最有用的接口通常是：
-
-- `GET /debug/projects/{id}/coverage`
-  返回完整 coverage state，包括 framework gaps、branch evidence、queue 状态和仓库文件覆盖指标。
-- `GET /debug/projects/{id}/queue-summary`
-  查看 code-detail 阶段尚未展开的内部子问题队列。
-- `GET /debug/projects/{id}/file-coverage-summary`
-  查看 tracked files 的重要性、探索度和 coverage gap 排名。
-- `POST /debug/projects/{id}/next-context`
-  预览下一题真正使用的 planner 决策和上下文拼装结果。
-- `GET /projects/{id}/runs/latest`
-  查看最近一次编排运行的 step、耗时和状态。
-
-这层分离是有意设计的：日志用于工程诊断，run trace / debug response 则是稳定的前端与工具消费接口。
-
-## API 概览
-
-### 主项目/会话接口
-
-- `POST /projects`  
-  创建项目。
-
-- `GET /projects`  
-  获取最近项目列表。
-
-- `GET /projects/{id}`  
-  获取单个项目。
-
-- `PATCH /projects/{id}`  
-  更新项目标题或 system prompt。
-
-- `DELETE /projects/{id}`  
-  删除项目。
-
-### 访谈流程接口
-
-- `POST /projects/{id}/start`  
-  生成第一问。
-
-- `POST /projects/{id}/answer`  
-  仅保存回答。
-
-- `POST /projects/{id}/next`  
-  保存回答并生成下一问。
-
-- `POST /projects/{id}/turns/{turn_id}/regenerate-question`  
-  基于上一轮已回答内容重跑问题生成流程，覆盖当前问题并追加一个新版本，同时返回 `applied_changes` 说明哪些人工纠偏真正生效。
-
-- `GET /projects/{id}/turns`  
-  获取 turn 历史，包括问题版本信息、重生成计数和人工介入 token 汇总。
-
-- `GET /projects/{id}/transcript`  
-  获取 transcript 文本。
-
-- `GET /projects/{id}/status`  
-  获取运行状态、usage summary 和累计生成耗时。
-
-### Run Trace 接口
-
+- `POST /projects`
+- `GET /projects`
+- `GET /projects/{id}`
+- `PATCH /projects/{id}`
+- `DELETE /projects/{id}`
+- `POST /projects/{id}/start`
+- `POST /projects/{id}/answer`
+- `POST /projects/{id}/next`
+- `POST /projects/{id}/auto-answer-latest`
+- `POST /projects/{id}/auto-step`
+- `POST /projects/{id}/turns/{turn_id}/regenerate-question`
+- `PATCH /projects/{id}/turns/{turn_id}/question`
+- `GET /projects/{id}/turns`
+- `GET /projects/{id}/status`
+- `GET /projects/{id}/transcript`
 - `GET /projects/{id}/runs`
-- `GET /projects/{id}/runs/latest`
-- `GET /projects/{id}/runs/{run_id}`
 
-这些接口服务于前端 execution trace 展示，覆盖 `/next` 和“重写当前问题”两类运行。
+</details>
 
-### Debug 接口
+## 仓库内现成参考资料
 
-- `GET /debug/llm`
-- `GET /debug/projects/{id}/coverage`
-- `POST /debug/projects/{id}/next-context`
+- [`detai_doc/`](detai_doc/) 收录了关于 planner、coverage、execution trace 契约、prompt 资产、记忆压缩和人机协作的深度说明。
+- [`docs/plans/`](docs/plans/) 记录了 analytics 刷新、queue balancing、question-network 升级等多轮迭代计划。
+- [`docs/architecture/stateful_interview_agent_architecture.html`](docs/architecture/stateful_interview_agent_architecture.html) 是仓库内已有的架构图工件。
 
-可用于检查 coverage、planner 决策、prompt 渲染和上下文组装。
+## 当前限制
 
-## 日志与运行检查
-
-后端结构化日志会以 JSONL 写入 `logs/`，常见目录包括：
-
-- `logs/requests/`
-- `logs/workflow/`
-- `logs/llm/`
-- `logs/retrieval/`
-- `logs/persistence/`
-- `logs/errors/`
-
-工程排查用日志；操作者查看执行进度更适合 run-trace UI/API。
-
-## 截图
-
-仓库中当前包含一个通用前端资源：
-
-- [frontend/src/assets/hero.png](frontend/src/assets/hero.png)
-
-如果后续加入真实产品截图，建议统一放在 `docs/screenshots/`。
-
-## 已知限制 / 后续方向
-
-- 目前使用 SQLite，适合本地开发与单人使用；若要走更长期的生产部署，需要更强数据库和迁移方案。
-- 重复问题抑制已经比早期版本强很多，但依然是“结构化规则 + 可选 embedding”的混合方案，不是完整语义规划系统。
-- 默认目标是本地 operator workflow，因此没有做认证和多用户隔离。
-- active run 目前使用 polling，而不是 SSE / WebSocket。
-- framework coverage 模型已经明显更贴近 rubric，但仍然部分依赖启发式，而非完全 learned planner。
-- 对于旧项目中在早期版本产生的脏历史数据，API 已经会在读取时自动做一部分归一化修复，但底层存量数据仍可能保留早期版本痕迹。
+- 这个项目默认优化的是“理解当前代码”，不是“提出改造建议”。
+- 长访谈质量仍然会受到 prompt 设计与模型稳定性的影响。
+- code-detail 深挖的质量，和 repository grounding 的配置强相关。
+- 打包模式适合交付给操作者，本地源码模式仍然最适合开发和调试。

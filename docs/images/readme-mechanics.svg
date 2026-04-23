@@ -1,0 +1,98 @@
+<svg width="1200" height="640" viewBox="0 0 1200 640" fill="none" xmlns="http://www.w3.org/2000/svg">
+  <defs>
+    <linearGradient id="panel" x1="140" y1="40" x2="1080" y2="600" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#FFFFFF"/>
+      <stop offset="1" stop-color="#F8FAFC"/>
+    </linearGradient>
+    <linearGradient id="blue" x1="0" y1="0" x2="1" y2="1">
+      <stop stop-color="#0EA5E9"/>
+      <stop offset="1" stop-color="#2563EB"/>
+    </linearGradient>
+    <linearGradient id="green" x1="0" y1="0" x2="1" y2="1">
+      <stop stop-color="#10B981"/>
+      <stop offset="1" stop-color="#059669"/>
+    </linearGradient>
+    <linearGradient id="gold" x1="0" y1="0" x2="1" y2="1">
+      <stop stop-color="#F59E0B"/>
+      <stop offset="1" stop-color="#EA580C"/>
+    </linearGradient>
+    <filter id="soft" x="-40" y="-40" width="1280" height="720" filterUnits="userSpaceOnUse" color-interpolation-filters="sRGB">
+      <feDropShadow dx="0" dy="14" stdDeviation="18" flood-color="#94A3B8" flood-opacity="0.18"/>
+    </filter>
+  </defs>
+
+  <rect width="1200" height="640" rx="32" fill="#F8FAFC"/>
+  <g filter="url(#soft)">
+    <rect x="60" y="52" width="1080" height="536" rx="28" fill="url(#panel)"/>
+  </g>
+
+  <text x="92" y="112" fill="#475569" font-family="Arial, sans-serif" font-size="18" font-weight="700" letter-spacing="3">HOW THE SYSTEM STAYS COHERENT</text>
+  <text x="92" y="150" fill="#0F172A" font-family="Georgia, 'Times New Roman', serif" font-size="34" font-weight="700">
+    <tspan x="92" dy="0">Three internal loops keep the interview</tspan>
+    <tspan x="92" dy="40">from drifting</tspan>
+  </text>
+
+  <g>
+    <rect x="92" y="214" width="306" height="284" rx="24" fill="#EFF6FF"/>
+    <rect x="92.5" y="214.5" width="305" height="283" rx="23.5" stroke="#BFDBFE"/>
+    <circle cx="134" cy="256" r="22" fill="url(#blue)"/>
+    <text x="134" y="263" text-anchor="middle" fill="#FFFFFF" font-family="Arial, sans-serif" font-size="20" font-weight="700">1</text>
+    <text x="168" y="264" fill="#0F172A" font-family="Georgia, 'Times New Roman', serif" font-size="24" font-weight="700">Coverage loop</text>
+    <text x="120" y="312" fill="#334155" font-family="Arial, sans-serif" font-size="17">
+      <tspan x="120" dy="0">Tracks stages, files, branches,</tspan>
+      <tspan x="120" dy="26">framework gaps, and</tspan>
+      <tspan x="120" dy="26">exploration depth.</tspan>
+    </text>
+    <rect x="120" y="392" width="218" height="34" rx="17" fill="#DBEAFE"/>
+    <text x="229" y="414" text-anchor="middle" fill="#1D4ED8" font-family="Arial, sans-serif" font-size="14" font-weight="700">importance + exploration + gap</text>
+    <rect x="120" y="438" width="164" height="34" rx="17" fill="#E0F2FE"/>
+    <text x="202" y="460" text-anchor="middle" fill="#0C4A6E" font-family="Arial, sans-serif" font-size="14" font-weight="700">avoid tunnel vision</text>
+  </g>
+
+  <g>
+    <rect x="446" y="214" width="306" height="284" rx="24" fill="#ECFDF5"/>
+    <rect x="446.5" y="214.5" width="305" height="283" rx="23.5" stroke="#A7F3D0"/>
+    <circle cx="488" cy="256" r="22" fill="url(#green)"/>
+    <text x="488" y="263" text-anchor="middle" fill="#FFFFFF" font-family="Arial, sans-serif" font-size="20" font-weight="700">2</text>
+    <text x="522" y="264" fill="#0F172A" font-family="Georgia, 'Times New Roman', serif" font-size="24" font-weight="700">Question network</text>
+    <text x="474" y="312" fill="#334155" font-family="Arial, sans-serif" font-size="17">
+      <tspan x="474" dy="0">Links answered questions</tspan>
+      <tspan x="474" dy="26">into a graph, ranks frontier</tspan>
+      <tspan x="474" dy="26">candidates, and balances intent.</tspan>
+    </text>
+    <rect x="474" y="382" width="140" height="34" rx="17" fill="#D1FAE5"/>
+    <text x="544" y="404" text-anchor="middle" fill="#047857" font-family="Arial, sans-serif" font-size="14" font-weight="700">frontier items</text>
+    <rect x="626" y="382" width="96" height="34" rx="17" fill="#A7F3D0"/>
+    <text x="674" y="404" text-anchor="middle" fill="#065F46" font-family="Arial, sans-serif" font-size="14" font-weight="700">intent mix</text>
+    <rect x="474" y="438" width="172" height="34" rx="17" fill="#DCFCE7"/>
+    <text x="560" y="460" text-anchor="middle" fill="#166534" font-family="Arial, sans-serif" font-size="14" font-weight="700">queued follow-ups</text>
+  </g>
+
+  <g>
+    <rect x="800" y="214" width="306" height="284" rx="24" fill="#FFF7ED"/>
+    <rect x="800.5" y="214.5" width="305" height="283" rx="23.5" stroke="#FED7AA"/>
+    <circle cx="842" cy="256" r="22" fill="url(#gold)"/>
+    <text x="842" y="263" text-anchor="middle" fill="#FFFFFF" font-family="Arial, sans-serif" font-size="20" font-weight="700">3</text>
+    <text x="876" y="264" fill="#0F172A" font-family="Georgia, 'Times New Roman', serif" font-size="24" font-weight="700">Human correction</text>
+    <text x="828" y="312" fill="#334155" font-family="Arial, sans-serif" font-size="17">
+      <tspan x="828" dy="0">Review signals can redirect focus,</tspan>
+      <tspan x="828" dy="26">correct stage, or regenerate</tspan>
+      <tspan x="828" dy="26">the current turn.</tspan>
+    </text>
+    <rect x="828" y="382" width="108" height="34" rx="17" fill="#FFEDD5"/>
+    <text x="882" y="404" text-anchor="middle" fill="#C2410C" font-family="Arial, sans-serif" font-size="14" font-weight="700">redirect</text>
+    <rect x="948" y="382" width="96" height="34" rx="17" fill="#FED7AA"/>
+    <text x="996" y="404" text-anchor="middle" fill="#9A3412" font-family="Arial, sans-serif" font-size="14" font-weight="700">stage fix</text>
+    <rect x="828" y="438" width="168" height="34" rx="17" fill="#FDE68A"/>
+    <text x="912" y="460" text-anchor="middle" fill="#92400E" font-family="Arial, sans-serif" font-size="13" font-weight="700">history + token cost</text>
+  </g>
+
+  <path d="M398 356H446" stroke="#93C5FD" stroke-width="8" stroke-linecap="round"/>
+  <path d="M752 356H800" stroke="#86EFAC" stroke-width="8" stroke-linecap="round"/>
+  <circle cx="422" cy="356" r="10" fill="#2563EB"/>
+  <circle cx="776" cy="356" r="10" fill="#16A34A"/>
+
+  <text x="92" y="548" fill="#64748B" font-family="Arial, sans-serif" font-size="18">
+    Result: the system keeps asking focused, inspectable questions instead of drifting into generic prompt chaining.
+  </text>
+</svg>

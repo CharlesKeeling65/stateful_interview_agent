@@ -1,0 +1,95 @@
+<svg width="1200" height="720" viewBox="0 0 1200 720" fill="none" xmlns="http://www.w3.org/2000/svg">
+  <defs>
+    <linearGradient id="bg" x1="80" y1="40" x2="1120" y2="680" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#F8FAFC"/>
+      <stop offset="0.48" stop-color="#EEF2FF"/>
+      <stop offset="1" stop-color="#ECFEFF"/>
+    </linearGradient>
+    <linearGradient id="accentA" x1="0" y1="0" x2="1" y2="1">
+      <stop stop-color="#0F172A"/>
+      <stop offset="1" stop-color="#334155"/>
+    </linearGradient>
+    <linearGradient id="accentB" x1="0" y1="0" x2="1" y2="1">
+      <stop stop-color="#0EA5E9"/>
+      <stop offset="1" stop-color="#14B8A6"/>
+    </linearGradient>
+    <linearGradient id="accentC" x1="0" y1="0" x2="1" y2="1">
+      <stop stop-color="#F59E0B"/>
+      <stop offset="1" stop-color="#FB7185"/>
+    </linearGradient>
+    <filter id="shadow" x="-40" y="-40" width="1280" height="800" filterUnits="userSpaceOnUse" color-interpolation-filters="sRGB">
+      <feDropShadow dx="0" dy="18" stdDeviation="24" flood-color="#94A3B8" flood-opacity="0.18"/>
+    </filter>
+  </defs>
+
+  <rect width="1200" height="720" rx="32" fill="url(#bg)"/>
+  <circle cx="196" cy="130" r="120" fill="#FDE68A" fill-opacity="0.35"/>
+  <circle cx="1018" cy="610" r="132" fill="#67E8F9" fill-opacity="0.28"/>
+  <circle cx="1100" cy="116" r="76" fill="#C4B5FD" fill-opacity="0.22"/>
+
+  <g filter="url(#shadow)">
+    <rect x="64" y="54" width="1072" height="612" rx="28" fill="#FFFFFF" fill-opacity="0.84"/>
+    <rect x="64.5" y="54.5" width="1071" height="611" rx="27.5" stroke="#E2E8F0"/>
+  </g>
+
+  <rect x="92" y="84" width="264" height="26" rx="13" fill="#E2E8F0"/>
+  <rect x="108" y="92" width="84" height="10" rx="5" fill="#0F172A"/>
+  <rect x="202" y="92" width="66" height="10" rx="5" fill="#64748B"/>
+  <rect x="278" y="92" width="62" height="10" rx="5" fill="#94A3B8"/>
+
+  <text x="96" y="178" fill="#475569" font-family="Arial, sans-serif" font-size="18" font-weight="700" letter-spacing="3">STATEFUL INTERVIEW AGENT</text>
+  <text x="96" y="230" fill="#0F172A" font-family="Georgia, 'Times New Roman', serif" font-size="42" font-weight="700">
+    <tspan x="96" dy="0">Turn long-form repo interviews</tspan>
+    <tspan x="96" dy="48">into a traceable</tspan>
+    <tspan x="96" dy="48">understanding system</tspan>
+  </text>
+
+  <text x="96" y="386" fill="#475569" font-family="Arial, sans-serif" font-size="21">
+    <tspan x="96" dy="0">Planner + validator + question network</tspan>
+    <tspan x="96" dy="28">+ human review + execution trace</tspan>
+  </text>
+
+  <g>
+    <rect x="96" y="438" width="184" height="44" rx="22" fill="#0F172A"/>
+    <text x="188" y="466" text-anchor="middle" fill="#FFFFFF" font-family="Arial, sans-serif" font-size="16" font-weight="700">One question per turn</text>
+    <rect x="292" y="438" width="210" height="44" rx="22" fill="#E0F2FE"/>
+    <text x="397" y="466" text-anchor="middle" fill="#0C4A6E" font-family="Arial, sans-serif" font-size="16" font-weight="700">Coverage-aware deep dives</text>
+    <rect x="514" y="438" width="178" height="44" rx="22" fill="#FEF3C7"/>
+    <text x="603" y="466" text-anchor="middle" fill="#92400E" font-family="Arial, sans-serif" font-size="16" font-weight="700">Human-guided repair</text>
+  </g>
+
+  <g>
+    <rect x="754" y="142" width="314" height="136" rx="24" fill="url(#accentA)"/>
+    <text x="786" y="182" fill="#CBD5E1" font-family="Arial, sans-serif" font-size="16" font-weight="700" letter-spacing="2">INTERVIEW LOOP</text>
+    <text x="786" y="214" fill="#FFFFFF" font-family="Georgia, 'Times New Roman', serif" font-size="20" font-weight="700">Answer -&gt; Plan</text>
+    <text x="786" y="242" fill="#FFFFFF" font-family="Georgia, 'Times New Roman', serif" font-size="20" font-weight="700">-&gt; Validate -&gt; Ask</text>
+    <text x="786" y="262" fill="#E2E8F0" font-family="Arial, sans-serif" font-size="13">Persisted in SQLite</text>
+    <text x="786" y="280" fill="#E2E8F0" font-family="Arial, sans-serif" font-size="13">Replayable in LangGraph</text>
+  </g>
+
+  <g>
+    <rect x="754" y="298" width="146" height="130" rx="24" fill="url(#accentB)"/>
+    <text x="778" y="338" fill="#ECFEFF" font-family="Arial, sans-serif" font-size="15" font-weight="700" letter-spacing="2">COVERAGE</text>
+    <text x="778" y="368" fill="#FFFFFF" font-family="Georgia, 'Times New Roman', serif" font-size="20" font-weight="700">Files</text>
+    <text x="778" y="396" fill="#FFFFFF" font-family="Georgia, 'Times New Roman', serif" font-size="20" font-weight="700">Branches</text>
+    <text x="778" y="424" fill="#FFFFFF" font-family="Georgia, 'Times New Roman', serif" font-size="20" font-weight="700">Stages</text>
+
+    <rect x="922" y="298" width="146" height="130" rx="24" fill="url(#accentC)"/>
+    <text x="946" y="338" fill="#FFF7ED" font-family="Arial, sans-serif" font-size="15" font-weight="700" letter-spacing="2">NETWORK</text>
+    <text x="946" y="368" fill="#FFFFFF" font-family="Georgia, 'Times New Roman', serif" font-size="20" font-weight="700">Frontier</text>
+    <text x="946" y="396" fill="#FFFFFF" font-family="Georgia, 'Times New Roman', serif" font-size="20" font-weight="700">Intent mix</text>
+    <text x="946" y="424" fill="#FFFFFF" font-family="Georgia, 'Times New Roman', serif" font-size="18" font-weight="700">Repair layer</text>
+  </g>
+
+  <g>
+    <rect x="754" y="454" width="314" height="148" rx="24" fill="#F8FAFC"/>
+    <rect x="754.5" y="454.5" width="313" height="147" rx="23.5" stroke="#E2E8F0"/>
+    <text x="780" y="488" fill="#64748B" font-family="Arial, sans-serif" font-size="15" font-weight="700" letter-spacing="2">OPERATOR CONSOLE</text>
+    <rect x="780" y="506" width="262" height="18" rx="9" fill="#0F172A"/>
+    <rect x="780" y="538" width="178" height="12" rx="6" fill="#94A3B8"/>
+    <rect x="780" y="560" width="228" height="12" rx="6" fill="#CBD5E1"/>
+    <rect x="780" y="580" width="120" height="12" rx="6" fill="#E2E8F0"/>
+    <rect x="966" y="538" width="76" height="44" rx="16" fill="#DBEAFE"/>
+    <text x="1004" y="565" text-anchor="middle" fill="#1D4ED8" font-family="Arial, sans-serif" font-size="16" font-weight="700">Trace</text>
+  </g>
+</svg>
