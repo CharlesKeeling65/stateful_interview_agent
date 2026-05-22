@@ -135,6 +135,17 @@ sequenceDiagram
 - Provide dedicated debug endpoints for coverage, queue summary, file coverage summary, and question-network summary.
 - Surface analytics in the UI for token mix, runtime, stage movement, frontier health, and repository exploration.
 
+### Question Set Generation
+
+- Generate a complete question set for repository code understanding in one batch.
+- Analyze repository structure, detect languages/frameworks, identify core files with importance scoring.
+- Generate 35+ questions organized by phases: Panorama Mapping, Architecture Understanding, Code Detail Completion, Use Cases & Scenarios.
+- Ensure Code Detail Completion questions ≥85% of total and core file coverage ≥90%.
+- Support Chinese instruction-based question revision with validation pipeline.
+- Provide validation reports with duplicate detection, modification-intent filtering, and coverage tracking.
+- **Quality controls**: Each question is enforced to be a single short question sentence, avoiding multiple consecutive questions.
+- **Coherence**: Questions are generated with natural flow and connection between them, avoiding AI-style mechanical library-scanning patterns.
+
 ## UI Surfaces
 
 | View | Main value |
@@ -158,7 +169,7 @@ stateful_interview_agent/
 │  ├─ models/                  SQLAlchemy persistence models
 │  ├─ prompts/                 typed YAML prompt assets
 │  ├─ schemas/                 API contracts
-│  └─ services/                planning, validation, coverage, retrieval, review, run trace
+│  └─ services/                planning, validation, coverage, retrieval, review, run trace, question set generation
 ├─ frontend/
 │  ├─ src/api/                 frontend API client
 │  ├─ src/components/          workspace, transcript, analytics, trace UI
@@ -337,6 +348,19 @@ python scripts/generate_latex_tables.py \
 - `GET /projects/{id}/status`
 - `GET /projects/{id}/transcript`
 - `GET /projects/{id}/runs`
+
+</details>
+
+<details>
+<summary>Question set routes</summary>
+
+- `POST /question-sets` - Create a new question set generation task
+- `GET /question-sets` - List all question sets
+- `GET /question-sets/{id}` - Get question set details
+- `DELETE /question-sets/{id}` - Delete a question set
+- `POST /question-sets/{id}/revise` - Revise a question with Chinese instruction
+- `GET /question-sets/{id}/validate` - Get validation report
+- `GET /question-sets/{id}/coverage` - Get coverage report
 
 </details>
 

@@ -141,6 +141,17 @@ sequenceDiagram
 - 提供 coverage、queue summary、file coverage summary、question-network summary 等专用 debug API。
 - 在前端 analytics 中展示 token 组成、耗时、阶段迁移、frontier 健康度和仓库覆盖情况。
 
+### 问题集生成
+
+- 一次性批量生成完整的代码理解问题集。
+- 分析仓库结构，检测语言/框架，识别核心文件并进行重要性评分。
+- 按阶段组织生成 35+ 个问题：全景映射、架构理解、代码细节完成、用例与场景。
+- 确保代码细节完成问题 ≥85%，核心文件覆盖率 ≥90%。
+- 支持基于中文指令的问题修改，并提供验证流水线。
+- 提供验证报告，包括重复检测、修改意图过滤和覆盖跟踪。
+- **质量控制**：强制每个问题为单个简短问句，避免多个连续问句。
+- **连贯性**：问题之间具有自然的流动和承接关系，避免AI式机械扫库提问。
+
 ## UI 能看什么
 
 | 页面 / 面板 | 价值 |
@@ -164,7 +175,7 @@ stateful_interview_agent/
 │  ├─ models/                  SQLAlchemy 持久化模型
 │  ├─ prompts/                 带类型的 YAML prompt 资产
 │  ├─ schemas/                 API 契约
-│  └─ services/                planner、validator、coverage、retrieval、run trace
+│  └─ services/                planner、validator、coverage、retrieval、run trace、question set generation
 ├─ frontend/
 │  ├─ src/api/                 前端 API client
 │  ├─ src/components/          workspace、transcript、analytics、trace UI
@@ -343,6 +354,19 @@ python scripts/generate_latex_tables.py \
 - `GET /projects/{id}/status`
 - `GET /projects/{id}/transcript`
 - `GET /projects/{id}/runs`
+
+</details>
+
+<details>
+<summary>问题集接口</summary>
+
+- `POST /question-sets` - 创建新的问题集生成任务
+- `GET /question-sets` - 列出所有问题集
+- `GET /question-sets/{id}` - 获取问题集详情
+- `DELETE /question-sets/{id}` - 删除问题集
+- `POST /question-sets/{id}/revise` - 使用中文指令修改问题
+- `GET /question-sets/{id}/validate` - 获取验证报告
+- `GET /question-sets/{id}/coverage` - 获取覆盖报告
 
 </details>
 
