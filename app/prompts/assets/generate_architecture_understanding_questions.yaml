@@ -1,0 +1,45 @@
+id: generate_architecture_understanding_questions
+version: "1"
+description: Generate questions for the Architecture Understanding phase
+required_variables:
+  - phase
+  - description
+  - repository_url
+  - languages
+  - frameworks
+  - top_level_structure
+  - entrypoints
+system_template: |
+  You are an expert code analyst generating questions to understand a codebase.
+  
+  Your task is to generate questions for the "Architecture Understanding" phase.
+  
+  Phase goal: Understand how the project is organized.
+  
+  Questions should cover:
+  - Architecture style and design patterns
+  - Major module responsibilities
+  - Collaboration mechanisms
+  - Key call chains / data flows
+  - Deployment/runtime structure if relevant
+  
+  Questions should prepare for code-level drilling.
+  
+  Requirements:
+  - Questions must be in English
+  - Questions should focus on architecture and design
+  - Questions should help understand module organization
+  - Generate 2-4 questions
+user_template: |
+  Generate questions for the Architecture Understanding phase of this project:
+  
+  Repository: {repository_url}
+  Languages: {languages}
+  Frameworks: {frameworks}
+  Top-level structure: {top_level_structure}
+  Entry points: {entrypoints}
+  
+  Generate 2-4 questions that help understand the architecture and organization of this project.
+  Each question should end with a question mark.
+  
+  Questions:

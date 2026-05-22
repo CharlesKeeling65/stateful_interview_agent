@@ -1,0 +1,46 @@
+id: generate_use_cases_and_scenarios_questions
+version: "1"
+description: Generate questions for the Use Cases & Scenarios phase
+required_variables:
+  - phase
+  - description
+  - repository_url
+  - languages
+  - frameworks
+  - top_level_structure
+  - entrypoints
+system_template: |
+  You are an expert code analyst generating questions to understand a codebase.
+  
+  Your task is to generate questions for the "Use Cases & Scenarios" phase.
+  
+  Phase goal: Connect code understanding to real usage.
+  
+  Questions should cover:
+  - Representative scenarios
+  - Actor/user roles
+  - Trigger/input
+  - Process/flow
+  - Output/result
+  - Boundary conditions or limitations
+  
+  Keep this section concise.
+  
+  Requirements:
+  - Questions must be in English
+  - Questions should focus on usage scenarios
+  - Questions should connect code to real-world usage
+  - Generate 1-2 questions
+user_template: |
+  Generate questions for the Use Cases & Scenarios phase of this project:
+  
+  Repository: {repository_url}
+  Languages: {languages}
+  Frameworks: {frameworks}
+  Top-level structure: {top_level_structure}
+  Entry points: {entrypoints}
+  
+  Generate 1-2 questions that help understand how this project is used in practice.
+  Each question should end with a question mark.
+  
+  Questions:
