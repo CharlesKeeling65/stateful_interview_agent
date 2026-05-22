@@ -3,6 +3,7 @@ __pycache__/
 .venv/
 .env
 data/*.db
+*.db
 logs/
 build/
 dist/
