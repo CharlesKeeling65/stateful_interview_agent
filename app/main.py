@@ -9,6 +9,7 @@ from fastapi.staticfiles import StaticFiles
 
 from app.api.routes.debug import router as debug_router
 from app.api.routes.projects import router as project_router
+from app.api.routes.question_sets import router as question_sets_router
 from app.core.config import settings
 from app.core.database import ensure_database_schema
 from app.core.http_clients import close_opencode_client
@@ -95,6 +96,7 @@ def create_app(*, frontend_dist_dir: Path | None = None) -> FastAPI:
 
     app.include_router(project_router)
     app.include_router(debug_router)
+    app.include_router(question_sets_router)
 
     frontend_dist_dir = frontend_dist_dir or get_frontend_dist_dir()
     if frontend_dist_dir:

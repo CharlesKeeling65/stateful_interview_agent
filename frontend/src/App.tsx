@@ -5,6 +5,7 @@ import { ConfirmDeleteDialog } from './components/ConfirmDeleteDialog'
 import { ActiveRunPanel } from './components/ExecutionTraceSection'
 import { GenerationControlPanel } from './components/GenerationControlPanel'
 import { ProjectSidebar } from './components/ProjectSidebar'
+import { QuestionSetGenerator } from './components/QuestionSetGenerator'
 import { RegenerationFeedbackBanner } from './components/RegenerationFeedbackBanner'
 import { StatsDashboard } from './components/StatsDashboard'
 import { StatusPanel } from './components/StatusPanel'
@@ -51,7 +52,7 @@ function App() {
     loadCoverageDebug,
   } = useProject()
   const [locale, setLocale] = useState<Locale>(() => normalizeLocale(localStorage.getItem(LOCALE_STORAGE_KEY)))
-  const [page, setPage] = useState<'workspace' | 'analytics'>('workspace')
+  const [page, setPage] = useState<'workspace' | 'analytics' | 'question-sets'>('workspace')
   const [exportLabel, setExportLabel] = useState<string | null>(null)
   const [latestQuestionCopyLabel, setLatestQuestionCopyLabel] = useState<string | null>(null)
   const [projectPendingDelete, setProjectPendingDelete] = useState<ProjectRead | null>(null)
@@ -213,6 +214,7 @@ function App() {
                 {([
                   ['workspace', t('nav.workspace')],
                   ['analytics', t('nav.analytics')],
+                  ['question-sets', t('nav.questionSets')],
                 ] as const).map(([value, label]) => {
                   const active = page === value
                   return (
@@ -400,7 +402,7 @@ function App() {
                 />
               </div>
             </div>
-          ) : (
+          ) : page === 'analytics' ? (
             <StatsDashboard
               locale={locale}
               project={project}
@@ -413,6 +415,8 @@ function App() {
               fileCoverageSummary={fileCoverageSummary}
               questionNetworkSummary={questionNetworkSummary}
             />
+          ) : (
+            <QuestionSetGenerator locale={locale === 'zh-CN' ? 'zh' : 'en'} />
           )}
         </div>
       </div>
