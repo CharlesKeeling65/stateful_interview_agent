@@ -205,3 +205,134 @@ export async function getProjectFileCoverageSummary(projectId: number) {
 export async function getProjectQuestionNetworkSummary(projectId: number) {
   return request<QuestionNetworkSummaryDebug>(`/debug/projects/${projectId}/question-network-summary`)
 }
+
+// Question Set APIs
+
+export interface QuestionSetCreatePayload {
+  repository_url: string
+  total_questions?: number
+  code_detail_ratio?: number
+  min_core_file_coverage?: number
+}
+
+export interface QuestionSetResponse {
+  id: number
+  repository_url: string
+  status: string
+  total_questions: number
+  code_detail_ratio: number
+  min_core_file_coverage: number
+  question_count: number
+  code_detail_count: number
+  code_detail_ratio_actual: number
+  repository_analysis: Record<string, unknown>
+  validation_report: Record<string, unknown>
+  coverage_report: Record<string, unknown>
+  error_message: string | null
+  created_at: string | null
+  updated_at: string | null
+  questions: GeneratedQuestionResponse[]
+}
+
+export interface GeneratedQuestionResponse {
+  id: number
+  question_set_id: number
+  question_no: number
+  phase: string
+  question_text: string
+  target_files: string[]
+  target_symbols: string[]
+  quality_score: number
+  warnings: string[]
+  created_at: string | null
+  updated_at: string | null
+  revision_count: number
+}
+
+export interface QuestionRevisionRequest {
+  question_id: number
+  chinese_instruction: string
+}
+
+export interface QuestionRevisionResponse {
+  question_id: number
+  original_question: string
+  revised_question: string
+  chinese_instruction: string
+  phase_changed: boolean
+  new_phase: string | null
+  coverage_changed: boolean
+  duplicate_check_passed: boolean
+  validation_result: Record<string, unknown>
+  warnings: string[]
+}
+
+export interface ValidationReport {
+  is_valid: boolean
+  total_questions: number
+  code_detail_count: number
+  code_detail_ratio: number
+  core_files_detected: number
+  core_files_covered: number
+  core_file_coverage: number
+  phase_counts: Record<string, number>
+  warnings: string[]
+  errors: string[]
+}
+
+export interface CoverageReport {
+  total_core_files: number
+  covered_core_files: number
+  coverage_percentage: number
+  uncovered_files: string[]
+  file_importance: Record<string, number>
+}
+
+export interface QuestionSetListResponse {
+  question_sets: QuestionSetResponse[]
+  total: number
+}
+
+export async function createQuestionSet(payload: QuestionSetCreatePayload) {
+  return request<QuestionSetResponse>('/question-sets', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(payload),
+  })
+}
+
+export async function listQuestionSets(skip = 0, limit = 100) {
+  return request<QuestionSetListResponse>(`/question-sets?skip=${skip}&limit=${limit}`)
+}
+
+export async function getQuestionSet(questionSetId: number) {
+  return request<QuestionSetResponse>(`/question-sets/${questionSetId}`)
+}
+
+export async function getQuestionSetQuestions(questionSetId: number) {
+  return request<GeneratedQuestionResponse[]>(`/question-sets/${questionSetId}/questions`)
+}
+
+export async function reviseQuestion(questionSetId: number, payload: QuestionRevisionRequest) {
+  return request<QuestionRevisionResponse>(`/question-sets/${questionSetId}/revise`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(payload),
+  })
+}
+
+export async function validateQuestionSet(questionSetId: number) {
+  return request<ValidationReport>(`/question-sets/${questionSetId}/validate`, {
+    method: 'POST',
+  })
+}
+
+export async function getQuestionSetCoverage(questionSetId: number) {
+  return request<CoverageReport>(`/question-sets/${questionSetId}/coverage`)
+}
+
+export async function deleteQuestionSet(questionSetId: number) {
+  await request<void>(`/question-sets/${questionSetId}`, {
+    method: 'DELETE',
+  })
+}
