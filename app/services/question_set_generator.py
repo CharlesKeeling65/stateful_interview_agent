@@ -77,7 +77,7 @@ class QuestionSetGenerator:
         questions = []
         for phase, phase_config in question_plan.items():
             phase_questions = self._generate_phase_questions(
-                phase, phase_config, analysis
+                phase, phase_config, analysis, previous_questions=questions
             )
             questions.extend(phase_questions)
         
@@ -86,7 +86,10 @@ class QuestionSetGenerator:
             questions, analysis, total_questions, code_detail_ratio, min_core_file_coverage
         )
         
-        # Step 5: Generate coverage report
+        # Step 5: Improve coherence between questions
+        questions = self._improve_coherence(questions)
+        
+        # Step 6: Generate coverage report
         coverage_report = self._generate_coverage_report(
             questions, analysis, min_core_file_coverage
         )
@@ -155,12 +158,13 @@ class QuestionSetGenerator:
         phase: str,
         phase_config: dict[str, Any],
         analysis: dict[str, Any],
+        previous_questions: list[dict[str, Any]] | None = None,
     ) -> list[dict[str, Any]]:
         """Generate questions for a specific phase."""
         if phase == "Code Detail Completion":
             return self._generate_code_detail_questions(phase_config, analysis)
         else:
-            return self._generate_generic_phase_questions(phase, phase_config, analysis)
+            return self._generate_generic_phase_questions(phase, phase_config, analysis, previous_questions)
 
     def _generate_code_detail_questions(
         self,
@@ -249,6 +253,9 @@ class QuestionSetGenerator:
             # Parse response
             question_text = self._extract_question_from_response(response.text)
             
+            # Ensure exactly one question
+            question_text = self._ensure_single_question(question_text)
+            
             return {
                 "phase": "Code Detail Completion",
                 "question_text": question_text,
@@ -291,6 +298,7 @@ class QuestionSetGenerator:
         phase: str,
         phase_config: dict[str, Any],
         analysis: dict[str, Any],
+        previous_questions: list[dict[str, Any]] | None = None,
     ) -> list[dict[str, Any]]:
         """Generate questions for non-code-detail phases."""
         questions = []
@@ -307,6 +315,14 @@ class QuestionSetGenerator:
             "entrypoints": [e.get("file") for e in analysis.get("entrypoints", [])],
         }
         
+        # Add previous questions for context and coherence
+        if previous_questions:
+            # Extract question texts from previous questions for context
+            previous_question_texts = [q.get("question_text", "") for q in previous_questions[-5:]]  # Last 5 questions
+            context["previous_questions"] = previous_question_texts
+        else:
+            context["previous_questions"] = []
+        
         try:
             prompt = self.prompt_manager.render(
                 f"generate_{phase.lower().replace(' ', '_')}_questions",
@@ -321,6 +337,11 @@ class QuestionSetGenerator:
             
             # Parse multiple questions from response
             parsed_questions = self._parse_multiple_questions(response.text, phase)
+            
+            # Ensure each question is a single question sentence
+            for q in parsed_questions:
+                q["question_text"] = self._ensure_single_question(q["question_text"])
+            
             questions.extend(parsed_questions[:target_count])
             
         except Exception as e:
@@ -370,17 +391,26 @@ class QuestionSetGenerator:
         return questions
 
     def _extract_question_from_response(self, response: str) -> str:
-        """Extract a single question from LLM response."""
-        # Try to find a question mark
+        """Extract a single question from LLM response.
+        
+        CRITICAL: This method ensures exactly ONE question is extracted.
+        If the response contains multiple questions, only the first one is returned.
+        """
+        # Try to find the first question mark
         lines = response.strip().split("\n")
         for line in lines:
             line = line.strip()
             if "?" in line:
-                # Clean up the question
-                question = line.split("?")[0] + "?"
+                # Extract only the first question (up to the first question mark)
+                question_part = line.split("?")[0] + "?"
                 # Remove markdown formatting
-                question = re.sub(r'^[*#\-\d.]+\s*', '', question)
-                return question.strip()
+                question_part = re.sub(r'^[*#\-\d.]+\s*', '', question_part)
+                question_part = question_part.strip()
+                
+                # Additional cleaning: remove any trailing content after the question mark
+                # that might be part of another question
+                if question_part:
+                    return question_part
         
         # If no question mark found, return the first non-empty line
         for line in lines:
@@ -391,6 +421,41 @@ class QuestionSetGenerator:
                 return question.strip()
         
         return response.strip()
+    
+    def _ensure_single_question(self, question_text: str) -> str:
+        """Ensure the question text contains exactly one question.
+        
+        If multiple questions are detected, extract only the first one.
+        Also validates that the question is a single sentence.
+        """
+        # Split by question marks to detect multiple questions
+        parts = question_text.split("?")
+        
+        if len(parts) > 2:  # More than one question mark
+            # Extract only the first question
+            first_question = parts[0].strip() + "?"
+            # Clean up any leading/trailing whitespace or formatting
+            first_question = re.sub(r'^[*#\-\d.]+\s*', '', first_question)
+            return first_question.strip()
+        
+        # Check for multiple sentences that might be separate questions
+        # Look for patterns like "How does X work? What about Y?"
+        sentences = re.split(r'[.!?]+', question_text)
+        if len(sentences) > 2:  # More than one sentence
+            # Take only the first sentence that looks like a question
+            for sentence in sentences:
+                sentence = sentence.strip()
+                if sentence and any(sentence.lower().startswith(q) for q in ['how', 'what', 'why', 'when', 'where', 'which', 'who']):
+                    # Add question mark if missing
+                    if not sentence.endswith('?'):
+                        sentence += '?'
+                    return sentence
+        
+        # If it's a single question, ensure it ends with a question mark
+        if not question_text.strip().endswith('?'):
+            question_text = question_text.strip() + '?'
+        
+        return question_text
 
     def _parse_multiple_questions(
         self,
@@ -505,6 +570,61 @@ class QuestionSetGenerator:
             validation_result["is_valid"] = False
         
         return validation_result
+
+    def _improve_coherence(self, questions: list[dict[str, Any]]) -> list[dict[str, Any]]:
+        """Improve coherence between questions.
+        
+        This method reorders questions within each phase to create a more natural flow.
+        It also ensures questions build on each other logically.
+        """
+        if not questions:
+            return questions
+        
+        # Group questions by phase
+        phase_groups = {}
+        for q in questions:
+            phase = q.get("phase", "Unknown")
+            if phase not in phase_groups:
+                phase_groups[phase] = []
+            phase_groups[phase].append(q)
+        
+        # Reorder questions within each phase for better flow
+        improved_questions = []
+        
+        # Define the logical order of phases
+        phase_order = [
+            "Panorama Mapping",
+            "Architecture Understanding", 
+            "Code Detail Completion",
+            "Use Cases & Scenarios"
+        ]
+        
+        for phase in phase_order:
+            if phase in phase_groups:
+                phase_questions = phase_groups[phase]
+                
+                # For Code Detail Completion, sort by importance (high first)
+                if phase == "Code Detail Completion":
+                    # Sort by importance level: high > medium > low
+                    importance_order = {"high": 0, "medium": 1, "low": 2}
+                    phase_questions.sort(
+                        key=lambda q: importance_order.get(q.get("importance_level", "medium"), 1)
+                    )
+                
+                # For other phases, try to create a natural progression
+                else:
+                    # Simple heuristic: sort by question length (shorter first for overview)
+                    # and ensure questions build on each other
+                    phase_questions.sort(key=lambda q: len(q.get("question_text", "")))
+                
+                improved_questions.extend(phase_questions)
+        
+        # Add any questions with unknown phases at the end
+        for phase, phase_questions in phase_groups.items():
+            if phase not in phase_order:
+                improved_questions.extend(phase_questions)
+        
+        return improved_questions
 
     def _find_duplicates(self, questions: list[dict[str, Any]]) -> list[dict[str, Any]]:
         """Find duplicate or near-duplicate questions."""

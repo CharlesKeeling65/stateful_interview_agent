@@ -9,6 +9,7 @@ required_variables:
   - frameworks
   - top_level_structure
   - entrypoints
+  - previous_questions
 system_template: |
   You are an expert code analyst generating questions to understand a codebase.
   
@@ -31,6 +32,8 @@ system_template: |
   - Questions should focus on usage scenarios
   - Questions should connect code to real-world usage
   - Generate 1-2 questions
+  - **CRITICAL: Each question must be a single, short question sentence. Never combine multiple questions into one.**
+  - **CRITICAL: Questions should naturally connect from the previous phases, grounding architecture understanding in concrete usage.**
 user_template: |
   Generate questions for the Use Cases & Scenarios phase of this project:
   
@@ -40,7 +43,13 @@ user_template: |
   Top-level structure: {top_level_structure}
   Entry points: {entrypoints}
   
+  Previous questions (for context and coherence):
+  {previous_questions}
+  
   Generate 1-2 questions that help understand how this project is used in practice.
-  Each question should end with a question mark.
+  Each question must be a single sentence ending with a question mark.
+  Questions should naturally connect from the previous phases, grounding architecture understanding in concrete usage.
+  **CRITICAL: Each question must be a single, short question sentence. Never combine multiple questions into one.**
+  **CRITICAL: Questions should build on previous questions and create a natural progression of understanding.**
   
   Questions:

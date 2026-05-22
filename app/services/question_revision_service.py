@@ -95,6 +95,9 @@ class QuestionRevisionService:
             # Extract question from response
             revised_question = self._extract_question_from_response(response.text)
             
+            # Ensure exactly one question
+            revised_question = self._ensure_single_question(revised_question)
+            
             return revised_question
             
         except Exception as e:
@@ -133,17 +136,26 @@ class QuestionRevisionService:
         return original_question
 
     def _extract_question_from_response(self, response: str) -> str:
-        """Extract a single question from LLM response."""
-        # Try to find a question mark
+        """Extract a single question from LLM response.
+        
+        CRITICAL: This method ensures exactly ONE question is extracted.
+        If the response contains multiple questions, only the first one is returned.
+        """
+        # Try to find the first question mark
         lines = response.strip().split("\n")
         for line in lines:
             line = line.strip()
             if "?" in line:
-                # Clean up the question
-                question = line.split("?")[0] + "?"
+                # Extract only the first question (up to the first question mark)
+                question_part = line.split("?")[0] + "?"
                 # Remove markdown formatting
-                question = re.sub(r'^[*#\-\d.]+\s*', '', question)
-                return question.strip()
+                question_part = re.sub(r'^[*#\-\d.]+\s*', '', question_part)
+                question_part = question_part.strip()
+                
+                # Additional cleaning: remove any trailing content after the question mark
+                # that might be part of another question
+                if question_part:
+                    return question_part
         
         # If no question mark found, return the first non-empty line
         for line in lines:
@@ -154,6 +166,41 @@ class QuestionRevisionService:
                 return question.strip()
         
         return response.strip()
+    
+    def _ensure_single_question(self, question_text: str) -> str:
+        """Ensure the question text contains exactly one question.
+        
+        If multiple questions are detected, extract only the first one.
+        Also validates that the question is a single sentence.
+        """
+        # Split by question marks to detect multiple questions
+        parts = question_text.split("?")
+        
+        if len(parts) > 2:  # More than one question mark
+            # Extract only the first question
+            first_question = parts[0].strip() + "?"
+            # Clean up any leading/trailing whitespace or formatting
+            first_question = re.sub(r'^[*#\-\d.]+\s*', '', first_question)
+            return first_question.strip()
+        
+        # Check for multiple sentences that might be separate questions
+        # Look for patterns like "How does X work? What about Y?"
+        sentences = re.split(r'[.!?]+', question_text)
+        if len(sentences) > 2:  # More than one sentence
+            # Take only the first sentence that looks like a question
+            for sentence in sentences:
+                sentence = sentence.strip()
+                if sentence and any(sentence.lower().startswith(q) for q in ['how', 'what', 'why', 'when', 'where', 'which', 'who']):
+                    # Add question mark if missing
+                    if not sentence.endswith('?'):
+                        sentence += '?'
+                    return sentence
+        
+        # If it's a single question, ensure it ends with a question mark
+        if not question_text.strip().endswith('?'):
+            question_text = question_text.strip() + '?'
+        
+        return question_text
 
     def _validate_revision(
         self,

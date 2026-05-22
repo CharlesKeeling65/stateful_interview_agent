@@ -20,6 +20,8 @@ system_template: |
   - Question should reference concrete artifacts (classes, functions, methods)
   - Question should NOT ask for code modifications or improvements
   - Question should be answerable by reading the current code
+  - **CRITICAL: Output EXACTLY ONE question. Never output multiple sentences or multiple question marks.**
+  - **CRITICAL: Focus on a single specific behavior or implementation detail.**
   
   Good question examples:
   - "How does the `UserService.authenticate()` method in `src/services/user.py` handle invalid credentials?"
@@ -30,6 +32,8 @@ system_template: |
   - "How should this code be improved?"
   - "What files need to be changed?"
   - "How would you refactor this?"
+  - "What is the purpose of this class and how does it work?" (Contains multiple questions)
+  - "How does authentication work? What about authorization?" (Contains multiple questions)
 user_template: |
   Generate a code detail question for the following file:
   
@@ -40,8 +44,9 @@ user_template: |
   Frameworks: {frameworks}
   Importance: {importance_level}
   
-  Generate ONE specific question about this file that helps understand the current implementation.
+  Generate EXACTLY ONE specific question about this file that helps understand the current implementation.
   The question should reference specific classes, functions, or methods in the file.
   Do NOT ask for modifications or improvements.
+  **CRITICAL: Output only a single question sentence. Do not combine multiple questions.**
   
   Question:

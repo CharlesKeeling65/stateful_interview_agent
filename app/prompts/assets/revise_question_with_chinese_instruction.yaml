@@ -18,6 +18,8 @@ system_template: |
   - The revised question should be specific and concrete
   - The revised question should NOT ask for code modifications
   - The revised question should reference concrete artifacts
+  - **CRITICAL: The revised question must be EXACTLY ONE short question sentence. Never output multiple sentences or question marks.**
+  - **CRITICAL: Focus on a single specific behavior, implementation detail, or aspect.**
   
   Common Chinese instruction patterns and how to handle them:
   - "太泛了" / "太宽泛" → Make the question more specific
@@ -50,5 +52,6 @@ user_template: |
   3. Make it specific and concrete
   4. Do NOT ask for code modifications or improvements
   5. Reference specific files, classes, or functions where appropriate
+  6. **CRITICAL: The revised question must be EXACTLY ONE short question sentence. Never combine multiple questions.**
   
   Revised question:
