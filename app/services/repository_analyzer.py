@@ -43,19 +43,27 @@ class RepositoryAnalyzer:
         self.repo_path: Path | None = None
         self.analysis: dict[str, Any] = {}
 
-    def analyze_repository(self, repo_url: str, ref: str | None = None) -> dict[str, Any]:
+    def analyze_repository(self, repo_url: str, ref: str | None = None, repository_source: str = "remote") -> dict[str, Any]:
         """
         Analyze a repository and return comprehensive analysis.
         
         Args:
-            repo_url: URL of the git repository
+            repo_url: URL or local path of the repository
             ref: Optional git ref (branch, tag, commit)
+            repository_source: Source type - 'remote' for URL, 'local' for local path
             
         Returns:
             Dictionary containing repository analysis
         """
-        # Clone repository to temporary directory
-        self.repo_path = self._clone_repository(repo_url, ref)
+        # Clone repository to temporary directory or use local path
+        if repository_source == "local":
+            self.repo_path = Path(repo_url)
+            if not self.repo_path.exists():
+                raise ValueError(f"Local repository path does not exist: {repo_url}")
+            if not self.repo_path.is_dir():
+                raise ValueError(f"Local repository path is not a directory: {repo_url}")
+        else:
+            self.repo_path = self._clone_repository(repo_url, ref)
         
         try:
             # Perform analysis
@@ -80,8 +88,8 @@ class RepositoryAnalyzer:
             return self.analysis
             
         finally:
-            # Cleanup temporary directory
-            if self.repo_path and self.repo_path.exists():
+            # Cleanup temporary directory only for remote repositories
+            if repository_source == "remote" and self.repo_path and self.repo_path.exists():
                 import shutil
                 shutil.rmtree(self.repo_path, ignore_errors=True)
 
