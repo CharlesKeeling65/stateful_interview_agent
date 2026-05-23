@@ -2,16 +2,19 @@
 Question Set Generator Service
 
 Generates a complete question set for repository code understanding.
+Uses enhanced repository analysis with symbol extraction and relationship graph.
 """
 
 import json
 import re
+from pathlib import Path
 from typing import Any
 
 from app.core.config import settings
 from app.core.llm_client import get_llm_provider
 from app.prompts import get_prompt_manager
 from app.services.repository_analyzer import repository_analyzer
+from app.services.repository_analyzer_enhanced import enhanced_repository_analyzer
 
 
 class QuestionSetGenerator:
@@ -47,6 +50,7 @@ class QuestionSetGenerator:
     def generate_question_set(
         self,
         repository_url: str,
+        repository_source: str = "remote",
         total_questions: int = 40,
         code_detail_ratio: float = 0.85,
         min_core_file_coverage: float = 0.90,
@@ -56,7 +60,8 @@ class QuestionSetGenerator:
         Generate a complete question set for a repository.
         
         Args:
-            repository_url: URL of the repository
+            repository_url: URL or local path of the repository
+            repository_source: Source type - 'remote' for URL, 'local' for local path
             total_questions: Total number of questions to generate
             code_detail_ratio: Minimum ratio of code detail questions
             min_core_file_coverage: Minimum core file coverage ratio
@@ -65,8 +70,23 @@ class QuestionSetGenerator:
         Returns:
             Dictionary containing generated questions and metadata
         """
-        # Step 1: Analyze repository
-        analysis = repository_analyzer.analyze_repository(repository_url, ref)
+        # Step 1: Analyze repository using enhanced analyzer for local paths
+        if repository_source == "local":
+            repo_path = Path(repository_url)
+            if repo_path.exists() and repo_path.is_dir():
+                # Use enhanced analyzer for local repositories
+                analysis = enhanced_repository_analyzer.analyze_repository(repo_path)
+                # Merge with basic analysis for compatibility
+                basic_analysis = repository_analyzer.analyze_repository(repository_url, ref, repository_source)
+                analysis.update({
+                    "repository_url": repository_url,
+                    "ref": ref,
+                    "local_path": str(repo_path),
+                })
+            else:
+                analysis = repository_analyzer.analyze_repository(repository_url, ref, repository_source)
+        else:
+            analysis = repository_analyzer.analyze_repository(repository_url, ref, repository_source)
         
         # Step 2: Plan question distribution
         question_plan = self._plan_question_distribution(
@@ -217,8 +237,53 @@ class QuestionSetGenerator:
         language = file_info.get("language", "")
         
         # Find classes and functions in this file
+        # Support both old format (core_classes) and new format (symbols.classes)
         classes = [c for c in analysis.get("core_classes", []) if c.get("file") == file_path]
         functions = [f for f in analysis.get("core_functions", []) if f.get("file") == file_path]
+        
+        # Enhanced: also check symbols from enhanced analyzer
+        symbols = analysis.get("symbols", {})
+        if symbols:
+            classes.extend([c for c in symbols.get("classes", []) if c.get("file") == file_path])
+            functions.extend([f for f in symbols.get("functions", []) if f.get("file") == file_path])
+            functions.extend([m for m in symbols.get("methods", []) if m.get("file") == file_path])
+        
+        # Remove duplicates
+        seen_classes = set()
+        unique_classes = []
+        for c in classes:
+            name = c.get("name")
+            if name not in seen_classes:
+                seen_classes.add(name)
+                unique_classes.append(c)
+        classes = unique_classes
+        
+        seen_functions = set()
+        unique_functions = []
+        for f in functions:
+            name = f.get("name")
+            if name not in seen_functions:
+                seen_functions.add(name)
+                unique_functions.append(f)
+        functions = unique_functions
+        
+        # Get relationships for this file
+        relationships = analysis.get("relationships", {})
+        incoming_deps = []
+        outgoing_deps = []
+        
+        # Find files that import this file
+        for imp in relationships.get("imports", []):
+            if imp.get("module") and file_path.endswith(imp["module"].replace(".", "/") + ".py"):
+                incoming_deps.append(imp["file"])
+        
+        # Find files this file imports
+        for imp in relationships.get("imports", []):
+            if imp.get("file") == file_path and imp.get("module"):
+                outgoing_deps.append(imp["module"])
+        
+        # Get routes if any
+        routes = [r for r in relationships.get("routes", []) if r.get("file") == file_path]
         
         # Build context for LLM
         context = {
@@ -228,6 +293,10 @@ class QuestionSetGenerator:
             "classes": [c.get("name") for c in classes[:5]],  # Limit to 5
             "functions": [f.get("name") for f in functions[:10]],  # Limit to 10
             "frameworks": analysis.get("frameworks", []),
+            "incoming_dependencies": incoming_deps[:5],
+            "outgoing_dependencies": outgoing_deps[:5],
+            "routes": [f"{r.get('method', 'GET')} {r.get('path', '')}" for r in routes[:3]],
+            "architectural_patterns": analysis.get("architectural_patterns", []),
         }
         
         # Generate question using LLM
@@ -241,6 +310,10 @@ class QuestionSetGenerator:
                     "functions": ", ".join(context["functions"]) if context["functions"] else "none",
                     "frameworks": ", ".join(context["frameworks"]) if context["frameworks"] else "none",
                     "importance_level": importance_level,
+                    "incoming_dependencies": ", ".join(context["incoming_dependencies"]) if context["incoming_dependencies"] else "none",
+                    "outgoing_dependencies": ", ".join(context["outgoing_dependencies"]) if context["outgoing_dependencies"] else "none",
+                    "routes": ", ".join(context["routes"]) if context["routes"] else "none",
+                    "architectural_patterns": ", ".join(context["architectural_patterns"]) if context["architectural_patterns"] else "none",
                 }
             )
             
@@ -314,6 +387,41 @@ class QuestionSetGenerator:
             "top_level_structure": [s.get("name") for s in analysis.get("top_level_structure", [])],
             "entrypoints": [e.get("file") for e in analysis.get("entrypoints", [])],
         }
+        
+        # Add enhanced analysis data for Architecture Understanding phase
+        if phase == "Architecture Understanding":
+            # Architectural patterns
+            arch_patterns = analysis.get("architectural_patterns", [])
+            context["architectural_patterns"] = ", ".join(arch_patterns) if arch_patterns else "none detected"
+            
+            # Entry point flow
+            entry_flow = analysis.get("entry_point_flow", [])
+            if entry_flow:
+                flow_descriptions = []
+                for flow in entry_flow[:3]:  # Limit to 3 entry points
+                    ep = flow.get("entrypoint", "unknown")
+                    deps = flow.get("dependencies", [])
+                    if deps:
+                        flow_descriptions.append(f"{ep} -> [{', '.join(deps[:5])}]")
+                    else:
+                        flow_descriptions.append(ep)
+                context["entry_point_flow"] = "; ".join(flow_descriptions)
+            else:
+                context["entry_point_flow"] = "none available"
+            
+            # Dependency summary
+            dep_summary = analysis.get("dependency_graph", {})
+            highly_depended = dep_summary.get("highly_depended_upon", [])
+            if highly_depended:
+                dep_list = [f"{d['file']} ({d['count']} refs)" for d in highly_depended[:5]]
+                context["dependency_summary"] = ", ".join(dep_list)
+            else:
+                context["dependency_summary"] = "none available"
+        else:
+            # For non-architecture phases, provide defaults
+            context["architectural_patterns"] = "none"
+            context["entry_point_flow"] = "none"
+            context["dependency_summary"] = "none"
         
         # Add previous questions for context and coherence
         if previous_questions:
