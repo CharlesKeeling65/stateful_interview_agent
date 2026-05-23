@@ -148,6 +148,9 @@ class GeneratedQuestion(Base):
     revisions = relationship(
         "QuestionRevision", back_populates="question", cascade="all, delete-orphan"
     )
+    versions = relationship(
+        "QuestionVersion", back_populates="question", cascade="all, delete-orphan"
+    )
 
     @property
     def target_files(self) -> list[str]:
@@ -187,6 +190,8 @@ class GeneratedQuestion(Base):
             "created_at": self.created_at.isoformat() if self.created_at else None,
             "updated_at": self.updated_at.isoformat() if self.updated_at else None,
             "revision_count": len(self.revisions),
+            "version_count": len(self.versions),
+            "current_version_no": max([v.version_no for v in self.versions]) if self.versions else 0,
         }
 
 
@@ -234,5 +239,36 @@ class QuestionRevision(Base):
             "original_question_text": self.original_question_text,
             "revised_question_text": self.revised_question_text,
             "validation_result": self.validation_result,
+            "created_at": self.created_at.isoformat() if self.created_at else None,
+        }
+
+
+class QuestionVersion(Base):
+    """Version history for a generated question."""
+    
+    __tablename__ = "question_versions"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, index=True)
+    question_id: Mapped[int] = mapped_column(Integer, ForeignKey("generated_questions.id"), nullable=False)
+    version_no: Mapped[int] = mapped_column(Integer, nullable=False)  # 1, 2, 3, ...
+    question_text: Mapped[str] = mapped_column(Text, nullable=False)
+    change_type: Mapped[str] = mapped_column(String(50), nullable=False)  # 'generated', 'revised', 'rollback'
+    change_summary: Mapped[str] = mapped_column(Text, default="")  # 中文指令或回滚原因
+    parent_version_id: Mapped[int | None] = mapped_column(Integer, ForeignKey("question_versions.id"), nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
+
+    # Relationships
+    question = relationship("GeneratedQuestion", back_populates="versions")
+    parent_version = relationship("QuestionVersion", remote_side=[id])
+
+    def to_dict(self) -> dict[str, Any]:
+        return {
+            "id": self.id,
+            "question_id": self.question_id,
+            "version_no": self.version_no,
+            "question_text": self.question_text,
+            "change_type": self.change_type,
+            "change_summary": self.change_summary,
+            "parent_version_id": self.parent_version_id,
             "created_at": self.created_at.isoformat() if self.created_at else None,
         }

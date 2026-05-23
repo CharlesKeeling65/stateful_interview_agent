@@ -4,7 +4,8 @@ from typing import Any
 
 class QuestionSetCreate(BaseModel):
     """Request to create a new question set."""
-    repository_url: str = Field(..., description="URL of the repository to analyze")
+    repository_url: str = Field(..., description="URL or local path of the repository to analyze")
+    repository_source: str = Field(default="remote", description="Source type: 'remote' for URL, 'local' for local path")
     total_questions: int = Field(default=40, ge=35, le=100, description="Total number of questions to generate")
     code_detail_ratio: float = Field(default=0.85, ge=0.5, le=1.0, description="Minimum ratio of code detail questions")
     min_core_file_coverage: float = Field(default=0.90, ge=0.5, le=1.0, description="Minimum core file coverage ratio")
@@ -93,3 +94,37 @@ class GeneratedQuestionResponse(BaseModel):
     created_at: str | None = None
     updated_at: str | None = None
     revision_count: int = 0
+    version_count: int = 0
+    current_version_no: int = 0
+
+
+class QuestionVersionResponse(BaseModel):
+    """Response for a question version."""
+    id: int
+    question_id: int
+    version_no: int
+    question_text: str
+    change_type: str  # 'generated', 'revised', 'rollback'
+    change_summary: str
+    parent_version_id: int | None = None
+    created_at: str | None = None
+
+
+class QuestionVersionDiff(BaseModel):
+    """Diff between two question versions."""
+    version_from: QuestionVersionResponse
+    version_to: QuestionVersionResponse
+    diff_html: str  # HTML formatted diff
+
+
+class QuestionVersionRollbackRequest(BaseModel):
+    """Request to rollback to a specific version."""
+    version_no: int = Field(..., description="Version number to rollback to")
+    reason: str = Field(default="", description="Reason for rollback")
+
+
+class CascadeRevisionRequest(BaseModel):
+    """Request for cascade revision of a question and all subsequent questions."""
+    question_id: int = Field(..., description="ID of the question to revise")
+    chinese_instruction: str = Field(..., description="Chinese instruction for revision")
+    cascade: bool = Field(default=True, description="Whether to cascade revision to subsequent questions")
