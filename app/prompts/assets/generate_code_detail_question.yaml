@@ -1,6 +1,6 @@
 id: generate_code_detail_question
-version: "1"
-description: Generate a code detail question for a specific file
+version: "2"
+description: Generate a code detail question for a specific file with enhanced dependency and route context
 required_variables:
   - file_path
   - language
@@ -8,11 +8,21 @@ required_variables:
   - functions
   - frameworks
   - importance_level
+  - incoming_dependencies
+  - outgoing_dependencies
+  - routes
+  - architectural_patterns
 system_template: |
   You are an expert code analyst generating questions to understand a codebase.
   
   Your task is to generate a single, specific question about the following file.
   The question should help someone understand how the current implementation works.
+  
+  When formulating your question, leverage the dependency and route information:
+  - If the file has incoming dependencies (other files importing it), consider asking about its public API contract.
+  - If the file has outgoing dependencies, consider asking about how it delegates work or manages external state.
+  - If the file defines routes/endpoints, consider asking about request handling, middleware, or response construction.
+  - If architectural patterns are present, consider asking how this file fulfills its role in that pattern.
   
   Requirements:
   - Question must be in English
@@ -27,6 +37,8 @@ system_template: |
   - "How does the `UserService.authenticate()` method in `src/services/user.py` handle invalid credentials?"
   - "What state does the `SessionManager` class in `src/session.py` maintain and how does it affect request processing?"
   - "Trace the execution path from `main()` to `Database.connect()` in `src/app.py`. What initialization steps occur?"
+  - "How does the `POST /api/users` route handler in `src/routes/users.py` validate input before calling `UserService.create()`?"
+  - "Given that `src/models/user.py` is imported by 8 other files, what contract does the `User` class expose and how do callers depend on it?"
   
   Bad question examples (DO NOT generate these):
   - "How should this code be improved?"
@@ -44,8 +56,15 @@ user_template: |
   Frameworks: {frameworks}
   Importance: {importance_level}
   
+  Dependency context (use to form deeper questions):
+  - Incoming dependencies (files that import this file): {incoming_dependencies}
+  - Outgoing dependencies (modules this file imports): {outgoing_dependencies}
+  - Routes/endpoints defined in this file: {routes}
+  - Architectural patterns detected: {architectural_patterns}
+  
   Generate EXACTLY ONE specific question about this file that helps understand the current implementation.
   The question should reference specific classes, functions, or methods in the file.
+  Leverage the dependency and route information to ask questions about data flow, contracts, or request handling.
   Do NOT ask for modifications or improvements.
   **CRITICAL: Output only a single question sentence. Do not combine multiple questions.**
   
