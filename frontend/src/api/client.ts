@@ -210,6 +210,7 @@ export async function getProjectQuestionNetworkSummary(projectId: number) {
 
 export interface QuestionSetCreatePayload {
   repository_url: string
+  repository_source?: 'remote' | 'local'
   total_questions?: number
   code_detail_ratio?: number
   min_core_file_coverage?: number
@@ -247,6 +248,8 @@ export interface GeneratedQuestionResponse {
   created_at: string | null
   updated_at: string | null
   revision_count: number
+  version_count: number
+  current_version_no: number
 }
 
 export interface QuestionRevisionRequest {
@@ -334,5 +337,78 @@ export async function getQuestionSetCoverage(questionSetId: number) {
 export async function deleteQuestionSet(questionSetId: number) {
   await request<void>(`/question-sets/${questionSetId}`, {
     method: 'DELETE',
+  })
+}
+
+// Version management interfaces and functions
+
+export interface QuestionVersionResponse {
+  id: number
+  question_id: number
+  version_no: number
+  question_text: string
+  change_type: string // 'generated', 'revised', 'rollback'
+  change_summary: string
+  parent_version_id: number | null
+  created_at: string | null
+}
+
+export interface QuestionVersionDiff {
+  version_from: QuestionVersionResponse
+  version_to: QuestionVersionResponse
+  diff_html: string
+}
+
+export interface QuestionVersionRollbackRequest {
+  version_no: number
+  reason?: string
+}
+
+export interface CascadeRevisionRequest {
+  question_id: number
+  chinese_instruction: string
+  cascade?: boolean
+}
+
+export interface CascadeRevisionResponse {
+  question_id: number
+  original_question: string
+  revised_question: string
+  chinese_instruction: string
+  cascade: boolean
+  cascade_results: Array<{
+    question_no: number
+    status: string
+    original_text?: string
+    new_text?: string
+    error?: string
+  }>
+}
+
+export async function getQuestionVersions(questionSetId: number, questionId: number) {
+  return request<QuestionVersionResponse[]>(`/question-sets/${questionSetId}/questions/${questionId}/versions`)
+}
+
+export async function getQuestionVersion(questionSetId: number, questionId: number, versionNo: number) {
+  return request<QuestionVersionResponse>(`/question-sets/${questionSetId}/questions/${questionId}/versions/${versionNo}`)
+}
+
+export async function getQuestionVersionDiff(questionSetId: number, questionId: number, v1: number, v2: number) {
+  return request<QuestionVersionDiff>(`/question-sets/${questionSetId}/questions/${questionId}/diff?v1=${v1}&v2=${v2}`)
+}
+
+export async function rollbackQuestionVersion(questionSetId: number, questionId: number, payload: QuestionVersionRollbackRequest) {
+  return request<QuestionVersionResponse>(`/question-sets/${questionSetId}/questions/${questionId}/rollback`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(payload),
+  })
+}
+
+export async function cascadeReviseQuestion(questionSetId: number, questionId: number, payload: CascadeRevisionRequest) {
+  return request<CascadeRevisionResponse>(`/question-sets/${questionSetId}/questions/${questionId}/cascade-revise`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(payload),
   })
 }

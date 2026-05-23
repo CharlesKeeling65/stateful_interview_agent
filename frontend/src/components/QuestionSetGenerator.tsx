@@ -7,11 +7,18 @@ import {
   validateQuestionSet,
   getQuestionSetCoverage,
   deleteQuestionSet,
+  getQuestionVersions,
+  getQuestionVersionDiff,
+  rollbackQuestionVersion,
+  cascadeReviseQuestion,
   type QuestionSetResponse,
   type GeneratedQuestionResponse,
   type QuestionRevisionResponse,
   type ValidationReport,
   type CoverageReport,
+  type QuestionVersionResponse,
+  type QuestionVersionDiff,
+  type CascadeRevisionResponse,
 } from '../api/client'
 
 interface QuestionSetGeneratorProps {
@@ -19,6 +26,7 @@ interface QuestionSetGeneratorProps {
 }
 
 export function QuestionSetGenerator({ locale }: QuestionSetGeneratorProps) {
+  const [repositorySource, setRepositorySource] = useState<'remote' | 'local'>('remote')
   const [repositoryUrl, setRepositoryUrl] = useState('')
   const [totalQuestions, setTotalQuestions] = useState(40)
   const [codeDetailRatio, setCodeDetailRatio] = useState(0.85)
@@ -42,13 +50,28 @@ export function QuestionSetGenerator({ locale }: QuestionSetGeneratorProps) {
   // Polling state
   const [, setPolling] = useState(false)
   
+  // Version management state
+  const [versions, setVersions] = useState<QuestionVersionResponse[]>([])
+  const [selectedVersion, setSelectedVersion] = useState<QuestionVersionResponse | null>(null)
+  const [versionDiff, setVersionDiff] = useState<QuestionVersionDiff | null>(null)
+  const [showVersionPanel, setShowVersionPanel] = useState(false)
+  const [cascadeResult, setCascadeResult] = useState<CascadeRevisionResponse | null>(null)
+  const [cascading, setCascading] = useState(false)
+  
+  // Copy state
+  const [copiedQuestionId, setCopiedQuestionId] = useState<number | null>(null)
+  
   const t = useCallback((key: string) => {
     const translations: Record<string, Record<string, string>> = {
       en: {
         'questionSet.title': 'Question Set Generator',
         'questionSet.description': 'Generate a complete question set for repository code understanding',
+        'questionSet.repositorySource': 'Repository Source',
+        'questionSet.repositorySource.remote': 'Remote Repository',
+        'questionSet.repositorySource.local': 'Local Path',
         'questionSet.repositoryUrl': 'Repository URL',
         'questionSet.repositoryUrl.placeholder': 'https://github.com/username/repository',
+        'questionSet.repositoryLocal.placeholder': '/path/to/local/repository',
         'questionSet.totalQuestions': 'Total Questions',
         'questionSet.codeDetailRatio': 'Code Detail Ratio',
         'questionSet.minCoreFileCoverage': 'Min Core File Coverage',
@@ -95,12 +118,28 @@ export function QuestionSetGenerator({ locale }: QuestionSetGeneratorProps) {
         'questionSet.error': 'Error',
         'questionSet.noQuestionSets': 'No question sets yet',
         'questionSet.selectQuestionSet': 'Select a question set to view details',
+        'questionSet.version.history': 'Version History',
+        'questionSet.version.diff': 'View Diff',
+        'questionSet.version.rollback': 'Rollback',
+        'questionSet.version.current': 'Current',
+        'questionSet.version.created': 'Created',
+        'questionSet.version.revised': 'Revised',
+        'questionSet.version.rollbacked': 'Rolled Back',
+        'questionSet.version.cascade': 'Cascade Regenerated',
+        'questionSet.copy': 'Copy',
+        'questionSet.copied': 'Copied!',
+        'questionSet.cascade.revise': 'Cascade Revise',
+        'questionSet.cascade.result': 'Cascade Result',
       },
       zh: {
         'questionSet.title': '问题集生成器',
         'questionSet.description': '为代码仓库生成完整的问题集，用于代码理解',
+        'questionSet.repositorySource': '仓库来源',
+        'questionSet.repositorySource.remote': '远程仓库',
+        'questionSet.repositorySource.local': '本地路径',
         'questionSet.repositoryUrl': '仓库 URL',
         'questionSet.repositoryUrl.placeholder': 'https://github.com/用户名/仓库名',
+        'questionSet.repositoryLocal.placeholder': '/path/to/local/repository',
         'questionSet.totalQuestions': '问题总数',
         'questionSet.codeDetailRatio': '代码细节比例',
         'questionSet.minCoreFileCoverage': '最小核心文件覆盖率',
@@ -147,6 +186,18 @@ export function QuestionSetGenerator({ locale }: QuestionSetGeneratorProps) {
         'questionSet.error': '错误',
         'questionSet.noQuestionSets': '暂无问题集',
         'questionSet.selectQuestionSet': '选择一个问题集查看详情',
+        'questionSet.version.history': '版本历史',
+        'questionSet.version.diff': '查看差异',
+        'questionSet.version.rollback': '回滚',
+        'questionSet.version.current': '当前版本',
+        'questionSet.version.created': '创建时间',
+        'questionSet.version.revised': '修订时间',
+        'questionSet.version.rollbacked': '回滚时间',
+        'questionSet.version.cascade': '级联重新生成',
+        'questionSet.copy': '复制',
+        'questionSet.copied': '已复制！',
+        'questionSet.cascade.revise': '级联修订',
+        'questionSet.cascade.result': '级联结果',
       },
     }
     return translations[locale]?.[key] || key
@@ -206,7 +257,21 @@ export function QuestionSetGenerator({ locale }: QuestionSetGeneratorProps) {
   
   const handleGenerate = async () => {
     if (!repositoryUrl) {
-      setError('Please enter a repository URL')
+      setError(repositorySource === 'remote' 
+        ? 'Please enter a repository URL' 
+        : 'Please enter a local path'
+      )
+      return
+    }
+    
+    // Validate input format
+    if (repositorySource === 'remote' && !repositoryUrl.startsWith('http')) {
+      setError('Remote repository URL must start with http:// or https://')
+      return
+    }
+    
+    if (repositorySource === 'local' && !repositoryUrl.startsWith('/')) {
+      setError('Local path must be an absolute path starting with /')
       return
     }
     
@@ -216,6 +281,7 @@ export function QuestionSetGenerator({ locale }: QuestionSetGeneratorProps) {
     try {
       const questionSet = await createQuestionSet({
         repository_url: repositoryUrl,
+        repository_source: repositorySource,
         total_questions: totalQuestions,
         code_detail_ratio: codeDetailRatio,
         min_core_file_coverage: minCoreFileCoverage,
@@ -327,6 +393,100 @@ export function QuestionSetGenerator({ locale }: QuestionSetGeneratorProps) {
     }
   }
   
+  const copyToClipboard = async (text: string, questionId: number) => {
+    try {
+      await navigator.clipboard.writeText(text)
+      setCopiedQuestionId(questionId)
+      setTimeout(() => setCopiedQuestionId(null), 2000)
+    } catch (err) {
+      console.error('Failed to copy:', err)
+    }
+  }
+  
+  const loadVersions = async (questionId: number) => {
+    if (!selectedQuestionSet) return
+    
+    try {
+      const versionsList = await getQuestionVersions(selectedQuestionSet.id, questionId)
+      setVersions(versionsList)
+      setShowVersionPanel(true)
+    } catch (err) {
+      console.error('Failed to load versions:', err)
+    }
+  }
+  
+  const loadVersionDiff = async (questionId: number, v1: number, v2: number) => {
+    if (!selectedQuestionSet) return
+    
+    try {
+      const diff = await getQuestionVersionDiff(selectedQuestionSet.id, questionId, v1, v2)
+      setVersionDiff(diff)
+    } catch (err) {
+      console.error('Failed to load version diff:', err)
+    }
+  }
+  
+  const handleRollback = async (questionId: number, versionNo: number) => {
+    if (!selectedQuestionSet) return
+    
+    try {
+      await rollbackQuestionVersion(selectedQuestionSet.id, questionId, {
+        version_no: versionNo,
+        reason: 'User requested rollback',
+      })
+      
+      // Reload question set to get updated question
+      const updatedQuestionSet = await getQuestionSet(selectedQuestionSet.id)
+      setSelectedQuestionSet(updatedQuestionSet)
+      
+      // Update selected question if it was the one rolled back
+      if (selectedQuestion?.id === questionId) {
+        const updatedQuestion = updatedQuestionSet.questions.find(q => q.id === questionId)
+        if (updatedQuestion) {
+          setSelectedQuestion(updatedQuestion)
+        }
+      }
+      
+      // Reload versions
+      await loadVersions(questionId)
+    } catch (err) {
+      console.error('Failed to rollback:', err)
+    }
+  }
+  
+  const handleCascadeRevise = async () => {
+    if (!selectedQuestionSet || !selectedQuestion || !chineseInstruction) {
+      return
+    }
+    
+    setCascading(true)
+    
+    try {
+      const result = await cascadeReviseQuestion(selectedQuestionSet.id, selectedQuestion.id, {
+        question_id: selectedQuestion.id,
+        chinese_instruction: chineseInstruction,
+        cascade: true,
+      })
+      
+      setCascadeResult(result)
+      
+      // Reload question set to get updated questions
+      const updatedQuestionSet = await getQuestionSet(selectedQuestionSet.id)
+      setSelectedQuestionSet(updatedQuestionSet)
+      
+      // Update selected question
+      const updatedQuestion = updatedQuestionSet.questions.find(q => q.id === selectedQuestion.id)
+      if (updatedQuestion) {
+        setSelectedQuestion(updatedQuestion)
+      }
+      
+    } catch (err) {
+      console.error('Failed to cascade revise:', err)
+    } finally {
+      setCascading(false)
+    }
+  }
+  
   return (
     <div className="container mx-auto p-4">
       <h1 className="text-2xl font-bold mb-4">{t('questionSet.title')}</h1>
@@ -339,13 +499,40 @@ export function QuestionSetGenerator({ locale }: QuestionSetGeneratorProps) {
         <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-4">
           <div>
             <label className="block text-sm font-medium text-gray-700 mb-1">
-              {t('questionSet.repositoryUrl')}
+              {t('questionSet.repositorySource')}
             </label>
+            <div className="flex gap-2 mb-2">
+              <button
+                type="button"
+                onClick={() => setRepositorySource('remote')}
+                className={`px-3 py-1 text-sm rounded-md ${
+                  repositorySource === 'remote'
+                    ? 'bg-blue-500 text-white'
+                    : 'bg-gray-200 text-gray-700 hover:bg-gray-300'
+                }`}
+              >
+                {t('questionSet.repositorySource.remote')}
+              </button>
+              <button
+                type="button"
+                onClick={() => setRepositorySource('local')}
+                className={`px-3 py-1 text-sm rounded-md ${
+                  repositorySource === 'local'
+                    ? 'bg-blue-500 text-white'
+                    : 'bg-gray-200 text-gray-700 hover:bg-gray-300'
+                }`}
+              >
+                {t('questionSet.repositorySource.local')}
+              </button>
+            </div>
             <input
               type="text"
               value={repositoryUrl}
               onChange={(e) => setRepositoryUrl(e.target.value)}
-              placeholder={t('questionSet.repositoryUrl.placeholder')}
+              placeholder={repositorySource === 'remote' 
+                ? t('questionSet.repositoryUrl.placeholder')
+                : t('questionSet.repositoryLocal.placeholder')
+              }
               className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
             />
           </div>
@@ -467,30 +654,66 @@ export function QuestionSetGenerator({ locale }: QuestionSetGeneratorProps) {
           </h2>
           
           {selectedQuestionSet && (
-            <div className="space-y-3 max-h-[600px] overflow-y-auto">
+            <div className="space-y-4 max-h-[800px] overflow-y-auto pr-2">
               {selectedQuestionSet.questions.map(q => (
                 <div
                   key={q.id}
-                  className={`p-3 border rounded cursor-pointer ${
+                  className={`p-4 border rounded-lg ${
                     selectedQuestion?.id === q.id 
                       ? 'border-green-500 bg-green-50' 
                       : 'border-gray-200 hover:border-gray-300'
                   }`}
-                  onClick={() => setSelectedQuestion(q)}
                 >
-                  <div className="flex justify-between items-start mb-1">
-                    <span className={`text-xs px-2 py-1 rounded ${getPhaseColor(q.phase)}`}>
-                      {q.phase}
-                    </span>
-                    <span className="text-xs text-gray-500">
-                      Q{q.question_no}
-                    </span>
+                  {/* Question header */}
+                  <div className="flex justify-between items-start mb-2">
+                    <div className="flex items-center gap-2">
+                      <span className={`text-xs px-2 py-1 rounded ${getPhaseColor(q.phase)}`}>
+                        {q.phase}
+                      </span>
+                      <span className="text-xs text-gray-500 font-medium">
+                        Q{q.question_no}
+                      </span>
+                      <span className="text-xs text-gray-400">
+                        v{q.current_version_no}
+                      </span>
+                    </div>
+                    <div className="flex items-center gap-2">
+                      <button
+                        onClick={(e) => {
+                          e.stopPropagation()
+                          copyToClipboard(q.question_text, q.id)
+                        }}
+                        className={`text-xs px-2 py-1 rounded ${
+                          copiedQuestionId === q.id 
+                            ? 'bg-green-100 text-green-800' 
+                            : 'bg-gray-100 text-gray-600 hover:bg-gray-200'
+                        }`}
+                      >
+                        {copiedQuestionId === q.id ? t('questionSet.copied') : t('questionSet.copy')}
+                      </button>
+                      <button
+                        onClick={(e) => {
+                          e.stopPropagation()
+                          loadVersions(q.id)
+                        }}
+                        className="text-xs px-2 py-1 rounded bg-blue-100 text-blue-600 hover:bg-blue-200"
+                      >
+                        {t('questionSet.version.history')}
+                      </button>
+                    </div>
                   </div>
-                  <div className="text-sm text-gray-800 line-clamp-2">
+                  
+                  {/* Question text */}
+                  <div 
+                    className="text-sm text-gray-800 mb-2 cursor-pointer"
+                    onClick={() => setSelectedQuestion(q)}
+                  >
                     {q.question_text}
                   </div>
+                  
+                  {/* Target files */}
                   {q.target_files.length > 0 && (
-                    <div className="text-xs text-gray-500 mt-1">
+                    <div className="text-xs text-gray-500">
                       {t('questionSet.targetFiles')}: {q.target_files.slice(0, 2).join(', ')}
                       {q.target_files.length > 2 && ` +${q.target_files.length - 2}`}
                     </div>
@@ -527,13 +750,23 @@ export function QuestionSetGenerator({ locale }: QuestionSetGeneratorProps) {
                 />
               </div>
               
-              <button
-                onClick={handleReviseQuestion}
-                disabled={revising || !chineseInstruction}
-                className="bg-green-500 text-white px-4 py-2 rounded hover:bg-green-600 disabled:opacity-50 mb-4"
-              >
-                {revising ? '...' : t('questionSet.revision.submit')}
-              </button>
+              <div className="flex gap-2 mb-4">
+                <button
+                  onClick={handleReviseQuestion}
+                  disabled={revising || !chineseInstruction}
+                  className="bg-green-500 text-white px-4 py-2 rounded hover:bg-green-600 disabled:opacity-50"
+                >
+                  {revising ? '...' : t('questionSet.revision.submit')}
+                </button>
+                
+                <button
+                  onClick={handleCascadeRevise}
+                  disabled={cascading || !chineseInstruction}
+                  className="bg-purple-500 text-white px-4 py-2 rounded hover:bg-purple-600 disabled:opacity-50"
+                >
+                  {cascading ? '...' : t('questionSet.cascade.revise')}
+                </button>
+              </div>
               
               {revisionResult && (
                 <div className="border-t pt-4">
@@ -559,6 +792,43 @@ export function QuestionSetGenerator({ locale }: QuestionSetGeneratorProps) {
                       <ul className="text-sm text-yellow-600 list-disc list-inside">
                         {revisionResult.warnings.map((warning, i) => (
                           <li key={i}>{warning}</li>
+                        ))}
+                      </ul>
+                    </div>
+                  )}
+                </div>
+              )}
+              
+              {cascadeResult && (
+                <div className="border-t pt-4 mt-4">
+                  <h3 className="font-medium mb-2">{t('questionSet.cascade.result')}</h3>
+                  
+                  <div className="mb-2">
+                    <div className="text-xs text-gray-500">{t('questionSet.revision.original')}</div>
+                    <div className="text-sm bg-red-50 p-2 rounded">
+                      {cascadeResult.original_question}
+                    </div>
+                  </div>
+                  
+                  <div className="mb-2">
+                    <div className="text-xs text-gray-500">{t('questionSet.revision.revised')}</div>
+                    <div className="text-sm bg-green-50 p-2 rounded">
+                      {cascadeResult.revised_question}
+                    </div>
+                  </div>
+                  
+                  {cascadeResult.cascade_results.length > 0 && (
+                    <div className="mb-2">
+                      <div className="text-xs text-gray-500 mb-1">Cascade Effects:</div>
+                      <ul className="text-sm list-disc list-inside">
+                        {cascadeResult.cascade_results.map((result, i) => (
+                          <li key={i} className={
+                            result.status === 'regenerated' ? 'text-green-600' :
+                            result.status === 'failed' ? 'text-red-600' : 'text-yellow-600'
+                          }>
+                            Q{result.question_no}: {result.status}
+                            {result.error && ` - ${result.error}`}
+                          </li>
                         ))}
                       </ul>
                     </div>
@@ -684,6 +954,140 @@ export function QuestionSetGenerator({ locale }: QuestionSetGeneratorProps) {
                 )}
               </div>
             )}
+          </div>
+        </div>
+      )}
+      
+      {/* Version History Panel */}
+      {showVersionPanel && (
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
+          <div className="bg-white rounded-lg shadow-xl w-full max-w-4xl max-h-[90vh] overflow-hidden">
+            <div className="flex justify-between items-center p-4 border-b">
+              <h2 className="text-lg font-semibold">{t('questionSet.version.history')}</h2>
+              <button
+                onClick={() => {
+                  setShowVersionPanel(false)
+                  setVersions([])
+                  setVersionDiff(null)
+                  setSelectedVersion(null)
+                }}
+                className="text-gray-500 hover:text-gray-700"
+              >
+                ✕
+              </button>
+            </div>
+            
+            <div className="flex h-[calc(90vh-120px)]">
+              {/* Version list */}
+              <div className="w-1/3 border-r overflow-y-auto p-4">
+                <h3 className="font-medium mb-3">Versions</h3>
+                <div className="space-y-2">
+                  {versions.map((version, index) => (
+                    <div
+                      key={version.id}
+                      className={`p-3 border rounded cursor-pointer ${
+                        selectedVersion?.id === version.id 
+                          ? 'border-blue-500 bg-blue-50' 
+                          : 'border-gray-200 hover:border-gray-300'
+                      }`}
+                      onClick={() => setSelectedVersion(version)}
+                    >
+                      <div className="flex justify-between items-start mb-1">
+                        <span className="text-sm font-medium">v{version.version_no}</span>
+                        <span className={`text-xs px-2 py-1 rounded ${
+                          version.change_type === 'generated' ? 'bg-green-100 text-green-800' :
+                          version.change_type === 'revised' ? 'bg-yellow-100 text-yellow-800' :
+                          version.change_type === 'rollback' ? 'bg-purple-100 text-purple-800' :
+                          'bg-gray-100 text-gray-800'
+                        }`}>
+                          {version.change_type}
+                        </span>
+                      </div>
+                      <div className="text-xs text-gray-500 mb-1">
+                        {version.created_at ? new Date(version.created_at).toLocaleString() : ''}
+                      </div>
+                      <div className="text-xs text-gray-600 truncate">
+                        {version.change_summary}
+                      </div>
+                      
+                      {/* Action buttons */}
+                      <div className="flex gap-1 mt-2">
+                        {index > 0 && (
+                          <button
+                            onClick={(e) => {
+                              e.stopPropagation()
+                              loadVersionDiff(versions[0].question_id, versions[index].version_no, versions[index-1].version_no)
+                            }}
+                            className="text-xs px-2 py-1 bg-blue-100 text-blue-600 rounded hover:bg-blue-200"
+                          >
+                            {t('questionSet.version.diff')}
+                          </button>
+                        )}
+                        <button
+                          onClick={(e) => {
+                            e.stopPropagation()
+                            handleRollback(version.question_id, version.version_no)
+                          }}
+                          className="text-xs px-2 py-1 bg-red-100 text-red-600 rounded hover:bg-red-200"
+                        >
+                          {t('questionSet.version.rollback')}
+                        </button>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              </div>
+              
+              {/* Version detail */}
+              <div className="w-2/3 overflow-y-auto p-4">
+                {selectedVersion ? (
+                  <div>
+                    <h3 className="font-medium mb-3">
+                      Version {selectedVersion.version_no} - {selectedVersion.change_type}
+                    </h3>
+                    
+                    <div className="mb-4">
+                      <div className="text-sm text-gray-500 mb-1">Question Text:</div>
+                      <div className="p-3 bg-gray-50 rounded">
+                        {selectedVersion.question_text}
+                      </div>
+                    </div>
+                    
+                    <div className="mb-4">
+                      <div className="text-sm text-gray-500 mb-1">Change Summary:</div>
+                      <div className="p-3 bg-gray-50 rounded">
+                        {selectedVersion.change_summary || 'No summary'}
+                      </div>
+                    </div>
+                    
+                    <div className="mb-4">
+                      <div className="text-sm text-gray-500 mb-1">Created At:</div>
+                      <div className="p-3 bg-gray-50 rounded">
+                        {selectedVersion.created_at ? new Date(selectedVersion.created_at).toLocaleString() : 'Unknown'}
+                      </div>
+                    </div>
+                  </div>
+                ) : (
+                  <div className="text-gray-500 text-center py-8">
+                    Select a version to view details
+                  </div>
+                )}
+                
+                {/* Diff view */}
+                {versionDiff && (
+                  <div className="mt-6">
+                    <h3 className="font-medium mb-3">
+                      Diff: v{versionDiff.version_from.version_no} → v{versionDiff.version_to.version_no}
+                    </h3>
+                    
+                    <div 
+                      className="border rounded overflow-auto max-h-96"
+                      dangerouslySetInnerHTML={{ __html: versionDiff.diff_html }}
+                    />
+                  </div>
+                )}
+              </div>
+            </div>
           </div>
         </div>
       )}
