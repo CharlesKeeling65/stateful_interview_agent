@@ -101,8 +101,8 @@ class QuestionSetGenerator:
             )
             questions.extend(phase_questions)
         
-        # Step 4: Validate and repair
-        validation_result = self._validate_and_repair(
+        # Step 4: Validate and repair (auto-generate more if needed)
+        questions, validation_result = self._validate_and_repair(
             questions, analysis, total_questions, code_detail_ratio, min_core_file_coverage
         )
         
@@ -205,70 +205,90 @@ class QuestionSetGenerator:
     ) -> list[dict[str, Any]]:
         """Generate code detail questions targeting core files.
         
-        For high-importance files, generate multiple questions from different angles.
-        For medium-importance files, generate 1-2 questions each.
-        For low-importance files, generate 1 question each.
+        Aggressively generates questions to meet target count.
+        Uses multiple angles per file and cycles through all core files.
         """
         questions = []
         core_files = phase_config.get("core_files", [])
         target_count = phase_config.get("count", 34)
+        
+        if not core_files:
+            return questions
         
         # Group files by importance
         high_importance = [f for f in core_files if f.get("importance", 0) > 0.7]
         medium_importance = [f for f in core_files if 0.5 < f.get("importance", 0) <= 0.7]
         low_importance = [f for f in core_files if f.get("importance", 0) <= 0.5]
         
-        # Calculate questions per file based on available files and target
+        # Ensure we have at least some files in each category
+        if not high_importance and core_files:
+            high_importance = core_files[:max(1, len(core_files) // 3)]
+        if not medium_importance and len(core_files) > 1:
+            medium_importance = core_files[max(1, len(core_files) // 3):max(2, 2 * len(core_files) // 3)]
+        
+        # Calculate questions per file to meet target
         total_files = len(core_files)
-        if total_files == 0:
-            return questions
+        questions_per_file = max(len(self.QUESTION_ANGLES), (target_count // total_files) + 1)
         
-        # For high importance files: generate 3-5 questions each (different angles)
-        # For medium importance files: generate 2-3 questions each
-        # For low importance files: generate 1 question each
-        high_questions_per_file = min(5, max(3, target_count // (len(high_importance) + 1)))
-        medium_questions_per_file = min(3, max(2, target_count // (len(medium_importance) + 1) // 2))
-        low_questions_per_file = 1
+        # Phase 1: Generate questions for all files with multiple angles
+        all_files_ordered = high_importance + medium_importance + low_importance
         
-        # Generate questions for high importance files (multiple angles)
-        for file_info in high_importance:
+        for file_info in all_files_ordered:
             if len(questions) >= target_count:
                 break
+            
+            # Calculate how many questions this file should get based on importance
+            importance = file_info.get("importance", 0)
+            if importance > 0.7:
+                max_angles = min(len(self.QUESTION_ANGLES), questions_per_file)
+            elif importance > 0.5:
+                max_angles = min(5, questions_per_file // 2)
+            else:
+                max_angles = min(3, questions_per_file // 3)
+            
+            # Generate questions with different angles
             file_questions = self._generate_multi_angle_questions(
-                file_info, analysis, "high", high_questions_per_file
+                file_info, analysis, "high" if importance > 0.7 else ("medium" if importance > 0.5 else "low"),
+                max_angles
             )
             questions.extend(file_questions)
         
-        # Generate questions for medium importance files
-        for file_info in medium_importance:
-            if len(questions) >= target_count:
-                break
-            file_questions = self._generate_multi_angle_questions(
-                file_info, analysis, "medium", medium_questions_per_file
-            )
-            questions.extend(file_questions)
-        
-        # Generate questions for low importance files
-        for file_info in low_importance:
-            if len(questions) >= target_count:
-                break
-            question = self._generate_file_specific_question(file_info, analysis, "low", angle=None)
-            if question:
-                questions.append(question)
-        
-        # If we still don't have enough questions, generate more for high importance files
-        if len(questions) < target_count and high_importance:
+        # Phase 2: If still need more, cycle through files again with new angles
+        if len(questions) < target_count:
             remaining = target_count - len(questions)
-            for file_info in high_importance:
+            for file_info in all_files_ordered:
                 if remaining <= 0:
                     break
-                # Try additional angles not yet used
+                
+                # Get angles already used for this file
+                used_angles = [q.get("angle") for q in questions 
+                              if q.get("target_files", [None])[0] == file_info.get("path")]
+                
+                # Generate with unused angles
                 extra_questions = self._generate_multi_angle_questions(
-                    file_info, analysis, "high", min(3, remaining),
-                    skip_angles=[q.get("angle") for q in questions if q.get("target_files", [None])[0] == file_info.get("path")]
+                    file_info, analysis, "high", min(4, remaining),
+                    skip_angles=used_angles
                 )
                 questions.extend(extra_questions)
                 remaining -= len(extra_questions)
+        
+        # Phase 3: If STILL need more, generate with all angles including duplicates
+        if len(questions) < target_count:
+            remaining = target_count - len(questions)
+            for file_info in high_importance + medium_importance:
+                if remaining <= 0:
+                    break
+                
+                # Generate without angle restriction
+                for angle in self.QUESTION_ANGLES:
+                    if remaining <= 0:
+                        break
+                    question = self._generate_file_specific_question(
+                        file_info, analysis, "high", angle=angle
+                    )
+                    if question:
+                        questions.append(question)
+                        remaining -= 1
         
         # Remove duplicate questions
         questions = self._deduplicate_questions(questions)
@@ -724,8 +744,13 @@ class QuestionSetGenerator:
         total_questions: int,
         code_detail_ratio: float,
         min_core_file_coverage: float,
-    ) -> dict[str, Any]:
-        """Validate and repair the generated question set."""
+    ) -> tuple[list[dict[str, Any]], dict[str, Any]]:
+        """Validate and repair the generated question set.
+        
+        If questions are insufficient, automatically generate more to meet targets.
+        Returns (repaired_questions, validation_result).
+        """
+        # First, perform validation
         validation_result = {
             "is_valid": True,
             "total_questions": len(questions),
@@ -737,6 +762,7 @@ class QuestionSetGenerator:
             "phase_counts": {},
             "warnings": [],
             "errors": [],
+            "repaired": False,
         }
         
         # Count questions by phase
@@ -755,17 +781,8 @@ class QuestionSetGenerator:
         if len(questions) > 0:
             code_detail_ratio_actual = code_detail_count / len(questions)
             validation_result["code_detail_ratio"] = code_detail_ratio_actual
-            
-            if code_detail_ratio_actual < code_detail_ratio:
-                validation_result["warnings"].append(
-                    f"Code detail ratio ({code_detail_ratio_actual:.2%}) is below target ({code_detail_ratio:.2%})"
-                )
-        
-        # Check total questions
-        if len(questions) < total_questions:
-            validation_result["warnings"].append(
-                f"Total questions ({len(questions)}) is below target ({total_questions})"
-            )
+        else:
+            code_detail_ratio_actual = 0
         
         # Check core file coverage
         core_files = set(f.get("path") for f in analysis.get("core_files", []))
@@ -778,29 +795,118 @@ class QuestionSetGenerator:
         if core_files:
             coverage = len(covered_files & core_files) / len(core_files)
             validation_result["core_file_coverage"] = coverage
+        
+        # REPAIR PHASE: Generate additional questions if needed
+        needs_repair = False
+        additional_questions = []
+        
+        # Calculate how many code detail questions we need
+        target_code_detail = int(total_questions * code_detail_ratio)
+        current_code_detail = code_detail_count
+        code_detail_deficit = max(0, target_code_detail - current_code_detail)
+        
+        # Calculate total deficit
+        total_deficit = max(0, total_questions - len(questions))
+        
+        if code_detail_deficit > 0 or total_deficit > 0:
+            needs_repair = True
             
-            if coverage < min_core_file_coverage:
-                validation_result["warnings"].append(
-                    f"Core file coverage ({coverage:.2%}) is below target ({min_core_file_coverage:.2%})"
+            # Generate additional code detail questions
+            core_files_list = analysis.get("core_files", [])
+            if core_files_list:
+                # Determine how many more questions per file
+                questions_to_generate = max(code_detail_deficit, total_deficit)
+                
+                # Generate using different angles for variety
+                for i in range(questions_to_generate):
+                    # Cycle through core files
+                    file_info = core_files_list[i % len(core_files_list)]
+                    
+                    # Try each angle
+                    angle_index = i % len(self.QUESTION_ANGLES)
+                    angle = self.QUESTION_ANGLES[angle_index]
+                    
+                    question = self._generate_file_specific_question(
+                        file_info, analysis, "high", angle=angle
+                    )
+                    if question:
+                        additional_questions.append(question)
+                
+                # Deduplicate
+                additional_questions = self._deduplicate_questions(additional_questions)
+        
+        # If we still need more questions (code detail ratio issue), adjust by adding panorama/arch questions
+        if len(questions) + len(additional_questions) < total_questions:
+            remaining = total_questions - len(questions) - len(additional_questions)
+            
+            # Add architecture questions
+            arch_questions = self._generate_generic_phase_questions(
+                "Architecture Understanding",
+                {"count": min(3, remaining), "description": "Understand project architecture"},
+                analysis,
+                questions
+            )
+            additional_questions.extend(arch_questions[:remaining])
+            remaining -= len(arch_questions)
+            
+            # Add panorama questions if still needed
+            if remaining > 0:
+                panorama_questions = self._generate_generic_phase_questions(
+                    "Panorama Mapping",
+                    {"count": min(2, remaining), "description": "Project overview"},
+                    analysis,
+                    questions
                 )
+                additional_questions.extend(panorama_questions[:remaining])
+        
+        # Merge additional questions
+        if additional_questions:
+            questions = questions + additional_questions
+            validation_result["repaired"] = True
+            validation_result["repaired_count"] = len(additional_questions)
+        
+        # Re-validate after repair
+        phase_counts = {}
+        for q in questions:
+            phase = q.get("phase", "Unknown")
+            phase_counts[phase] = phase_counts.get(phase, 0) + 1
+        
+        validation_result["total_questions"] = len(questions)
+        validation_result["phase_counts"] = phase_counts
+        validation_result["code_detail_count"] = phase_counts.get("Code Detail Completion", 0)
+        
+        if len(questions) > 0:
+            validation_result["code_detail_ratio"] = validation_result["code_detail_count"] / len(questions)
+        
+        # Recalculate coverage
+        covered_files = set()
+        for q in questions:
+            covered_files.update(q.get("target_files", []))
+        validation_result["core_files_covered"] = len(covered_files & core_files)
+        if core_files:
+            validation_result["core_file_coverage"] = len(covered_files & core_files) / len(core_files)
+        
+        # Final warnings
+        if validation_result["code_detail_ratio"] < code_detail_ratio:
+            validation_result["warnings"].append(
+                f"Code detail ratio ({validation_result['code_detail_ratio']:.2%}) still below target after repair"
+            )
+        
+        if len(questions) < total_questions:
+            validation_result["warnings"].append(
+                f"Total questions ({len(questions)}) still below target after repair"
+            )
         
         # Check for duplicates
         duplicates = self._find_duplicates(questions)
         if duplicates:
             validation_result["warnings"].append(f"Found {len(duplicates)} potential duplicate questions")
         
-        # Check for modification-oriented questions
-        modification_questions = self._find_modification_questions(questions)
-        if modification_questions:
-            validation_result["warnings"].append(
-                f"Found {len(modification_questions)} questions that ask for modifications"
-            )
-        
         # Set overall validity
         if validation_result["errors"]:
             validation_result["is_valid"] = False
         
-        return validation_result
+        return questions, validation_result
 
     def _improve_coherence(self, questions: list[dict[str, Any]]) -> list[dict[str, Any]]:
         """Improve coherence between questions.

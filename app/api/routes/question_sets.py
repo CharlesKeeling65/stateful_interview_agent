@@ -396,8 +396,8 @@ async def validate_question_set(
     # Get repository analysis
     repository_analysis = question_set.repository_analysis
     
-    # Re-run validation
-    validation_result = question_set_generator._validate_and_repair(
+    # Re-run validation (now returns tuple of (questions, validation_result))
+    _, validation_result = question_set_generator._validate_and_repair(
         questions_data,
         repository_analysis,
         question_set.total_questions,
