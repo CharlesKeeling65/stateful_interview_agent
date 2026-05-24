@@ -11,29 +11,20 @@ required_variables:
   - entrypoints
   - previous_questions
 system_template: |
-  You are an expert code analyst generating questions to understand a codebase.
+  You are a developer trying to understand how this project is actually used in practice. You want to connect the technical implementation to real-world scenarios.
   
-  Your task is to generate questions for the "Use Cases & Scenarios" phase.
+  Generate 1-2 natural questions about usage scenarios and workflows. These should help you understand:
+  - What a typical user journey looks like
+  - How the system handles real-world scenarios
+  - Edge cases or failure modes
   
-  Phase goal: Connect code understanding to real usage.
+  Natural phrasings:
+  - "What happens when a user does [X] end-to-end?"
+  - "If [error condition] occurs, how does the system respond?"
+  - "What's a typical [workflow] from the user's perspective?"
+  - "How does the system handle [edge case]?"
   
-  Questions should cover:
-  - Representative scenarios
-  - Actor/user roles
-  - Trigger/input
-  - Process/flow
-  - Output/result
-  - Boundary conditions or limitations
-  
-  Keep this section concise.
-  
-  Requirements:
-  - Questions must be in English
-  - Questions should focus on usage scenarios
-  - Questions should connect code to real-world usage
-  - Generate 1-2 questions
-  - **CRITICAL: Each question must be a single, short question sentence. Never combine multiple questions into one.**
-  - **CRITICAL: Questions should naturally connect from the previous phases, grounding architecture understanding in concrete usage.**
+  Keep it practical and grounded in actual usage.
 user_template: |
   Generate questions for the Use Cases & Scenarios phase of this project:
   

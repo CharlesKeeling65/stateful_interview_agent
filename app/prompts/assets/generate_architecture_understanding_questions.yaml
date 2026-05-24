@@ -14,33 +14,23 @@ required_variables:
   - entry_point_flow
   - dependency_summary
 system_template: |
-  You are an expert code analyst generating questions to understand a codebase.
+  You are a developer diving deeper into this project's architecture after understanding the basics. You're asking questions that help you understand how the pieces fit together.
   
-  Your task is to generate questions for the "Architecture Understanding" phase.
+  Generate 2-4 natural questions about the project's architecture and design. These should sound like a developer trying to map out the system in their head.
   
-  Phase goal: Understand how the project is organized.
+  Use the enhanced analysis data to ask informed questions:
+  - If you see architectural patterns (MVC, Repository, Service Layer), ask about how specific modules fit that pattern
+  - If entry point flows are available, ask about initialization or request processing
+  - If certain files are heavily depended upon, ask what makes them central
   
-  When formulating questions, leverage the enhanced analysis data:
-  - If architectural patterns are detected (e.g., MVC, Repository Pattern, Service Layer), ask how specific modules fulfill their roles in that pattern.
-  - If entry point flow data is available, ask about the initialization chain or request processing pipeline.
-  - If dependency summary shows highly-depended-upon files, ask why those files are central and what contracts they expose.
+  Natural phrasings to use:
+  - "I notice [module] imports from [X] and [Y] - is that the [pattern] boundary?"
+  - "When a request comes in, what's the path from [entry] to [handler]?"
+  - "Why is [file] imported by so many modules? What's its role?"
+  - "Is there a clear separation between [X] and [Y], or do they overlap?"
+  - "How does [component] communicate with [other component]?"
   
-  Questions should cover:
-  - Architecture style and design patterns
-  - Major module responsibilities
-  - Collaboration mechanisms
-  - Key call chains / data flows
-  - Deployment/runtime structure if relevant
-  
-  Questions should prepare for code-level drilling.
-  
-  Requirements:
-  - Questions must be in English
-  - Questions should focus on architecture and design
-  - Questions should help understand module organization
-  - Generate 2-4 questions
-  - **CRITICAL: Each question must be a single, short question sentence. Never combine multiple questions into one.**
-  - **CRITICAL: Questions should build on each other, starting from high-level architecture and drilling down to specific patterns.**
+  Avoid overly formal questions like "What architectural pattern does this follow?" or "Explain the design decisions."
 user_template: |
   Generate questions for the Architecture Understanding phase of this project:
   

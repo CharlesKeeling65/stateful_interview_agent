@@ -186,12 +186,29 @@ class QuestionSetGenerator:
         else:
             return self._generate_generic_phase_questions(phase, phase_config, analysis, previous_questions)
 
+    # Question angles for generating multiple questions per file
+    QUESTION_ANGLES = [
+        {"name": "implementation", "focus": "How does {symbol} work internally? What algorithms or data structures does it use?"},
+        {"name": "data_flow", "focus": "What data does {symbol} receive, transform, and return? How does data flow through it?"},
+        {"name": "error_handling", "focus": "How does {symbol} handle errors, edge cases, or invalid inputs?"},
+        {"name": "state_management", "focus": "What state does {symbol} maintain? How does it manage state transitions?"},
+        {"name": "dependencies", "focus": "How does {symbol} interact with its dependencies? What contracts does it rely on?"},
+        {"name": "side_effects", "focus": "What side effects does {symbol} produce? Does it modify external state, files, or databases?"},
+        {"name": "performance", "focus": "What are the performance characteristics of {symbol}? Are there any bottlenecks or optimizations?"},
+        {"name": "concurrency", "focus": "How does {symbol} handle concurrent access or asynchronous operations?"},
+    ]
+
     def _generate_code_detail_questions(
         self,
         phase_config: dict[str, Any],
         analysis: dict[str, Any],
     ) -> list[dict[str, Any]]:
-        """Generate code detail questions targeting core files."""
+        """Generate code detail questions targeting core files.
+        
+        For high-importance files, generate multiple questions from different angles.
+        For medium-importance files, generate 1-2 questions each.
+        For low-importance files, generate 1 question each.
+        """
         questions = []
         core_files = phase_config.get("core_files", [])
         target_count = phase_config.get("count", 34)
@@ -201,36 +218,127 @@ class QuestionSetGenerator:
         medium_importance = [f for f in core_files if 0.5 < f.get("importance", 0) <= 0.7]
         low_importance = [f for f in core_files if f.get("importance", 0) <= 0.5]
         
-        # Allocate questions proportionally
-        high_count = min(len(high_importance), target_count // 2)
-        medium_count = min(len(medium_importance), target_count // 3)
-        low_count = target_count - high_count - medium_count
+        # Calculate questions per file based on available files and target
+        total_files = len(core_files)
+        if total_files == 0:
+            return questions
         
-        # Generate questions for high importance files
-        for i, file_info in enumerate(high_importance[:high_count]):
-            question = self._generate_file_specific_question(file_info, analysis, "high")
-            if question:
-                questions.append(question)
+        # For high importance files: generate 3-5 questions each (different angles)
+        # For medium importance files: generate 2-3 questions each
+        # For low importance files: generate 1 question each
+        high_questions_per_file = min(5, max(3, target_count // (len(high_importance) + 1)))
+        medium_questions_per_file = min(3, max(2, target_count // (len(medium_importance) + 1) // 2))
+        low_questions_per_file = 1
+        
+        # Generate questions for high importance files (multiple angles)
+        for file_info in high_importance:
+            if len(questions) >= target_count:
+                break
+            file_questions = self._generate_multi_angle_questions(
+                file_info, analysis, "high", high_questions_per_file
+            )
+            questions.extend(file_questions)
         
         # Generate questions for medium importance files
-        for i, file_info in enumerate(medium_importance[:medium_count]):
-            question = self._generate_file_specific_question(file_info, analysis, "medium")
+        for file_info in medium_importance:
+            if len(questions) >= target_count:
+                break
+            file_questions = self._generate_multi_angle_questions(
+                file_info, analysis, "medium", medium_questions_per_file
+            )
+            questions.extend(file_questions)
+        
+        # Generate questions for low importance files
+        for file_info in low_importance:
+            if len(questions) >= target_count:
+                break
+            question = self._generate_file_specific_question(file_info, analysis, "low", angle=None)
             if question:
                 questions.append(question)
         
-        # Generate questions for low importance files
-        for i, file_info in enumerate(low_importance[:low_count]):
-            question = self._generate_file_specific_question(file_info, analysis, "low")
+        # If we still don't have enough questions, generate more for high importance files
+        if len(questions) < target_count and high_importance:
+            remaining = target_count - len(questions)
+            for file_info in high_importance:
+                if remaining <= 0:
+                    break
+                # Try additional angles not yet used
+                extra_questions = self._generate_multi_angle_questions(
+                    file_info, analysis, "high", min(3, remaining),
+                    skip_angles=[q.get("angle") for q in questions if q.get("target_files", [None])[0] == file_info.get("path")]
+                )
+                questions.extend(extra_questions)
+                remaining -= len(extra_questions)
+        
+        # Remove duplicate questions
+        questions = self._deduplicate_questions(questions)
+        
+        return questions[:target_count]
+
+    def _generate_multi_angle_questions(
+        self,
+        file_info: dict[str, Any],
+        analysis: dict[str, Any],
+        importance_level: str,
+        count: int,
+        skip_angles: list[str] | None = None,
+    ) -> list[dict[str, Any]]:
+        """Generate multiple questions for a file from different angles."""
+        questions = []
+        skip_angles = skip_angles or []
+        
+        # Select angles to use (skip already used ones)
+        available_angles = [a for a in self.QUESTION_ANGLES if a["name"] not in skip_angles]
+        
+        # Shuffle angles for variety (using deterministic seed based on file path)
+        import hashlib
+        seed = int(hashlib.md5(file_info.get("path", "").encode()).hexdigest()[:8], 16)
+        rng = __import__('random').Random(seed)
+        rng.shuffle(available_angles)
+        
+        for angle in available_angles[:count]:
+            question = self._generate_file_specific_question(
+                file_info, analysis, importance_level, angle=angle
+            )
             if question:
                 questions.append(question)
         
         return questions
+
+    def _deduplicate_questions(self, questions: list[dict[str, Any]]) -> list[dict[str, Any]]:
+        """Remove duplicate or near-duplicate questions."""
+        if not questions:
+            return questions
+        
+        unique_questions = []
+        seen_normalized = []
+        
+        for q in questions:
+            text = q.get("question_text", "").lower()
+            # Normalize for comparison
+            normalized = re.sub(r'[^\w\s]', '', text)
+            normalized = ' '.join(normalized.split())
+            
+            # Check if too similar to existing question
+            is_duplicate = False
+            for seen in seen_normalized:
+                similarity = self._calculate_similarity(normalized, seen)
+                if similarity > 0.7:  # Lower threshold for dedup
+                    is_duplicate = True
+                    break
+            
+            if not is_duplicate:
+                unique_questions.append(q)
+                seen_normalized.append(normalized)
+        
+        return unique_questions
 
     def _generate_file_specific_question(
         self,
         file_info: dict[str, Any],
         analysis: dict[str, Any],
         importance_level: str,
+        angle: dict[str, Any] | None = None,
     ) -> dict[str, Any] | None:
         """Generate a specific question for a file."""
         file_path = file_info.get("path", "")
@@ -297,10 +405,20 @@ class QuestionSetGenerator:
             "outgoing_dependencies": outgoing_deps[:5],
             "routes": [f"{r.get('method', 'GET')} {r.get('path', '')}" for r in routes[:3]],
             "architectural_patterns": analysis.get("architectural_patterns", []),
+            "angle": angle,
         }
         
         # Generate question using LLM
         try:
+            # Build angle-specific context
+            angle_hint = ""
+            if angle:
+                # Get the primary symbol for this file
+                primary_symbol = context["classes"][0] if context["classes"] else (
+                    context["functions"][0] if context["functions"] else file_path
+                )
+                angle_hint = angle["focus"].format(symbol=primary_symbol)
+            
             prompt = self.prompt_manager.render(
                 "generate_code_detail_question",
                 {
@@ -314,13 +432,17 @@ class QuestionSetGenerator:
                     "outgoing_dependencies": ", ".join(context["outgoing_dependencies"]) if context["outgoing_dependencies"] else "none",
                     "routes": ", ".join(context["routes"]) if context["routes"] else "none",
                     "architectural_patterns": ", ".join(context["architectural_patterns"]) if context["architectural_patterns"] else "none",
+                    "angle_hint": angle_hint if angle_hint else "Focus on understanding the core implementation details.",
                 }
             )
+            
+            # Use higher temperature for more natural, varied questions
+            temperature = 0.7 if angle else 0.5
             
             response = self.llm_provider.generate_text(
                 messages=prompt.messages,
                 model=settings.openai_model if settings.llm_provider == "openai_compatible" else None,
-                temperature=0.3,
+                temperature=temperature,
             )
             
             # Parse response
@@ -335,6 +457,7 @@ class QuestionSetGenerator:
                 "target_files": [file_path],
                 "target_symbols": context["classes"] + context["functions"],
                 "importance_level": importance_level,
+                "angle": angle["name"] if angle else "general",
             }
             
         except Exception as e:

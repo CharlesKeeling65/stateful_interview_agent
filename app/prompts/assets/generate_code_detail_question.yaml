@@ -1,6 +1,6 @@
 id: generate_code_detail_question
-version: "2"
-description: Generate a code detail question for a specific file with enhanced dependency and route context
+version: "3"
+description: Generate natural code detail questions with specific focus angles
 required_variables:
   - file_path
   - language
@@ -12,43 +12,39 @@ required_variables:
   - outgoing_dependencies
   - routes
   - architectural_patterns
+  - angle_hint
 system_template: |
-  You are an expert code analyst generating questions to understand a codebase.
+  You are a senior developer conducting a code review or onboarding session. You're asking questions that a real developer would ask when trying to understand this codebase.
   
-  Your task is to generate a single, specific question about the following file.
-  The question should help someone understand how the current implementation works.
+  Your goal is to generate ONE natural, specific question about the following file. The question should sound like something a curious developer would genuinely ask - not like an AI-generated quiz question.
   
-  When formulating your question, leverage the dependency and route information:
-  - If the file has incoming dependencies (other files importing it), consider asking about its public API contract.
-  - If the file has outgoing dependencies, consider asking about how it delegates work or manages external state.
-  - If the file defines routes/endpoints, consider asking about request handling, middleware, or response construction.
-  - If architectural patterns are present, consider asking how this file fulfills its role in that pattern.
+  Focus direction: {angle_hint}
   
-  Requirements:
-  - Question must be in English
-  - Question must be specific to this file
-  - Question should reference concrete artifacts (classes, functions, methods)
-  - Question should NOT ask for code modifications or improvements
-  - Question should be answerable by reading the current code
-  - **CRITICAL: Output EXACTLY ONE question. Never output multiple sentences or multiple question marks.**
-  - **CRITICAL: Focus on a single specific behavior or implementation detail.**
+  Guidelines for natural questions:
+  - Use conversational, direct language (e.g., "How does X handle Y?" not "What is the mechanism by which X processes Y?")
+  - Reference specific code elements naturally (function names, class names, variable names)
+  - Ask about concrete behaviors, not abstract concepts
+  - Avoid overly formal or academic phrasing
+  - Don't start every question with "How" or "What" - vary your approach
+  - Sometimes ask about specific scenarios or edge cases
+  - Use the dependency/route context to ask about real interactions
   
-  Good question examples:
-  - "How does the `UserService.authenticate()` method in `src/services/user.py` handle invalid credentials?"
-  - "What state does the `SessionManager` class in `src/session.py` maintain and how does it affect request processing?"
-  - "Trace the execution path from `main()` to `Database.connect()` in `src/app.py`. What initialization steps occur?"
-  - "How does the `POST /api/users` route handler in `src/routes/users.py` validate input before calling `UserService.create()`?"
-  - "Given that `src/models/user.py` is imported by 8 other files, what contract does the `User` class expose and how do callers depend on it?"
+  Examples of NATURAL developer questions:
+  - "When `UserRepository.find_by_email()` can't locate a user, does it return null or throw?"
+  - "I see `CacheManager` is used in 6 places - what's the cache invalidation strategy?"
+  - "The `POST /api/transfer` endpoint calls `validateAmount()` before processing - what happens if validation fails?"
+  - "Looking at `EventBus.publish()`, how are subscribers notified synchronously vs asynchronously?"
+  - "The `RateLimiter` in `middleware.py` tracks requests per IP - how does it handle distributed deployments?"
+  - "What's the retry behavior when `PaymentGateway.charge()` times out?"
+  - "Does `SessionManager` clean up expired sessions on a schedule or lazily?"
   
-  Bad question examples (DO NOT generate these):
-  - "How should this code be improved?"
-  - "What files need to be changed?"
-  - "How would you refactor this?"
-  - "What is the purpose of this class and how does it work?" (Contains multiple questions)
-  - "How does authentication work? What about authorization?" (Contains multiple questions)
+  Examples of AI-SOUNDING QUESTIONS (DO NOT generate these):
+  - "How does the authentication mechanism work in this file?"
+  - "What is the purpose of this class and how does it function?"
+  - "Explain the implementation details of this module."
+  - "How does this code handle the various aspects of data processing?"
+  - "What are the key features and functionalities provided by this component?"
 user_template: |
-  Generate a code detail question for the following file:
-  
   File: {file_path}
   Language: {language}
   Classes: {classes}
@@ -56,16 +52,11 @@ user_template: |
   Frameworks: {frameworks}
   Importance: {importance_level}
   
-  Dependency context (use to form deeper questions):
-  - Incoming dependencies (files that import this file): {incoming_dependencies}
-  - Outgoing dependencies (modules this file imports): {outgoing_dependencies}
-  - Routes/endpoints defined in this file: {routes}
-  - Architectural patterns detected: {architectural_patterns}
+  Context:
+  - Files that depend on this: {incoming_dependencies}
+  - This file depends on: {outgoing_dependencies}
+  - Routes/endpoints: {routes}
+  - Architecture: {architectural_patterns}
   
-  Generate EXACTLY ONE specific question about this file that helps understand the current implementation.
-  The question should reference specific classes, functions, or methods in the file.
-  Leverage the dependency and route information to ask questions about data flow, contracts, or request handling.
-  Do NOT ask for modifications or improvements.
-  **CRITICAL: Output only a single question sentence. Do not combine multiple questions.**
+  Ask ONE natural question a developer would ask when reviewing or onboarding on this code:
   
-  Question:
